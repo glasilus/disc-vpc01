@@ -214,6 +214,7 @@ class RealtimeGUI(tk.Tk):
                            fg=C_TEXT_BLACK, font=("MS Sans Serif", 9, "bold"),
                            bd=2, relief='groove')
         vf.pack(fill='both', expand=True)
+        vf.pack_propagate(False)
         self.video_label = tk.Label(vf, text="Load video and press START",
                                     bg=C_BLACK, fg=C_WHITE,
                                     font=("MS Sans Serif", 10))
@@ -414,7 +415,7 @@ class RealtimeGUI(tk.Tk):
     # ── Engine start / stop ───────────────────────────────────────────────────
 
     def start_engine(self):
-        if not self.engine.video_source:
+        if not self.engine.video_pool.loaded:
             messagebox.showwarning("Warning", "Please load a video file first")
             return
 

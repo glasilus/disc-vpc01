@@ -58,9 +58,6 @@ jobs:
             --collect-all scenedetect ^
             --collect-all opensimplex ^
             --hidden-import=scenedetect.detectors ^
-            --hidden-import=imageio ^
-            --hidden-import=imageio_ffmpeg ^
-            --copy-metadata imageio ^
             gui.py
 
       # ── Build: Disc VPC 01 R-T (real-time) ─────────────────────────────────
@@ -170,9 +167,6 @@ jobs:
             --collect-all scenedetect \
             --collect-all opensimplex \
             --hidden-import=scenedetect.detectors \
-            --hidden-import=imageio \
-            --hidden-import=imageio_ffmpeg \
-            --copy-metadata imageio \
             gui.py
 
       - name: Build DiscVPC01-RT (macOS app)

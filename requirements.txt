@@ -6,7 +6,6 @@ opencv-contrib-python==4.9.0.80
 Pillow==10.1.0
 scenedetect[opencv]==0.6.0
 imageio-ffmpeg==0.4.9
-ffmpeg-python==0.2.0
 numba==0.58.1
 opensimplex==0.4.5
 sounddevice==0.5.5

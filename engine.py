@@ -11,6 +11,15 @@ import numpy as np
 import cv2
 from typing import Dict, Any, Optional, List, Callable
 
+
+def _ffmpeg_bin() -> str:
+    """Return path to ffmpeg binary — bundled via imageio-ffmpeg when available."""
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return 'ffmpeg'
+
 from analyzer import AudioAnalyzer, Segment, SegmentType
 from effects import (
     PixelSortEffect, DatamoshEffect, ASCIIEffect, FlashEffect,
@@ -202,7 +211,7 @@ class BreakcoreEngine:
         ffmpeg removes keyframes to make motion vectors bleed across scene cuts.
         """
         cmd = [
-            'ffmpeg', '-y', '-i', video_path,
+            _ffmpeg_bin(), '-y', '-i', video_path,
             '-vf', "select=not(eq(pict_type\,I))",
             '-vsync', 'vfr',
             '-vcodec', 'libx264',
@@ -292,7 +301,7 @@ class BreakcoreEngine:
         extra_flags = ['-tag:v', 'hvc1'] if use_h265 else []
 
         ffmpeg_cmd = [
-            'ffmpeg', '-y',
+            _ffmpeg_bin(), '-y',
             '-f', 'rawvideo', '-vcodec', 'rawvideo',
             '-s', f'{out_w}x{out_h}',
             '-pix_fmt', 'rgb24',

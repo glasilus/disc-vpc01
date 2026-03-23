@@ -1243,8 +1243,13 @@ class MainGUI(tk.Tk):
             wav_fd, wav_path = tempfile.mkstemp(suffix='.wav')
             os.close(wav_fd)
             try:
+                try:
+                    import imageio_ffmpeg as _iio_ffmpeg
+                    _ffmpeg = _iio_ffmpeg.get_ffmpeg_exe()
+                except Exception:
+                    _ffmpeg = 'ffmpeg'
                 subprocess.run(
-                    ['ffmpeg', '-y', '-i', path,
+                    [_ffmpeg, '-y', '-i', path,
                      '-vn', '-acodec', 'pcm_s16le', '-ar', '44100', '-ac', '2',
                      wav_path],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
