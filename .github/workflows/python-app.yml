@@ -47,7 +47,6 @@ jobs:
           pyinstaller ^
             --onefile --noconsole --clean --noupx ^
             --name DiscVPC01 ^
-            --add-data "presets.json;." ^
             --collect-all cv2 ^
             --collect-all librosa ^
             --collect-all scipy ^
@@ -156,7 +155,6 @@ jobs:
           pyinstaller \
             --onefile --noconsole --clean --noupx \
             --name DiscVPC01 \
-            --add-data "presets.json:." \
             --collect-all cv2 \
             --collect-all librosa \
             --collect-all scipy \
