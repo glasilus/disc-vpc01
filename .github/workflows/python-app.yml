@@ -38,7 +38,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller weasyprint markdown
+          pip install pyinstaller
 
       # ── Build: Disc VPC 01 (main editor) ───────────────────────────────────
       - name: Build DiscVPC01.exe
@@ -76,34 +76,6 @@ jobs:
             --hidden-import=sounddevice ^
             rt.py
 
-      # ── README → PDF (EN + RU) ──────────────────────────────────────────────
-      - name: Convert README files to PDF
-        shell: python
-        run: |
-          import markdown, pathlib
-          from weasyprint import HTML
-
-          CSS_STYLE = """
-            body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
-            h1, h2, h3 { color: #111; }
-            code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
-            pre  { background: #f4f4f4; padding: 12px; border-radius: 4px; overflow-x: auto; }
-          """
-
-          def md_to_pdf(src: str, dst: str):
-              md_text = pathlib.Path(src).read_text(encoding="utf-8")
-              html_body = markdown.markdown(md_text, extensions=["tables", "fenced_code"])
-              html_full = (
-                  f'<!DOCTYPE html><html><head><meta charset="utf-8">'
-                  f'<style>{CSS_STYLE}</style></head>'
-                  f'<body>{html_body}</body></html>'
-              )
-              HTML(string=html_full).write_pdf(dst)
-              print(f"{dst} written")
-
-          md_to_pdf("README.MD",    "README.pdf")
-          md_to_pdf("README_RU.MD", "README_RU.pdf")
-
       # ── Bundle ZIP ──────────────────────────────────────────────────────────
       - name: Create bundle ZIP
         shell: pwsh
@@ -112,8 +84,8 @@ jobs:
           New-Item -ItemType Directory -Path $dir | Out-Null
           Copy-Item dist\DiscVPC01.exe    $dir\
           Copy-Item dist\DiscVPC01-RT.exe $dir\
-          Copy-Item README.pdf            $dir\
-          Copy-Item README_RU.pdf         $dir\
+          Copy-Item README.MD             $dir\
+          Copy-Item README_RU.MD          $dir\
           Compress-Archive -Path $dir -DestinationPath Disc-VPC-01-windows.zip
 
       - name: Upload Windows artifact
@@ -148,7 +120,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller weasyprint markdown
+          pip install pyinstaller
 
       - name: Build DiscVPC01 (macOS app)
         run: |
@@ -182,39 +154,13 @@ jobs:
             --hidden-import=sounddevice \
             rt.py
 
-      - name: Convert README files to PDF
-        shell: python
-        run: |
-          import markdown, pathlib
-          from weasyprint import HTML
-
-          CSS_STYLE = """
-            body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
-            h1, h2, h3 { color: #111; }
-            code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
-            pre  { background: #f4f4f4; padding: 12px; border-radius: 4px; }
-          """
-
-          def md_to_pdf(src, dst):
-              md_text = pathlib.Path(src).read_text(encoding="utf-8")
-              html_body = markdown.markdown(md_text, extensions=["tables", "fenced_code"])
-              html_full = (
-                  f'<!DOCTYPE html><html><head><meta charset="utf-8">'
-                  f'<style>{CSS_STYLE}</style></head>'
-                  f'<body>{html_body}</body></html>'
-              )
-              HTML(string=html_full).write_pdf(dst)
-
-          md_to_pdf("README.MD",    "README.pdf")
-          md_to_pdf("README_RU.MD", "README_RU.pdf")
-
       - name: Create bundle ZIP
         run: |
           mkdir Disc-VPC-01-macos
           cp dist/DiscVPC01    Disc-VPC-01-macos/
           cp dist/DiscVPC01-RT Disc-VPC-01-macos/
-          cp README.pdf        Disc-VPC-01-macos/
-          cp README_RU.pdf     Disc-VPC-01-macos/
+          cp README.MD         Disc-VPC-01-macos/
+          cp README_RU.MD      Disc-VPC-01-macos/
           zip -r Disc-VPC-01-macos.zip Disc-VPC-01-macos/
 
       - name: Upload macOS artifact
