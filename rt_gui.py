@@ -378,7 +378,7 @@ class RealtimeGUI(tk.Tk):
     def load_video(self):
         paths = filedialog.askopenfilenames(
             title="Select Video Source(s)",
-            filetypes=[("Video files", "*.mp4 *.avi *.mov *.mkv *.flv *.wmv")])
+            filetypes=[("Video files", "*.mp4 *.avi *.mov *.mkv *.flv *.wmv *.mpg *.mpeg")])
         if not paths:
             return
         try:
