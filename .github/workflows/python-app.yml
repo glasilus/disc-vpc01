@@ -104,7 +104,8 @@ jobs:
             portaudio19-dev \
             libsndfile1 \
             ffmpeg \
-            libgl1
+            libgl1 \
+            xvfb
 
       - name: Set up Python ${{ env.PY_VERSION }}
         uses: actions/setup-python@v5
@@ -119,7 +120,7 @@ jobs:
 
       - name: Build DiscVPC01 (Linux)
         run: |
-          pyinstaller \
+          xvfb-run --auto-servernum pyinstaller \
             --onefile --noconsole --clean --noupx \
             --name DiscVPC01 \
             --collect-all cv2 \
@@ -136,7 +137,7 @@ jobs:
 
       - name: Build DiscVPC01-RT (Linux)
         run: |
-          pyinstaller \
+          xvfb-run --auto-servernum pyinstaller \
             --onefile --noconsole --clean --noupx \
             --name DiscVPC01-RT \
             --collect-all cv2 \
@@ -175,7 +176,6 @@ jobs:
       - name: Install Homebrew dependencies
         run: |
           brew install python-tk@${{ env.PY_VERSION }} portaudio
-          echo "$(brew --prefix python-tk@${{ env.PY_VERSION }})/lib/python${{ env.PY_VERSION }}/site-packages" >> $GITHUB_ENV
           echo "PYTHONPATH=$(brew --prefix python-tk@${{ env.PY_VERSION }})/lib/python${{ env.PY_VERSION }}/site-packages:$PYTHONPATH" >> $GITHUB_ENV
 
       - name: Set up Python ${{ env.PY_VERSION }}
