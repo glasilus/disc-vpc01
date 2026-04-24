@@ -14,7 +14,7 @@ endif()
 find_package(glfw3   CONFIG REQUIRED)
 find_package(imgui   CONFIG REQUIRED)
 find_package(portaudio CONFIG REQUIRED)
-find_package(FFTW3   CONFIG REQUIRED)
+find_package(FFTW3f  CONFIG REQUIRED)   # single-precision (libfftw3f)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(glad    CONFIG REQUIRED)
 
