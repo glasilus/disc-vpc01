@@ -17,7 +17,7 @@ env:
     imgui[core,glfw-binding,opengl3-binding]
     portaudio
     fftw3
-    ffmpeg[avcodec,avformat,avutil,swscale,swresample]
+    ffmpeg[avcodec,avformat,swscale,swresample]
     nlohmann-json
     glad
     stb
