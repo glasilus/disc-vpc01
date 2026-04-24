@@ -78,13 +78,16 @@ jobs:
             vcpkg/installed
             vcpkg/downloads
             vcpkg/buildtrees
-          key: vcpkg-win-static-${{ hashFiles('rt_cpp/vcpkg.json') }}
-          restore-keys: vcpkg-win-static-
+          key: vcpkg-win-rel-${{ hashFiles('rt_cpp/vcpkg.json', 'rt_cpp/triplets/x64-windows-static-release.cmake') }}
+          restore-keys: vcpkg-win-rel-
 
       - name: Install C++ dependencies (vcpkg)
         shell: cmd
         run: |
-          "%VCPKG_ROOT%\vcpkg.exe" install --triplet x64-windows-static ${{ env.VCPKG_DEPS }} || exit /b 1
+          "%VCPKG_ROOT%\vcpkg.exe" install ^
+            --triplet x64-windows-static-release ^
+            --overlay-triplets=rt_cpp/triplets ^
+            ${{ env.VCPKG_DEPS }} || exit /b 1
 
       - name: Build DiscVPC01-RT.exe (C++)
         shell: cmd
@@ -93,7 +96,8 @@ jobs:
           cmake -S rt_cpp -B rt_cpp\build ^
             -DCMAKE_BUILD_TYPE=Release ^
             -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake ^
-            -DVCPKG_TARGET_TRIPLET=x64-windows-static ^
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static-release ^
+            -DVCPKG_OVERLAY_TRIPLETS=%GITHUB_WORKSPACE%\rt_cpp\triplets ^
             -DVCPKG_MANIFEST_MODE=OFF ^
             -G "Visual Studio 17 2022" -A x64 || exit /b 1
           cmake --build rt_cpp\build --config Release || exit /b 1
@@ -162,9 +166,9 @@ jobs:
           ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
           echo "VCPKG_ROOT=$GITHUB_WORKSPACE/vcpkg" >> $GITHUB_ENV
           if [ "$(uname -m)" = "arm64" ]; then
-            echo "VCPKG_TRIPLET=arm64-osx" >> $GITHUB_ENV
+            echo "VCPKG_TRIPLET=arm64-osx-release" >> $GITHUB_ENV
           else
-            echo "VCPKG_TRIPLET=x64-osx" >> $GITHUB_ENV
+            echo "VCPKG_TRIPLET=x64-osx-release" >> $GITHUB_ENV
           fi
 
       - name: Cache vcpkg installed (macOS)
@@ -174,12 +178,15 @@ jobs:
             vcpkg/installed
             vcpkg/downloads
             vcpkg/buildtrees
-          key: vcpkg-macos-${{ hashFiles('rt_cpp/vcpkg.json') }}-${{ runner.arch }}
-          restore-keys: vcpkg-macos-
+          key: vcpkg-macos-rel-${{ hashFiles('rt_cpp/vcpkg.json', 'rt_cpp/triplets/arm64-osx-release.cmake', 'rt_cpp/triplets/x64-osx-release.cmake') }}-${{ runner.arch }}
+          restore-keys: vcpkg-macos-rel-
 
       - name: Install C++ dependencies (vcpkg)
         run: |
-          "$VCPKG_ROOT/vcpkg" install --triplet "$VCPKG_TRIPLET" ${{ env.VCPKG_DEPS }}
+          "$VCPKG_ROOT/vcpkg" install \
+            --triplet "$VCPKG_TRIPLET" \
+            --overlay-triplets=rt_cpp/triplets \
+            ${{ env.VCPKG_DEPS }}
 
       - name: Build DiscVPC01-RT (C++)
         run: |
@@ -188,6 +195,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET" \
+            -DVCPKG_OVERLAY_TRIPLETS="$GITHUB_WORKSPACE/rt_cpp/triplets" \
             -DVCPKG_MANIFEST_MODE=OFF \
             -G Ninja
           cmake --build rt_cpp/build --config Release
@@ -275,12 +283,15 @@ jobs:
             vcpkg/installed
             vcpkg/downloads
             vcpkg/buildtrees
-          key: vcpkg-linux-${{ hashFiles('rt_cpp/vcpkg.json') }}
-          restore-keys: vcpkg-linux-
+          key: vcpkg-linux-rel-${{ hashFiles('rt_cpp/vcpkg.json', 'rt_cpp/triplets/x64-linux-release.cmake') }}
+          restore-keys: vcpkg-linux-rel-
 
       - name: Install C++ dependencies (vcpkg)
         run: |
-          "$VCPKG_ROOT/vcpkg" install --triplet x64-linux ${{ env.VCPKG_DEPS }}
+          "$VCPKG_ROOT/vcpkg" install \
+            --triplet x64-linux-release \
+            --overlay-triplets=rt_cpp/triplets \
+            ${{ env.VCPKG_DEPS }}
 
       - name: Build DiscVPC01-RT (C++)
         run: |
@@ -288,7 +299,8 @@ jobs:
           cmake -S rt_cpp -B rt_cpp/build \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
-            -DVCPKG_TARGET_TRIPLET=x64-linux \
+            -DVCPKG_TARGET_TRIPLET=x64-linux-release \
+            -DVCPKG_OVERLAY_TRIPLETS="$GITHUB_WORKSPACE/rt_cpp/triplets" \
             -DVCPKG_MANIFEST_MODE=OFF \
             -G Ninja
           cmake --build rt_cpp/build --config Release
