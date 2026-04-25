@@ -3,6 +3,7 @@
 #include "font_loader.h"
 #include "win95.h"
 #include <imgui.h>
+#include <cfloat>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
@@ -130,33 +131,47 @@ void RtGui::handle_drop(int count, const char** paths) {
     static const std::initializer_list<const char*> kImageExts =
         {".png",".jpg",".jpeg",".bmp",".gif",".tga"};
 
-    bool any_image_folder = false;
-    for (int i = 0; i < count; ++i) {
-        std::error_code ec;
-        fs::path p = fs::u8path(paths[i]);
-        if (fs::is_directory(p, ec)) {
-            // Folder: scan for videos AND check if it contains any images
-            // (treat image-bearing folder as overlay folder).
-            bool has_image = false;
-            for (auto& it : fs::recursive_directory_iterator(p, ec)) {
-                if (!it.is_regular_file(ec)) continue;
-                std::string sp = it.path().string();
-                if (has_ext(sp, kVideoExts)) {
-                    engine_->video().add_source(sp);
-                } else if (has_ext(sp, kImageExts)) {
-                    has_image = true;
+    // Filesystem iteration over dropped paths may throw on permission errors
+    // or invalid paths, especially on Windows. A throw inside a GLFW callback
+    // will tear down the whole process — wrap the entire scan.
+    try {
+        bool any_image_folder = false;
+        for (int i = 0; i < count; ++i) {
+            std::error_code ec;
+            fs::path p = fs::u8path(paths[i]);
+            if (fs::is_directory(p, ec)) {
+                bool has_image = false;
+                // The non-throwing iterator ctor still may throw on
+                // operator++; catch it too.
+                try {
+                    for (auto it = fs::recursive_directory_iterator(p, ec);
+                         it != fs::recursive_directory_iterator();
+                         it.increment(ec)) {
+                        if (ec) break;
+                        if (!it->is_regular_file(ec)) continue;
+                        // path.u8string() guarantees UTF-8 output on Windows;
+                        // .string() would return ANSI and corrupt non-ASCII.
+                        auto u8 = it->path().u8string();
+                        std::string sp(u8.begin(), u8.end());
+                        if (has_ext(sp, kVideoExts))      engine_->video().add_source(sp);
+                        else if (has_ext(sp, kImageExts)) has_image = true;
+                    }
+                } catch (const std::exception& e) {
+                    fprintf(stderr, "[drop] scan error: %s\n", e.what());
                 }
-            }
-            if (has_image && !any_image_folder) {
-                engine_->overlays().load_folder(p.string());
-                any_image_folder = true;
-            }
-        } else if (fs::is_regular_file(p, ec)) {
-            std::string sp = p.string();
-            if (has_ext(sp, kVideoExts)) {
-                engine_->video().add_source(sp);
+                if (has_image && !any_image_folder) {
+                    auto u8 = p.u8string();
+                    engine_->overlays().load_folder(std::string(u8.begin(), u8.end()));
+                    any_image_folder = true;
+                }
+            } else if (fs::is_regular_file(p, ec)) {
+                auto u8 = p.u8string();
+                std::string sp(u8.begin(), u8.end());
+                if (has_ext(sp, kVideoExts)) engine_->video().add_source(sp);
             }
         }
+    } catch (const std::exception& e) {
+        fprintf(stderr, "[drop] fatal: %s\n", e.what());
     }
 }
 
@@ -176,15 +191,27 @@ void RtGui::render(EngineSettings& settings, float fps, GLuint display_tex) {
         ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoBringToFrontOnFocus |
         ImGuiWindowFlags_NoScrollbar);
 
-    // ── Video preview ─────────────────────────────────────────────────────────
-    float preview_h = win_h * 0.45f;
-    draw_video_preview(display_tex, win_w, (int)preview_h);
+    // ── Top strip: compact preview + audio meters + transport ────────────────
+    // The preview is a THUMBNAIL now (the primary output surface is the
+    // dedicated OutputWindow on a chosen monitor). This frees the bulk of
+    // the control window for controls, which is what a VJ actually needs on
+    // their control surface.
+    const float kPrevH = 180.f;
+    const float kPrevW = 320.f;
+    ImGui::BeginChild("##prev", {kPrevW, kPrevH}, false);
+    draw_video_preview(display_tex, (int)kPrevW, (int)kPrevH);
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+    ImGui::BeginChild("##topbar", {win_w - kPrevW - 16.f, kPrevH}, false);
+    draw_transport(settings, fps);
+    ImGui::EndChild();
 
     ImGui::Separator();
 
     // ── Control panels (4 columns) ───────────────────────────────────────────
     float col_w = win_w * 0.25f;
-    float ctrl_h = win_h - preview_h - 60.f;
+    float ctrl_h = win_h - kPrevH - 40.f;
 
     ImGui::BeginChild("##master",  {col_w, ctrl_h}, true);
     Win95::title_bar("Master");
@@ -214,23 +241,6 @@ void RtGui::render(EngineSettings& settings, float fps, GLuint display_tex) {
     ImGui::Separator();
     draw_output_panel();
     ImGui::EndChild();
-
-    // ── Bottom bar: big 3D Win95 transport button + status ───────────────────
-    ImGui::Separator();
-    if (!running_) {
-        if (Win95::button("START", 90.f, 26.f)) { want_start_ = true; running_ = true; }
-    } else {
-        if (Win95::button("STOP",  90.f, 26.f)) { want_stop_  = true; running_ = false; }
-    }
-    ImGui::SameLine();
-    ImGui::Checkbox("Freeze",     &engine_->freeze);
-    ImGui::SameLine();
-    ImGui::Checkbox("Blackout",   &engine_->blackout);
-    ImGui::SameLine();
-    ImGui::Checkbox("Sequential", &settings.sequential);
-    ImGui::SameLine();
-    ImGui::Text("FPS: %.0f   Seg: %s", fps,
-        segment_name(engine_->current_segment().type));
 
     ImGui::End();
 
@@ -265,6 +275,46 @@ void RtGui::draw_video_preview(GLuint tex, int win_w, int win_h) {
         dl->AddText({origin.x + win_w * 0.5f - 40, origin.y + win_h * 0.5f},
                     IM_COL32(128,128,128,255), "No video loaded");
     }
+}
+
+void RtGui::draw_transport(EngineSettings& s, float fps) {
+    // Left: big START/STOP button + toggles.
+    if (!running_) {
+        if (Win95::button("START", 110.f, 32.f)) { want_start_ = true; running_ = true; }
+    } else {
+        if (Win95::button("STOP",  110.f, 32.f)) { want_stop_  = true; running_ = false; }
+    }
+    ImGui::SameLine();
+    ImGui::BeginGroup();
+    ImGui::Checkbox("Freeze##tr",     &engine_->freeze);
+    ImGui::Checkbox("Blackout##tr",   &engine_->blackout);
+    ImGui::EndGroup();
+    ImGui::SameLine();
+    ImGui::BeginGroup();
+    ImGui::Checkbox("Sequential##tr", &s.sequential);
+    ImGui::Text("FPS: %.0f", fps);
+    ImGui::EndGroup();
+
+    ImGui::Separator();
+
+    // Right: live audio meters, segment readout, device line.
+    AudioStats st = engine_->audio().get_stats();
+    float vals[3]     = { st.bass, st.mid, st.treble };
+    const char* lbl[3]= {"Bass", "Mid ", "Treb"};
+    for (int i = 0; i < 3; ++i) {
+        float v = std::min(vals[i] / 0.3f, 1.f);
+        ImGui::TextUnformatted(lbl[i]); ImGui::SameLine();
+        ImGui::ProgressBar(v, {-FLT_MIN, 10}, "");
+    }
+    ImGui::Text("Segment: %s   %s",
+        segment_name(engine_->current_segment().type),
+        st.beat ? "BEAT" : "----");
+
+    const char* dev_label = (selected_device_ >= 0 &&
+                             selected_device_ < (int)devices_.size())
+                          ? devices_[selected_device_].name.c_str()
+                          : "(no device selected — will auto-pick on Start)";
+    ImGui::TextDisabled("Device: %s", dev_label);
 }
 
 void RtGui::draw_master_panel(EngineSettings& s) {
@@ -332,7 +382,10 @@ void RtGui::draw_video_panel() {
     const auto& paths = engine_->video().paths();
     ImGui::BeginChild("##vlist", {0, 80}, false);
     for (auto& p : paths) {
-        std::string name = fs::path(p).filename().string();
+        // u8string() returns UTF-8 even on Windows (where .string() gives
+        // ANSI and would render Cyrillic as mojibake inside ImGui).
+        auto u8 = fs::path(p).filename().u8string();
+        std::string name(u8.begin(), u8.end());
         ImGui::Selectable(name.c_str());
     }
     ImGui::EndChild();

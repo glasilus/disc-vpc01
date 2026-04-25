@@ -93,10 +93,7 @@ static void key_callback(GLFWwindow* w, int key, int /*sc*/, int action, int mod
             case GLFW_KEY_SPACE: {
                 auto& a = app->engine->audio();
                 if (a.is_running()) a.stop();
-                else {
-                    int dev = app->gui->selected_device();
-                    if (dev >= 0) a.start(dev);
-                }
+                else a.start(app->gui->selected_device());  // -1 ⇒ auto-default
                 return;
             }
             case GLFW_KEY_B: app->engine->blackout = !app->engine->blackout; return;
@@ -188,24 +185,25 @@ int main() {
     OutputWindow output;
     output.init(window);
 
-    // IMPORTANT ordering: install our key callback BEFORE RtGui::init(), so
-    // ImGui's GLFW backend (with install_callbacks=true) chains it rather
-    // than overwriting it. App state starts zeroed so an early callback
-    // no-ops safely until we fill it in below.
-    App app;
-    glfwSetWindowUserPointer(window, &app);
-    glfwSetKeyCallback(window, key_callback);
-
+    // Install our key callback BEFORE RtGui::init() so ImGui's GLFW backend
+    // chains it rather than overwriting it. Fill in app pointers before the
+    // callback is installed so a keyboard event fired during ImGui's own
+    // initialization (which is real: ImGui polls state) doesn't see null
+    // fields. RtGui is default-constructible → &gui is valid pre-init; the
+    // methods we call pre-init just return safe defaults.
     RtGui gui;
-    if (!gui.init(window, &engine, "presets")) {
-        fprintf(stderr, "GUI init failed\n"); return 1;
-    }
-
+    App   app;
     app.engine   = &engine;
     app.gui      = &gui;
     app.output   = &output;
     app.settings = &settings;
     app.control  = window;
+    glfwSetWindowUserPointer(window, &app);
+    glfwSetKeyCallback(window, key_callback);
+
+    if (!gui.init(window, &engine, "presets")) {
+        fprintf(stderr, "GUI init failed\n"); return 1;
+    }
 
     // ── Main loop ─────────────────────────────────────────────────────────────
     double prev_time = glfwGetTime();
@@ -236,8 +234,10 @@ int main() {
         // GUI-initiated audio start/stop (button) — keyboard-initiated uses
         // the Space shortcut which hits engine.audio() directly.
         if (gui.want_start()) {
-            int dev = gui.selected_device();
-            if (dev >= 0) engine.audio().start(dev);
+            // Pass -1 through so AudioAnalyzer::start auto-selects the
+            // platform default device (WASAPI on Windows). Better UX than
+            // silently doing nothing when the user hasn't picked a device.
+            engine.audio().start(gui.selected_device());
         }
         if (gui.want_stop()) engine.audio().stop();
 

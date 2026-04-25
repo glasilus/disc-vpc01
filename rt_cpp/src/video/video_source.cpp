@@ -1,4 +1,5 @@
 #include "video_source.h"
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -97,24 +98,33 @@ void VideoSource::seek_random() {
 }
 
 bool VideoSource::decode_next(DecodedFrame& out, int /*w*/, int /*h*/) {
-    // Decode at NATIVE resolution — aspect-aware composition happens on the
-    // GPU in the canvas-placement shader. This avoids per-video rescale on
-    // the CPU and keeps the texture at its true quality.
-    const int nw = codec_ctx_->width, nh = codec_ctx_->height;
+    // Cap the decode target so a 4K video doesn't eat gigabytes of RAM when
+    // multiplied by the 30-frame pool (4K × 30 ≈ 720 MB). 1920×1080 is plenty
+    // for any canvas we expose, and effects run on the canvas anyway.
+    constexpr int kMaxW = 1920, kMaxH = 1080;
+    const int nw_src = codec_ctx_->width, nh_src = codec_ctx_->height;
+    int tw = nw_src, th = nh_src;
+    if (tw > kMaxW || th > kMaxH) {
+        float s = std::min((float)kMaxW / tw, (float)kMaxH / th);
+        tw = std::max(2, (int)(tw * s) & ~1);   // even dims keep sws happy
+        th = std::max(2, (int)(th * s) & ~1);
+    }
+
     if (!sws_ctx_) {
         sws_ctx_ = sws_getContext(
-            nw, nh, codec_ctx_->pix_fmt,
-            nw, nh, AV_PIX_FMT_RGB24,
+            nw_src, nh_src, codec_ctx_->pix_fmt,
+            tw,     th,     AV_PIX_FMT_RGB24,
             SWS_BILINEAR, nullptr, nullptr, nullptr);
+        dec_w_ = tw; dec_h_ = th;
     }
     if (!sws_ctx_) return false;
 
-    out.width  = nw;
-    out.height = nh;
-    out.pixels.resize((size_t)nw * nh * 3);
+    out.width  = dec_w_;
+    out.height = dec_h_;
+    out.pixels.resize((size_t)dec_w_ * dec_h_ * 3);
 
     uint8_t* dst_data[4]    = { out.pixels.data(), nullptr, nullptr, nullptr };
-    int      dst_linesize[4] = { nw * 3, 0, 0, 0 };
+    int      dst_linesize[4] = { dec_w_ * 3, 0, 0, 0 };
 
     AVPacket* pkt = av_packet_alloc();
     bool got_frame = false;
@@ -138,7 +148,7 @@ bool VideoSource::decode_next(DecodedFrame& out, int /*w*/, int /*h*/) {
         if (avcodec_send_packet(codec_ctx_, pkt) == 0) {
             if (avcodec_receive_frame(codec_ctx_, av_frame_) == 0) {
                 sws_scale(sws_ctx_,
-                    av_frame_->data, av_frame_->linesize, 0, codec_ctx_->height,
+                    av_frame_->data, av_frame_->linesize, 0, nh_src,
                     dst_data, dst_linesize);
                 got_frame = true;
             }

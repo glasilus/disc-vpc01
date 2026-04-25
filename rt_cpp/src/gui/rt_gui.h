@@ -45,6 +45,7 @@ private:
     void draw_overlay_panel(EngineSettings& s);
     void draw_presets_panel(EngineSettings& s);
     void draw_video_preview(GLuint tex, int win_w, int win_h);
+    void draw_transport(EngineSettings& s, float fps);
 
     RtEngine*      engine_  = nullptr;
     PresetManager  presets_;

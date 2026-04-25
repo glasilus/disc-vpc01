@@ -59,10 +59,29 @@ static std::string lower_ascii(const std::string& s) {
 }
 
 AudioAnalyzer::AudioAnalyzer() {
-    Pa_Initialize();
+    PaError e = Pa_Initialize();
+    if (e != paNoError) {
+        fprintf(stderr, "[audio] Pa_Initialize failed: %s\n", Pa_GetErrorText(e));
+    }
     fft_in_  = fftwf_alloc_real(kChunkSize);
     fft_out_ = fftwf_alloc_complex(kChunkSize / 2 + 1);
     fft_plan_ = fftwf_plan_dft_r2c_1d(kChunkSize, fft_in_, fft_out_, FFTW_MEASURE);
+}
+
+int AudioAnalyzer::default_input_device() {
+    // Prefer WASAPI's default input device on Windows; otherwise fall back
+    // to PortAudio's global default. Returns -1 if nothing is available.
+    int count = Pa_GetHostApiCount();
+    for (int h = 0; h < count; ++h) {
+        const PaHostApiInfo* ha = Pa_GetHostApiInfo(h);
+        if (!ha) continue;
+        if (ha->type == paWASAPI || ha->type == paCoreAudio ||
+            ha->type == paJACK   || ha->type == paALSA) {
+            if (ha->defaultInputDevice >= 0) return ha->defaultInputDevice;
+        }
+    }
+    int def = Pa_GetDefaultInputDevice();
+    return (def == paNoDevice) ? -1 : def;
 }
 
 AudioAnalyzer::~AudioAnalyzer() {
@@ -139,29 +158,88 @@ std::vector<AudioDevice> AudioAnalyzer::enumerate_devices() {
 bool AudioAnalyzer::start(int device_index) {
     stop();
 
+    // Auto-pick a sensible default when the GUI hasn't selected anything yet.
+    if (device_index < 0) {
+        device_index = default_input_device();
+        if (device_index < 0) {
+            fprintf(stderr, "[audio] no input device available\n");
+            return false;
+        }
+        fprintf(stderr, "[audio] auto-selected default input device #%d\n", device_index);
+    }
+
     const PaDeviceInfo* dev = Pa_GetDeviceInfo(device_index);
-    if (!dev) return false;
+    if (!dev) {
+        fprintf(stderr, "[audio] invalid device index %d\n", device_index);
+        return false;
+    }
+    const PaHostApiInfo* ha = Pa_GetHostApiInfo(dev->hostApi);
+    fprintf(stderr, "[audio] starting device #%d \"%s\" via %s "
+                    "(defaultSR=%.0f maxIn=%d)\n",
+            device_index, dev->name ? dev->name : "?",
+            ha ? ha->name : "?", dev->defaultSampleRate, dev->maxInputChannels);
 
-    PaStreamParameters params{};
-    params.device                    = device_index;
-    params.channelCount              = 1;
-    params.sampleFormat              = paFloat32;
-    params.suggestedLatency          = dev->defaultLowInputLatency;
-    params.hostApiSpecificStreamInfo = nullptr;
+    // Try mono first; if the device refuses, fall back to the device's native
+    // channel count (we mix to mono in the callback).
+    int channels = 1;
+    if (dev->maxInputChannels < 1) {
+        fprintf(stderr, "[audio] device has no input channels\n");
+        return false;
+    }
+    if (dev->maxInputChannels > 1) channels = std::min(dev->maxInputChannels, 2);
 
-    PaError err = Pa_OpenStream(
-        &stream_,
-        &params,
-        nullptr,
-        kSampleRate,
-        kChunkSize,
-        paClipOff,
-        &AudioAnalyzer::pa_callback,
-        this
-    );
-    if (err != paNoError) return false;
+    // Use the device's native sample rate when available. WASAPI shared mode
+    // almost always runs at 48 kHz on modern Windows and will reject a 44.1
+    // kHz request outright.
+    double requested_sr = (dev->defaultSampleRate >= 16000.0 &&
+                           dev->defaultSampleRate <= 96000.0)
+                        ? dev->defaultSampleRate : (double)kSampleRateDefault;
 
-    // Reset state
+    // Try pairs of (channel_count, latency) until one works.
+    struct Attempt { int ch; double lat; };
+    const Attempt attempts[] = {
+        {channels,      dev->defaultLowInputLatency},
+        {channels,      dev->defaultHighInputLatency},
+        {1,             dev->defaultLowInputLatency},
+        {1,             dev->defaultHighInputLatency},
+        {std::min(dev->maxInputChannels, 2), dev->defaultHighInputLatency},
+    };
+
+    PaError last_err = paNoError;
+    bool opened = false;
+    for (const auto& a : attempts) {
+        PaStreamParameters params{};
+        params.device                    = device_index;
+        params.channelCount              = a.ch;
+        params.sampleFormat              = paFloat32;
+        params.suggestedLatency          = a.lat > 0 ? a.lat : 0.05;
+        params.hostApiSpecificStreamInfo = nullptr;
+
+        PaError err = Pa_IsFormatSupported(&params, nullptr, requested_sr);
+        if (err != paFormatIsSupported) {
+            last_err = err;
+            continue;
+        }
+        err = Pa_OpenStream(&stream_, &params, nullptr,
+                            requested_sr, kChunkSize, paClipOff,
+                            &AudioAnalyzer::pa_callback, this);
+        if (err != paNoError) { last_err = err; continue; }
+
+        channel_count_ = a.ch;
+        sample_rate_   = (int)requested_sr;
+        opened = true;
+        fprintf(stderr, "[audio] opened: ch=%d sr=%d latency=%.3fs\n",
+                a.ch, sample_rate_, a.lat);
+        break;
+    }
+    if (!opened) {
+        fprintf(stderr, "[audio] Pa_OpenStream failed (all attempts): %s\n",
+                Pa_GetErrorText(last_err));
+        stream_ = nullptr;
+        return false;
+    }
+
+    // Reset analyzer state.
     rms_smooth_        = 0.f;
     rms_mean_          = 0.f;
     flat_mean_         = 0.f;
@@ -175,9 +253,15 @@ bool AudioAnalyzer::start(int device_index) {
     rms_hist_count_    = 0;
     std::fill(std::begin(rms_history_), std::end(rms_history_), 0.f);
 
-    err = Pa_StartStream(stream_);
-    if (err != paNoError) { Pa_CloseStream(stream_); stream_ = nullptr; return false; }
+    PaError err = Pa_StartStream(stream_);
+    if (err != paNoError) {
+        fprintf(stderr, "[audio] Pa_StartStream failed: %s\n", Pa_GetErrorText(err));
+        Pa_CloseStream(stream_);
+        stream_ = nullptr;
+        return false;
+    }
     running_.store(true);
+    fprintf(stderr, "[audio] stream running\n");
     return true;
 }
 
@@ -196,7 +280,25 @@ int AudioAnalyzer::pa_callback(const void* input, void* /*output*/,
                                PaStreamCallbackFlags,
                                void* user_data) {
     auto* self = static_cast<AudioAnalyzer*>(user_data);
-    self->process_chunk(static_cast<const float*>(input), frames);
+    if (!input) return paContinue;   // some WASAPI edge cases pass null briefly
+    const float* src = static_cast<const float*>(input);
+
+    // If the stream is multi-channel, downmix to mono into a per-call scratch
+    // buffer. Frame count is bounded by kChunkSize (PortAudio honors our
+    // framesPerBuffer request) so a small stack buffer is fine.
+    if (self->channel_count_ <= 1) {
+        self->process_chunk(src, frames);
+    } else {
+        float mono[kChunkSize];
+        unsigned long n = std::min<unsigned long>(frames, kChunkSize);
+        int ch = self->channel_count_;
+        for (unsigned long i = 0; i < n; ++i) {
+            float sum = 0.f;
+            for (int c = 0; c < ch; ++c) sum += src[i * ch + c];
+            mono[i] = sum / (float)ch;
+        }
+        self->process_chunk(mono, n);
+    }
     return paContinue;
 }
 
@@ -221,7 +323,7 @@ static float linear_slope(const float* y, int n) {
 
 void AudioAnalyzer::process_chunk(const float* samples, unsigned long n) {
     if (n == 0) return;
-    const float chunk_ms = (float)n / kSampleRate * 1000.f;
+    const float chunk_ms = (float)n / (float)sample_rate_ * 1000.f;
     elapsed_ms_ += chunk_ms;
 
     // ── RMS ──────────────────────────────────────────────────────────────────
@@ -253,7 +355,7 @@ void AudioAnalyzer::process_chunk(const float* samples, unsigned long n) {
     fftwf_execute(fft_plan_);
 
     // Bin resolution: sr / N Hz/bin
-    float bin_hz = (float)kSampleRate / kChunkSize;
+    float bin_hz = (float)sample_rate_ / kChunkSize;
     int bass_lo  = (int)(20.f  / bin_hz), bass_hi  = (int)(300.f  / bin_hz);
     int mid_lo   = (int)(300.f / bin_hz), mid_hi   = (int)(3000.f / bin_hz);
     int treb_lo  = (int)(3000.f/ bin_hz), treb_hi  = (int)(16000.f/ bin_hz);

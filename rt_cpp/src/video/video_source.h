@@ -65,6 +65,7 @@ private:
     int              video_stream_idx_ = -1;
     int64_t          duration_ts_      = 0;
     int              src_w_ = 0, src_h_ = 0;   // native video dimensions
+    int              dec_w_ = 0, dec_h_ = 0;   // capped decode dimensions
 
     // GL texture pool — dimensions tracked per-slot because decode runs at
     // native resolution (which can vary if we ever cache mixed-size frames).

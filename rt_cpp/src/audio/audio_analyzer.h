@@ -7,7 +7,7 @@
 #include <atomic>
 
 static constexpr int   kChunkSize   = 256;
-static constexpr int   kSampleRate  = 44100;
+static constexpr int   kSampleRateDefault = 48000;  // request; actual stored per-stream
 static constexpr int   kCalibChunks = 256;   // ~1.5s calibration
 static constexpr int   kTrendWindow = 10;
 static constexpr float kBeatCooldownMs = 80.f;
@@ -29,6 +29,10 @@ public:
     bool   start(int device_index);
     void   stop();
     bool   is_running() const { return running_.load(); }
+
+    // Default WASAPI (or platform-appropriate) input device index, or -1.
+    int    default_input_device();
+    int    sample_rate() const { return sample_rate_; }
 
     // Read latest stats (lock-free, safe from render thread)
     AudioStats get_stats() const { return atomic_stats_.read(); }
@@ -77,6 +81,10 @@ private:
     float   rms_history_[kTrendWindow] = {};
     int     rms_hist_idx_              = 0;
     int     rms_hist_count_            = 0;
+
+    // Actual sample rate granted by PortAudio (may differ from requested).
+    int     sample_rate_   = kSampleRateDefault;
+    int     channel_count_ = 1;
 
     // Calibration buffer
     float   cal_buf_[kCalibChunks] = {};
