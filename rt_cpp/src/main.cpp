@@ -10,6 +10,7 @@
 #include "gui/rt_gui.h"
 #include "gui/output_window.h"
 #include "presets/preset_manager.h"
+#include "core/log.h"
 
 static constexpr int kDefaultW = 1280;
 static constexpr int kDefaultH = 720;
@@ -143,10 +144,14 @@ static void key_callback(GLFWwindow* w, int key, int /*sc*/, int action, int mod
 }
 
 int main() {
-    printf("Disc VPC 01 — Realtime  (C++ edition)\n");
-    printf("Keybindings: Space=start/stop  B=blackout  F=freeze  Tab=gui  F11=fullscreen\n");
-    printf("  1-9,0=presets   Q-P=toggle fx 0..9   [ ]=chaos   , .=cut interval\n");
-    printf("  Shift+O=close output   Esc=close output / exit\n\n");
+    // First thing: redirect stderr/stdout to disc_vpc.log so every diagnostic
+    // (including ones written before any console can be attached) is
+    // recoverable after a crash. Logs go next to the working directory.
+    Log::init();
+    fprintf(stderr, "Disc VPC 01 — Realtime  (C++ edition)\n");
+    fprintf(stderr, "Keybindings: Space=start/stop  B=blackout  F=freeze  Tab=gui  F11=fullscreen\n");
+    fprintf(stderr, "  1-9,0=presets   Q-P=toggle fx 0..9   [ ]=chaos   , .=cut interval\n");
+    fprintf(stderr, "  Shift+O=close output   Esc=close output / exit\n\n");
 
     glfwSetErrorCallback(glfw_error_cb);
     if (!glfwInit()) { fprintf(stderr, "GLFW init failed\n"); return 1; }
@@ -280,5 +285,6 @@ int main() {
     engine.destroy();
     glfwDestroyWindow(window);
     glfwTerminate();
+    Log::shutdown();
     return 0;
 }

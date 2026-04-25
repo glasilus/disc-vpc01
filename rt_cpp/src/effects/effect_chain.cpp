@@ -410,10 +410,10 @@ GLuint EffectChain::apply(
     const int W = main_fbo_.width, H = main_fbo_.height;
     const float fi_base = seg.intensity * chaos;  // base intensity [0..1]
 
-    // Place the input onto the canvas with correct aspect handling. If the
-    // caller didn't give us usable dimensions, fall back to a straight blit
-    // (happens for the first frames of playback before any decode completes).
-    if (src_w > 0 && src_h > 0 && input_tex != 0) {
+    // Place the input onto the canvas with correct aspect handling. If we
+    // don't have usable dimensions yet (no decoded frame this tick) or the
+    // placement shader didn't compile, fall back to a straight blit.
+    if (src_w > 0 && src_h > 0 && input_tex != 0 && prog_place_ != 0) {
         pass(prog_place_, input_tex, [&](GLuint p){
             glUniform2f(glGetUniformLocation(p, "uSrcSize"),    (float)src_w, (float)src_h);
             glUniform2f(glGetUniformLocation(p, "uCanvasSize"), (float)W,     (float)H);

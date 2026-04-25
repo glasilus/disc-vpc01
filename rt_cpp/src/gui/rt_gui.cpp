@@ -315,6 +315,14 @@ void RtGui::draw_transport(EngineSettings& s, float fps) {
                           ? devices_[selected_device_].name.c_str()
                           : "(no device selected — will auto-pick on Start)";
     ImGui::TextDisabled("Device: %s", dev_label);
+
+    // Diagnostic: live audio-callback counter. If running_ but this stays
+    // at 0, the stream is open but the OS isn't delivering samples.
+    if (engine_->audio().is_running()) {
+        ImGui::TextDisabled("Audio cb: %u   sr=%d Hz",
+            engine_->audio().callback_count(),
+            engine_->audio().sample_rate());
+    }
 }
 
 void RtGui::draw_master_panel(EngineSettings& s) {
@@ -382,9 +390,11 @@ void RtGui::draw_video_panel() {
     const auto& paths = engine_->video().paths();
     ImGui::BeginChild("##vlist", {0, 80}, false);
     for (auto& p : paths) {
-        // u8string() returns UTF-8 even on Windows (where .string() gives
-        // ANSI and would render Cyrillic as mojibake inside ImGui).
-        auto u8 = fs::path(p).filename().u8string();
+        // CRITICAL: fs::path(p) on Windows interprets `p` as the system
+        // ANSI code page, so feeding it UTF-8 bytes produces mojibake.
+        // fs::u8path declares the input as UTF-8, then u8string() gives
+        // back the same UTF-8 bytes that ImGui expects.
+        auto u8 = fs::u8path(p).filename().u8string();
         std::string name(u8.begin(), u8.end());
         ImGui::Selectable(name.c_str());
     }

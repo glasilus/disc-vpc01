@@ -33,6 +33,10 @@ public:
     // Default WASAPI (or platform-appropriate) input device index, or -1.
     int    default_input_device();
     int    sample_rate() const { return sample_rate_; }
+    // Number of audio callbacks since stream started — should grow rapidly
+    // while the stream runs. If it stays at 0 the device is open but the
+    // OS isn't delivering samples (typical for misconfigured WASAPI loopback).
+    uint32_t callback_count() const { return callback_count_.load(); }
 
     // Read latest stats (lock-free, safe from render thread)
     AudioStats get_stats() const { return atomic_stats_.read(); }
@@ -85,6 +89,7 @@ private:
     // Actual sample rate granted by PortAudio (may differ from requested).
     int     sample_rate_   = kSampleRateDefault;
     int     channel_count_ = 1;
+    std::atomic<uint32_t> callback_count_{0};
 
     // Calibration buffer
     float   cal_buf_[kCalibChunks] = {};

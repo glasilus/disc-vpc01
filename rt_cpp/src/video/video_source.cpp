@@ -17,6 +17,8 @@ static void log_av_error(const char* where, int err) {
 }
 
 VideoSource::VideoSource(const std::string& path) : path_(path) {
+    fprintf(stderr, "[video] VideoSource ctor: %s\n", path.c_str());
+
     // Create GL textures (must be called from render thread)
     glGenTextures(kTexPoolSize, tex_pool_);
     for (int i = 0; i < kTexPoolSize; ++i) {
@@ -29,9 +31,10 @@ VideoSource::VideoSource(const std::string& path) : path_(path) {
     glBindTexture(GL_TEXTURE_2D, 0);
 
     open_ = open_decoder();
-    if (!open_) return;
+    if (!open_) { fprintf(stderr, "[video] open_decoder failed for %s\n", path.c_str()); return; }
 
     // Start background decode thread
+    fprintf(stderr, "[video] launching decode thread for %s\n", path.c_str());
     decode_thread_ = std::thread(&VideoSource::decode_thread_fn, this);
 }
 
@@ -184,12 +187,31 @@ void VideoSource::pump_uploads() {
     int uploaded = 0;
     while (!ready_queue_.empty() && uploaded < 3) {
         DecodedFrame& f = ready_queue_.front();
+
+        // Defensive: never feed glTexImage2D zero/negative dims or a buffer
+        // that's smaller than the expected w*h*3. A malformed DecodedFrame
+        // here would crash the GL driver on some hardware.
+        if (f.width <= 0 || f.height <= 0 ||
+            f.pixels.size() < (size_t)f.width * f.height * 3) {
+            fprintf(stderr, "[video] skipping bad frame: %dx%d buf=%zu\n",
+                    f.width, f.height, f.pixels.size());
+            ready_queue_.pop_front();
+            continue;
+        }
+
         GLuint tex = tex_pool_[tex_next_];
         glBindTexture(GL_TEXTURE_2D, tex);
+        // RGB rows of arbitrary width may not be 4-byte aligned; tell GL.
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, f.width, f.height, 0,
                      GL_RGB, GL_UNSIGNED_BYTE, f.pixels.data());
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
         tex_w_[tex_next_] = f.width;
         tex_h_[tex_next_] = f.height;
+        if (tex_ready_count_ == 0) {
+            fprintf(stderr, "[video] first GPU upload: %dx%d (path=%s)\n",
+                    f.width, f.height, path_.c_str());
+        }
         tex_next_ = (tex_next_ + 1) % kTexPoolSize;
         if (tex_ready_count_ < kTexPoolSize) tex_ready_count_++;
         ready_queue_.pop_front();

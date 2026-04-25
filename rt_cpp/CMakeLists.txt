@@ -59,6 +59,7 @@ add_custom_target(EmbedShaders ALL DEPENDS ${GENERATED_HEADERS})
 # ── Sources ───────────────────────────────────────────────────────────────────
 set(SOURCES
     src/main.cpp
+    src/core/log.cpp
     src/audio/audio_analyzer.cpp
     src/audio/segment.cpp
     src/video/video_source.cpp

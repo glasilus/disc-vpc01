@@ -62,6 +62,21 @@ AudioAnalyzer::AudioAnalyzer() {
     PaError e = Pa_Initialize();
     if (e != paNoError) {
         fprintf(stderr, "[audio] Pa_Initialize failed: %s\n", Pa_GetErrorText(e));
+    } else {
+        fprintf(stderr, "[audio] Pa_Initialize OK (%s)\n", Pa_GetVersionText());
+        // Dump every device PortAudio sees, including non-input ones, so
+        // diagnostic logs reveal exactly what the user has available.
+        int total = Pa_GetDeviceCount();
+        fprintf(stderr, "[audio] %d devices total:\n", total);
+        for (int i = 0; i < total; ++i) {
+            const PaDeviceInfo* info = Pa_GetDeviceInfo(i);
+            if (!info) continue;
+            const PaHostApiInfo* ha = Pa_GetHostApiInfo(info->hostApi);
+            fprintf(stderr, "  #%-3d [%s] in=%d out=%d sr=%.0f \"%s\"\n",
+                    i, ha ? ha->name : "?",
+                    info->maxInputChannels, info->maxOutputChannels,
+                    info->defaultSampleRate, info->name ? info->name : "?");
+        }
     }
     fft_in_  = fftwf_alloc_real(kChunkSize);
     fft_out_ = fftwf_alloc_complex(kChunkSize / 2 + 1);
@@ -195,14 +210,22 @@ bool AudioAnalyzer::start(int device_index) {
                            dev->defaultSampleRate <= 96000.0)
                         ? dev->defaultSampleRate : (double)kSampleRateDefault;
 
-    // Try pairs of (channel_count, latency) until one works.
-    struct Attempt { int ch; double lat; };
+    // Try pairs of (channel_count, frames_per_buffer, latency) until one
+    // works. Pa_IsFormatSupported is unreliable on WASAPI (returns
+    // \"supported\" for things that fail at OpenStream time and vice versa),
+    // so we just try OpenStream directly. paFramesPerBufferUnspecified
+    // (= 0) lets PortAudio pick a buffer size compatible with the driver,
+    // which some WASAPI drivers REQUIRE — they reject any fixed buffer
+    // size we'd choose ourselves.
+    struct Attempt { int ch; unsigned long fpb; double lat; const char* tag; };
     const Attempt attempts[] = {
-        {channels,      dev->defaultLowInputLatency},
-        {channels,      dev->defaultHighInputLatency},
-        {1,             dev->defaultLowInputLatency},
-        {1,             dev->defaultHighInputLatency},
-        {std::min(dev->maxInputChannels, 2), dev->defaultHighInputLatency},
+        {channels, kChunkSize,                       dev->defaultLowInputLatency,  "ch=N fpb=256 low"},
+        {channels, paFramesPerBufferUnspecified,     dev->defaultLowInputLatency,  "ch=N fpb=auto low"},
+        {channels, paFramesPerBufferUnspecified,     dev->defaultHighInputLatency, "ch=N fpb=auto high"},
+        {1,        paFramesPerBufferUnspecified,     dev->defaultLowInputLatency,  "ch=1 fpb=auto low"},
+        {1,        paFramesPerBufferUnspecified,     dev->defaultHighInputLatency, "ch=1 fpb=auto high"},
+        {std::min(dev->maxInputChannels, 2), paFramesPerBufferUnspecified,
+                                                     dev->defaultHighInputLatency, "ch=max fpb=auto high"},
     };
 
     PaError last_err = paNoError;
@@ -215,25 +238,24 @@ bool AudioAnalyzer::start(int device_index) {
         params.suggestedLatency          = a.lat > 0 ? a.lat : 0.05;
         params.hostApiSpecificStreamInfo = nullptr;
 
-        PaError err = Pa_IsFormatSupported(&params, nullptr, requested_sr);
-        if (err != paFormatIsSupported) {
+        PaError err = Pa_OpenStream(&stream_, &params, nullptr,
+                                    requested_sr, a.fpb, paClipOff,
+                                    &AudioAnalyzer::pa_callback, this);
+        if (err != paNoError) {
+            fprintf(stderr, "[audio] attempt \"%s\" failed: %s\n",
+                    a.tag, Pa_GetErrorText(err));
             last_err = err;
+            stream_  = nullptr;
             continue;
         }
-        err = Pa_OpenStream(&stream_, &params, nullptr,
-                            requested_sr, kChunkSize, paClipOff,
-                            &AudioAnalyzer::pa_callback, this);
-        if (err != paNoError) { last_err = err; continue; }
-
         channel_count_ = a.ch;
         sample_rate_   = (int)requested_sr;
         opened = true;
-        fprintf(stderr, "[audio] opened: ch=%d sr=%d latency=%.3fs\n",
-                a.ch, sample_rate_, a.lat);
+        fprintf(stderr, "[audio] opened with \"%s\" (sr=%d)\n", a.tag, sample_rate_);
         break;
     }
     if (!opened) {
-        fprintf(stderr, "[audio] Pa_OpenStream failed (all attempts): %s\n",
+        fprintf(stderr, "[audio] all Pa_OpenStream attempts failed; last error: %s\n",
                 Pa_GetErrorText(last_err));
         stream_ = nullptr;
         return false;
@@ -252,6 +274,7 @@ bool AudioAnalyzer::start(int device_index) {
     rms_hist_idx_      = 0;
     rms_hist_count_    = 0;
     std::fill(std::begin(rms_history_), std::end(rms_history_), 0.f);
+    callback_count_.store(0);
 
     PaError err = Pa_StartStream(stream_);
     if (err != paNoError) {
@@ -261,7 +284,14 @@ bool AudioAnalyzer::start(int device_index) {
         return false;
     }
     running_.store(true);
-    fprintf(stderr, "[audio] stream running\n");
+    const PaStreamInfo* si = Pa_GetStreamInfo(stream_);
+    if (si) {
+        fprintf(stderr, "[audio] stream running: actual sr=%.0f input_lat=%.3fs\n",
+                si->sampleRate, si->inputLatency);
+        sample_rate_ = (int)si->sampleRate;  // adopt actual rate
+    } else {
+        fprintf(stderr, "[audio] stream running (Pa_GetStreamInfo returned null)\n");
+    }
     return true;
 }
 
@@ -280,6 +310,7 @@ int AudioAnalyzer::pa_callback(const void* input, void* /*output*/,
                                PaStreamCallbackFlags,
                                void* user_data) {
     auto* self = static_cast<AudioAnalyzer*>(user_data);
+    self->callback_count_.fetch_add(1, std::memory_order_relaxed);
     if (!input) return paContinue;   // some WASAPI edge cases pass null briefly
     const float* src = static_cast<const float*>(input);
 
