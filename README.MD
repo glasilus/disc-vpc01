@@ -12,8 +12,8 @@
   - [Table of Contents](#table-of-contents)
   - [1. Overview](#1-overview)
   - [2. Installation](#2-installation)
-    - [From source](#from-source)
-    - [Launch](#launch)
+    - [Offline editor (Python)](#offline-editor-python)
+    - [Real-time R-T (C++)](#real-time-r-t-c)
     - [Pre-built executables](#pre-built-executables)
   - [3. Disc VPC 01 — Offline Editor](#3-disc-vpc-01--offline-editor)
     - [3.1 Interface Layout](#31-interface-layout)
@@ -57,15 +57,18 @@
 
 ## 1. Overview
 
-**Disc VPC 01** is an offline algorithmic video montage tool. It analyzes an audio file, divides it into typed segments, and assembles a new video from a source clip by applying audio-reactive cuts and visual effects. The result is exported as a video file.
+There are two programs in this repository, and they do related jobs:
 
-**Disc VPC 01 R-T** is the real-time counterpart. It listens to a live audio input (microphone, line-in, or system loopback) and drives video playback and effects in real time, frame by frame. Intended for live performance and VJ use.
+- **Disc VPC 01** *(offline editor)* — you give it an audio track and one or more source videos. It listens to the music, decides where the cuts and effects should land, and writes out a finished video file. Hands-off — start it, come back, get a clip.
+- **Disc VPC 01 R-T** *(real-time, "R-T")* — same idea, but live. It listens to whatever audio your machine is hearing right now (a mic, a DJ deck, a music player) and drives video and effects on a screen as it happens. Made for VJ sets and streams.
 
-Both tools share the same audio analysis core and the same effects library.
+You don't need to know any code to use either one. Both share the same internal "ear" — the part that listens to music and decides what counts as a beat, a build-up, or a drop — and the same library of visual effects.
 
 ---
 
 ## 2. Installation
+
+> **Just want to run it?** Skip this whole section and grab a pre-built bundle from the GitHub Releases page (see *Pre-built executables* below). Building from source is only needed if you want to modify the code or there's no release for your platform.
 
 ### Offline editor (Python)
 
@@ -148,6 +151,8 @@ executable on every launch — see §4.13.
 
 ## 3. Disc VPC 01 — Offline Editor
 
+**At a glance:** load a song, load a video (or several), pick a preset, click DRAFT to see a quick low-res preview, tweak, then click RENDER FULL VIDEO. That's the whole loop.
+
 ### 3.1 Interface Layout
 
 The window is divided into three vertical panels:
@@ -172,7 +177,9 @@ Optionally, an **overlay folder** can be loaded via the Overlays tab (see §3.9)
 
 ### 3.3 Audio Analysis Engine
 
-When a render is initiated, the engine performs a full analysis of the audio track using `librosa`:
+Before it cuts anything, the program listens to your song from start to end and writes a kind of map: where the drum hits are, where the beat sits, which parts are loud, which parts are quiet, which parts are noisy or pure. Cuts and effects later hang off that map. You don't have to do anything to trigger this — it runs automatically the first time you press a render button.
+
+Under the hood, this uses `librosa` and runs the following steps:
 
 1. **Onset detection** — identifies transient attacks in the waveform (drum hits, note onsets, etc.)
 2. **Beat tracking** — extracts the beat grid for snap-to-beat alignment
@@ -184,7 +191,7 @@ This analysis runs once per session per audio file. Results are cached in memory
 
 ### 3.4 Cut Logic
 
-The **Cut Logic** section (first accordion group in the EFFECTS tab) controls how the engine selects and sequences video clips.
+The **Cut Logic** section (first accordion group in the EFFECTS tab) controls how the engine selects and sequences video clips — i.e. *when* to cut and *which* frame to cut to.
 
 ---
 
@@ -246,7 +253,9 @@ When enabled, each detected onset is snapped to the nearest beat-grid position i
 
 ### 3.5 Effects — Core
 
-Core effects are the primary visual transformations applied to each video frame. Each effect has an on/off toggle and, where applicable, a **chance** slider that controls the probability of the effect firing on any given eligible frame.
+These are the most-used visual treatments — flashes, stutters, ghost trails, pixel-sort, datamosh, ASCII. Each one has an on/off switch and, where it makes sense, a **chance** slider — that's just "how often should this fire when a suitable moment comes up." `0.0` = never. `1.0` = every time.
+
+You don't have to understand each effect's internals — flip them on, click DRAFT, see what happens. The descriptions below are there for when you want a specific look and need to know which knob to turn.
 
 ---
 
@@ -457,7 +466,7 @@ Removes a background colour from each overlay image before compositing, making t
 
 ### 3.10 Effects — Signal Domain
 
-The **SIGNAL DOMAIN** accordion group applies physically unusual transformations to the frame — processes borrowed from audio engineering, information theory, and signal analysis, applied to pixels where they do not belong.
+The **SIGNAL DOMAIN** group is the experimental shelf — these are stranger, more abstract effects. They take ideas from audio processing, file compression, and even cellular automata, and apply them to pixels in ways those processes weren't really meant for. Results range from subtle to completely image-destroying. If you want to know exactly *why* each one looks the way it does, the descriptions below explain the underlying technique; if you just want a new look, flip them on and try.
 
 All effects in this group are triggered by audio segment type and intensity, same as all other effects. Each has an enable checkbox, a Chance slider, and one or two parameter sliders.
 
@@ -676,13 +685,13 @@ Located in the **Cut Logic** section, under *Silence Treatment*.
 
 ## 4. Disc VPC 01 R-T — Real-Time (C++)
 
-The realtime tool is a native C++ application designed for live VJ performance.
-It listens to a live audio input, picks frames from a pool of loaded video
-sources, and applies a chain of GPU shaders driven by the audio signal — all in
-real time, frame-locked to the display refresh.
+This is the live VJ version. You point it at whatever audio is playing — a microphone in front of the speakers, a "what's playing on this PC" loopback, the line-out of a mixer — and it runs video and effects on a screen, in time with the music, as it happens.
 
-The Python `rt.py` script in the repository root is the original prototype and
-is kept for reference only. The C++ build is the supported R-T surface.
+**Typical setup:** a laptop, a projector or second monitor, a music source (DJ, band, Spotify, anything). You drop a few video clips on the program, click START, and the program does the rest. The "control window" stays on your laptop screen; the "output window" goes fullscreen on the projector.
+
+> **Just want to use it, not understand the internals?** Skip §4.1 and §4.2 and go straight to §4.3 (interface). The build/architecture sections are only for people compiling the program themselves.
+>
+> If you grabbed a release bundle, double-click `DiscVPC01-RT.exe` and you're up.
 
 ### 4.1 Architecture
 
@@ -766,10 +775,6 @@ Most of the window is dedicated to controls. The preview is a small thumbnail
 because the dedicated **Output Window** (§4.7) is the primary surface for
 audience-facing video — opened on whichever monitor the projector is on.
 
-The visual style is Windows-95: 3D-beveled buttons, blue title bars on each
-panel, sunken inset frames on input fields. Pure aesthetic — no functional
-implication.
-
 Press **Tab** to hide the GUI: the canvas fills the control window, with no
 chrome.
 
@@ -799,6 +804,10 @@ shortcut at a glance.
 ---
 
 ### 4.5 Audio
+
+This is where you tell the program *what to listen to*. Pick a mic, a line-in, or a "loopback" device that captures whatever your computer is playing — then start. The first ~1.5 seconds the program quietly listens to the room and decides what counts as silence; after that, every louder sound is a potential trigger.
+
+If meters stay flat after START, see §7 — most of the time it's the device pick.
 
 **Device list**
 
@@ -872,7 +881,7 @@ the audio pipeline.
 
 ### 4.7 Output Window (Second Display)
 
-The control window is for you. The **output window** is for the audience.
+The control window is for you — buttons, sliders, the small preview thumbnail. The **output window** is what the audience sees: just the picture, fullscreen, no controls, on whatever monitor or projector you point it at.
 
 In the *Overlays / Presets / Output* panel:
 
@@ -913,6 +922,8 @@ Switch live with the **M** key.
 
 ### 4.9 Active Video — Clip Slots
 
+Think of the videos you loaded as numbered cards in your hand. By default the program shuffles through all of them. But you can also lock onto one card — say, the third one — and every cut will pull from that one until you let go. That's the "clip slot" idea, and it's how most VJs play live: load some footage before the set, then trigger pieces of it with number keys as the music moves.
+
 The video pool can be in one of two focus states:
 
 - **Pool** *(default)* — every video in the list participates: random cuts
@@ -944,12 +955,11 @@ source.
 
 ### 4.10 Effects
 
-All effects run as GLSL fragment shaders against the canvas FBO in a fixed
-pipeline order. Each effect is a checkbox in the *Effects* panel — when
-enabled, it fires with a per-effect `chance` probability gated by the master
-intensity model.
+24 visual effects, each a checkbox. Tick one on and the program will fire it from time to time when the music gives it an excuse — how often is set by that effect's *chance* slider, and how *strong* it looks is shaped by **Chaos** and **Master Intensity** at the top of the panel.
 
-**Intensity model** *(applied to every shader's `uIntensity` uniform)*:
+You don't have to memorize the table below. The fast way is: pick a preset, then start clicking effects on and off live to taste.
+
+**Intensity model** *(the math behind how strong each effect feels — safe to skip)*:
 
 ```
 seg_boost = sqrt(segment.intensity)                         (0..1)
@@ -1154,10 +1164,9 @@ Effects declare which segment types they respond to. An effect will not fire on 
 
 ## 7. Troubleshooting
 
-The first place to look for any R-T issue is `disc_vpc.log` next to the
-executable — it captures device enumeration, every audio open attempt with
-exact PortAudio errors, video load events, and any unhandled-exception
-address. Most of the items below are diagnosed in seconds with the log open.
+If something isn't working, don't panic — almost every issue has a one-line cause and a one-line fix, and most of them are listed below.
+
+For the live (R-T) program: there's a file called `disc_vpc.log` that's written next to the program every time you start it. It records what audio devices were seen, what happened when you tried to open one, what happened when a video was loaded, and (if the program crashes) where it crashed. Open that file in any text editor — most issues become obvious within a few lines.
 
 **R-T: audio meters flat — no reaction to sound**
 
