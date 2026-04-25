@@ -479,7 +479,17 @@ void RtGui::draw_overlay_panel(EngineSettings& s) {
         std::string folder = open_folder_dialog();
         if (!folder.empty()) engine_->overlays().load_folder(folder);
     }
-    ImGui::SliderFloat("OvIntensity", &s.overlay_intensity, 0.f, 1.f, "%.2f");
+    int n_overlays = (int)engine_->overlays().size();
+    ImGui::Text("Loaded: %d image(s)", n_overlays);
+
+    if (ImGui::SliderFloat("OvIntensity", &s.overlay_intensity, 0.f, 1.f, "%.2f")) {
+        // The overlay composite pass also requires the OVERLAYS effect toggle
+        // to be on. Auto-flip it as the user dials intensity up — without this
+        // the slider silently does nothing, which is the surprise we hit in
+        // earlier sessions.
+        if (s.overlay_intensity > 0.01f)
+            s.fx[(int)FxId::OVERLAYS].enabled = true;
+    }
 
     static const char* ck_modes[] = {"None","Dominant","Secondary","Manual"};
     ImGui::Combo("Chroma Key", &s.ck_mode, ck_modes, 4);

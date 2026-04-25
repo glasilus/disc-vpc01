@@ -1,5 +1,6 @@
 #pragma once
 #include <glad/glad.h>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -25,7 +26,8 @@ public:
 
     void load_folder(const std::string& folder_path);
     void clear();
-    bool empty() const { return entries_.empty(); }
+    bool   empty() const { return entries_.empty(); }
+    size_t size()  const { return entries_.size(); }
 
     // Returns a random overlay entry (or nullptr)
     const OverlayEntry* random_entry() const;
@@ -34,7 +36,7 @@ public:
     ChromaKeyParams&       chroma()       { return chroma_; }
 
 private:
-    bool load_image(const std::string& path);
+    bool load_image(const std::filesystem::path& path);
 
     std::vector<OverlayEntry> entries_;
     ChromaKeyParams           chroma_;

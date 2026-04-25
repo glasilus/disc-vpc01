@@ -22,7 +22,7 @@ vec3 rgb2hsv(vec3 c) {
 
 void main() {
     vec4 base = texture(uBase, vUV);
-    if (uMode == 0 || uOverlayAlpha < 0.01) { FragColor = base; return; }
+    if (uOverlayAlpha < 0.01) { FragColor = base; return; }
 
     // Check if this pixel is within the overlay region
     vec2 rel = (vUV - uOverlayPos) / uOverlaySize;
@@ -32,13 +32,16 @@ void main() {
 
     vec4 ov = texture(uOverlay, rel);
 
-    // Chroma key: compute mask
+    // Mask starts from overlay's own alpha. Chroma key further attenuates it
+    // when uMode != 0; with uMode == 0 we composite the overlay normally.
     float mask = ov.a;
     if (uMode != 0) {
         vec3  key_hsv = rgb2hsv(uKeyColor);
         vec3  ov_hsv  = rgb2hsv(ov.rgb);
         float hue_diff = abs(ov_hsv.x - key_hsv.x);
         hue_diff = min(hue_diff, 1.0 - hue_diff);
+        // Pixels close in hue to the key get masked out (alpha → 0);
+        // far pixels stay (alpha → 1).
         float alpha = smoothstep(uTolerance - uSoftness, uTolerance, hue_diff);
         mask *= alpha;
     }
