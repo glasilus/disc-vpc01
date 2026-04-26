@@ -2,8 +2,8 @@
 import pytest
 import random
 import numpy as np
-from analyzer import Segment, SegmentType
-from effects import (
+from vpc.analyzer import Segment, SegmentType
+from vpc.effects import (
     BaseEffect, _ensure_uint8,
     FlashEffect, GhostTrailsEffect, PixelSortEffect, DatamoshEffect,
     ASCIIEffect, RGBShiftEffect, BlockGlitchEffect, PixelDriftEffect,
@@ -12,8 +12,9 @@ from effects import (
     InterlaceEffect, BadSignalEffect, DitheringEffect, ZoomGlitchEffect,
     FeedbackLoopEffect, PhaseShiftEffect, MosaicPulseEffect,
     EchoCompoundEffect, KaliMirrorEffect, GlitchCascadeEffect,
-    MysterySection, ChromaKeyEffect, OverlayEffect,
+    ChromaKeyEffect, OverlayEffect,
 )
+from vpc.mystery import MysterySection
 
 
 def make_seg(type=SegmentType.IMPACT, intensity=0.8):

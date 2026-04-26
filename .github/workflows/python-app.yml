@@ -62,7 +62,9 @@ jobs:
             --collect-all scenedetect ^
             --collect-all opensimplex ^
             --hidden-import=scenedetect.detectors ^
-            gui.py
+            --collect-submodules vpc ^
+            --paths . ^
+            vpc/__main__.py
 
       - name: Bootstrap vcpkg
         shell: powershell
@@ -158,7 +160,9 @@ jobs:
             --collect-all scenedetect \
             --collect-all opensimplex \
             --hidden-import=scenedetect.detectors \
-            gui.py
+            --collect-submodules vpc \
+            --paths . \
+            vpc/__main__.py
 
       - name: Bootstrap vcpkg
         run: |
@@ -270,7 +274,9 @@ jobs:
             --collect-all scenedetect \
             --collect-all opensimplex \
             --hidden-import=scenedetect.detectors \
-            gui.py
+            --collect-submodules vpc \
+            --paths . \
+            vpc/__main__.py
 
       - name: Bootstrap vcpkg
         run: |

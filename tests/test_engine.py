@@ -7,7 +7,7 @@ Example (Windows CMD):
 """
 import os
 import pytest
-from engine import BreakcoreEngine, RENDER_DRAFT
+from vpc.render import BreakcoreEngine, RENDER_DRAFT
 
 VIDEO = os.environ.get('TEST_VIDEO')
 AUDIO = os.environ.get('TEST_AUDIO')

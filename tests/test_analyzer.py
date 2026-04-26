@@ -1,7 +1,7 @@
 """Tests for analyzer.py — SegmentClassifier."""
 import pytest
 import numpy as np
-from analyzer import Segment, SegmentType, SegmentClassifier
+from vpc.analyzer import Segment, SegmentType, SegmentClassifier
 
 
 def test_segment_type_values():

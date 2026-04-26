@@ -78,7 +78,7 @@ Python 3.10.x is required. Python 3.11+ may cause dependency errors.
 
 ```bash
 pip install -r requirements.txt
-python gui.py
+python -m vpc
 ```
 
 **Key Python dependencies:**
