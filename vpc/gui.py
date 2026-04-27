@@ -31,7 +31,7 @@ import numpy as np
 from PIL import Image, ImageTk
 
 from vpc.render import BreakcoreEngine
-from vpc.registry import EFFECTS, GROUP_ORDER, default_cfg
+from vpc.registry import EFFECTS, GROUP_ORDER, default_cfg, bi
 from vpc.registry import ACCORDION_HIDDEN_GROUPS
 from vpc.mystery import MYSTERY_KNOBS
 from vpc.effects.formula import compile_formula
@@ -583,45 +583,61 @@ class MainGUI(tk.Tk):
         return body
 
     def _build_cut_logic(self, body):
-        self._row_with_help(body, 'Smart Scene Detection',
-                            'Detects scene changes in the source video and prefers to start '
-                            'segments at those cuts. Off = uniform random sampling.')
+        self._row_with_help(body, 'Smart Scene Detection', bi(
+            'Detects scene changes in the source video and prefers to start segments at those '
+            'cuts. Off = uniform random sampling.',
+            'Находит смены сцен в исходном видео и предпочитает стартовать сегменты с этих '
+            'точек. Выкл — равномерная случайная выборка.'))
         ttk.Checkbutton(body, text='Detect scene cuts',
                         variable=self.vars['use_scene_detect'],
                         style='W95.TCheckbutton').pack(anchor='w', padx=24, pady=(0, 4))
 
         sliders = [
-            ('Global Chaos Level', 'chaos_level', 0.0, 1.0,
-             'Master dial. Scales every effect chance by 0.3 + 0.7·CHAOS, plus stutter/flash probability. '
-             '0 = polite, 1 = unhinged.'),
-            ('Beat Threshold', 'threshold', 0.5, 2.0,
-             'How loud (×rms_mean) a segment must be to count as “loud”. Lower = more impacts trigger; '
-             'higher = only the punchiest beats.'),
-            ('Transient Sensitivity', 'transient_thresh', 0.1, 1.5,
-             'How sharp an attack must be to count as IMPACT. Lower = more frequent flashes.'),
-            ('Min Cut Duration (sec)', 'min_cut_duration', 0.0, 0.3,
-             'Drops segments shorter than this. Higher = calmer pacing.'),
-            ('Scene Buffer Size', 'scene_buffer_size', 2, 30,
-             'How many detected scene cuts to keep around as candidates.'),
+            ('Global Chaos Level', 'chaos_level', 0.0, 1.0, bi(
+                'Master dial. Scales every effect chance by 0.3 + 0.7·CHAOS plus stutter/flash '
+                'probability. 0 = polite, 1 = unhinged.',
+                'Главная ручка. Масштабирует шанс каждого эффекта по 0.3 + 0.7·CHAOS и '
+                'вероятность stutter/flash. 0 — спокойно, 1 — без тормозов.')),
+            ('Beat Threshold', 'threshold', 0.5, 2.0, bi(
+                'How loud (×rms_mean) a segment must be to count as "loud". Lower = more '
+                'impacts trigger; higher = only the punchiest beats.',
+                'Насколько громким (×rms_mean) должен быть сегмент, чтобы считаться громким. '
+                'Ниже — больше импактов; выше — только самые сильные удары.')),
+            ('Transient Sensitivity', 'transient_thresh', 0.1, 1.5, bi(
+                'How sharp an attack must be to count as IMPACT. Lower = more frequent flashes.',
+                'Насколько резкой должна быть атака, чтобы попасть в IMPACT. Ниже — чаще '
+                'срабатывают вспышки.')),
+            ('Min Cut Duration (sec)', 'min_cut_duration', 0.0, 0.3, bi(
+                'Drops segments shorter than this. Higher = calmer pacing.',
+                'Отбрасывает сегменты короче этого значения. Больше — спокойнее темп.')),
+            ('Scene Buffer Size', 'scene_buffer_size', 2, 30, bi(
+                'How many detected scene cuts to keep around as candidates.',
+                'Сколько найденных точек смены сцен держать в пуле кандидатов.')),
         ]
         for lbl, key, lo, hi, tt in sliders:
             self._row_with_help(body, lbl, tt)
             self._slider(body, key, lo, hi)
 
-        self._row_with_help(body, 'Snap Cuts to Beat Grid',
-                            'After onset detection, pull each onset to the nearest beat within tolerance. '
-                            'Improves rhythmic precision; required for tight drillcore sync.')
+        self._row_with_help(body, 'Snap Cuts to Beat Grid', bi(
+            'After onset detection, pull each onset to the nearest beat within tolerance. '
+            'Improves rhythmic precision; required for tight drillcore sync.',
+            'После детекции онсетов притягивает каждый онсет к ближайшему биту в пределах '
+            'tolerance. Улучшает ритмическую точность; обязательно для плотного drillcore.'))
         ttk.Checkbutton(body, text='Snap onsets to beat grid',
                         variable=self.vars['snap_to_beat'],
                         style='W95.TCheckbutton').pack(anchor='w', padx=24, pady=(0, 2))
-        self._row_with_help(body, 'Beat Snap Tolerance (sec)',
-                            'Maximum onset→beat distance for snapping. Larger = more onsets pulled to grid '
-                            'but at the cost of micro-rhythm.')
+        self._row_with_help(body, 'Beat Snap Tolerance (sec)', bi(
+            'Maximum onset→beat distance for snapping. Larger = more onsets pulled to grid but '
+            'at the cost of micro-rhythm.',
+            'Максимальное расстояние онсет→бит для снэпа. Больше — больше онсетов прилипает к '
+            'сетке, но теряется микро-ритмика.'))
         self._slider(body, 'snap_tolerance', 0.01, 0.15, indent=True)
 
         # Silence
-        self._row_with_help(body, 'Silence Treatment',
-                            'How long (>1s) silent stretches are rendered: dim, soft blur, both, or untouched.')
+        self._row_with_help(body, 'Silence Treatment', bi(
+            'How long (>1s) silent stretches are rendered: dim, soft blur, both, or untouched.',
+            'Как обрабатывать длинные (>1 с) тихие участки: затемнение, размытие, оба варианта '
+            'или без обработки.'))
         sf = tk.Frame(body, bg=C_WHITE)
         sf.pack(fill='x', padx=20, pady=(2, 6))
         for val, lbl in [('dim', 'Dim'), ('blur', 'Blur'), ('both', 'Both'), ('none', 'None')]:
@@ -668,17 +684,18 @@ class MainGUI(tk.Tk):
 
         # Chance slider (if any)
         if spec.chance_key is not None:
-            self._row_with_help(parent, 'Chance',
-                'Probability the effect fires per qualifying frame. Scaled by Global Chaos.\n──\n'
-                'Вероятность срабатывания эффекта на подходящем кадре. Масштабируется ползунком Global Chaos.')
+            self._row_with_help(parent, 'Chance', bi(
+                'Probability the effect fires per qualifying frame. Scaled by Global Chaos.',
+                'Вероятность срабатывания эффекта на подходящем кадре. Масштабируется ползунком '
+                'Global Chaos.'))
             self._slider(parent, spec.chance_key, 0.0, 1.0, indent=True)
 
         # Always-on intensity slider (only meaningful when always-on is checked)
         if spec.supports_always_for_chain():
-            self._row_with_help(parent, 'Always-on intensity',
-                'Fixed intensity used while "always" is ON. Has no effect otherwise.\n──\n'
+            self._row_with_help(parent, 'Always-on intensity', bi(
+                'Fixed intensity used while "always" is ON. Has no effect otherwise.',
                 'Фиксированная интенсивность, когда чекбокс «always» включён. В обычном режиме '
-                'не используется.')
+                'не используется.'))
             self._slider(parent, spec.always_int_key, 0.0, 1.0, indent=True)
 
         # Per-param controls
@@ -716,7 +733,9 @@ class MainGUI(tk.Tk):
         wr.pack(fill='both', expand=True, padx=4, pady=4)
 
         # FPS
-        self._row_with_help(wr, 'Frame Rate', 'Output FPS. Higher = smoother and bigger files.')
+        self._row_with_help(wr, 'Frame Rate', bi(
+            'Output FPS. Higher = smoother and bigger files.',
+            'FPS выходного видео. Выше — плавнее и тяжелее файл.'))
         fr = tk.Frame(wr, bg=C_SILVER); fr.pack(fill='x', padx=20, pady=2)
         tk.Label(fr, text='FPS:', bg=C_SILVER, width=10, anchor='w').pack(side='left')
         self.fps_combo = ttk.Combobox(fr, values=['12', '24', '30', '60'],
@@ -726,10 +745,13 @@ class MainGUI(tk.Tk):
                             lambda e: self.vars['fps'].set(float(self.fps_combo.get())))
 
         # Resolution mode (backlog #2)
-        self._row_with_help(wr, 'Resolution Mode',
-                            'preset = pick from 240p–1080p list. '
-                            'source = output matches the input video pixel-for-pixel. '
-                            'custom = type your own width/height.')
+        self._row_with_help(wr, 'Resolution Mode', bi(
+            'preset = pick from 240p–1080p list. '
+            'source = output matches the input video pixel-for-pixel. '
+            'custom = type your own width/height.',
+            'preset — выбрать из списка 240p–1080p. '
+            'source — выход совпадает с источником пиксель в пиксель. '
+            'custom — задать свои ширину/высоту.'))
         rmf = tk.Frame(wr, bg=C_SILVER); rmf.pack(fill='x', padx=20, pady=2)
         for val, lbl in [('preset', 'Preset'), ('source', 'Match source'), ('custom', 'Custom')]:
             tk.Radiobutton(rmf, text=lbl, variable=self.var_resolution_mode, value=val,
@@ -753,17 +775,24 @@ class MainGUI(tk.Tk):
                     width=8).pack(side='left', padx=2)
 
         # CRF / codec / preset
-        self._row_with_help(wr, 'Quality CRF',
-                            '0 = lossless, 18 = visually lossless, 28 = small files, 51 = artifact art.')
+        self._row_with_help(wr, 'Quality CRF', bi(
+            '0 = lossless, 18 = visually lossless, 28 = small files, 51 = artifact art.',
+            '0 — без потерь, 18 — визуально без потерь, 28 — малый размер, 51 — арт из '
+            'артефактов.'))
         self._slider(wr, 'crf', 0, 51)
 
-        self._row_with_help(wr, 'Codec', 'H.264 = universal. H.265 = smaller files, slower encode, less compatible.')
+        self._row_with_help(wr, 'Codec', bi(
+            'H.264 = universal. H.265 = smaller files, slower encode, less compatible.',
+            'H.264 — универсально. H.265 — меньше файл, медленнее кодирование, хуже '
+            'совместимость.'))
         cf = tk.Frame(wr, bg=C_SILVER); cf.pack(fill='x', padx=20, pady=2)
         self.fmt_combo = ttk.Combobox(cf, values=['H.264 (MP4)', 'H.265 (MP4)'],
                                       style='W95.TCombobox', width=14)
         self.fmt_combo.set('H.264 (MP4)'); self.fmt_combo.pack(side='left', padx=4)
 
-        self._row_with_help(wr, 'ffmpeg Preset', 'ultrafast = quick test, slow = best compression.')
+        self._row_with_help(wr, 'ffmpeg Preset', bi(
+            'ultrafast = quick test, slow = best compression.',
+            'ultrafast — быстрая проверка, slow — лучшее сжатие.'))
         ef = tk.Frame(wr, bg=C_SILVER); ef.pack(fill='x', padx=20, pady=2)
         self.preset_enc_combo = ttk.Combobox(
             ef, values=['ultrafast', 'fast', 'medium', 'slow'],
@@ -819,6 +848,12 @@ class MainGUI(tk.Tk):
             header,
             '  type a NumPy expression returning an HxWx3 uint8 frame.  '
             'available vars: frame  r,g,b  x,y  t  i  a,b,c,d  np  cv2',
+            fg=C_TUI_DIM, font=('Courier New', 8)
+        ).pack(anchor='w')
+        self._tui_label(
+            header,
+            '  введите NumPy-выражение, возвращающее кадр HxWx3 uint8.  '
+            'доступные переменные те же.',
             fg=C_TUI_DIM, font=('Courier New', 8)
         ).pack(anchor='w')
 
@@ -928,15 +963,15 @@ class MainGUI(tk.Tk):
         # ── Reference block ──────────────────────────────────────────
         ref = tk.Frame(parent, bg=C_TUI_BG)
         ref.pack(fill='x', padx=12, pady=(8, 4))
-        self._tui_label(ref, '[ reference ]', fg=C_TUI_AMBER).pack(anchor='w', padx=2)
+        self._tui_label(ref, '[ reference / справка ]', fg=C_TUI_AMBER).pack(anchor='w', padx=2)
         ref_text = (
-            '  vars      :  frame (HxWx3 uint8)   r,g,b (HxW uint8)   x,y (HxW float32)\n'
-            '             :  t (segment time, sec)  i (intensity 0..1)  a,b,c,d (sliders 0..1)\n'
-            '  funcs     :  np  cv2  sin cos tan abs clip sqrt exp log  pi\n'
-            '  output    :  HxWx3 uint8 (auto-broadcast & clip; errors silently keep frame)\n'
-            '  examples  :  255 - frame                            # invert\n'
-            '             :  np.roll(frame, int(20*np.sin(t*5)), 1)# horizontal slide\n'
-            '             :  cv2.GaussianBlur(frame, (15,15), 0)   # use cv2 freely'
+            '  vars / переменные  :  frame (HxWx3 uint8)   r,g,b (HxW uint8)   x,y (HxW float32)\n'
+            '                      :  t (segment time, sec)  i (intensity 0..1)  a,b,c,d (sliders 0..1)\n'
+            '  funcs / функции    :  np  cv2  sin cos tan abs clip sqrt exp log  pi\n'
+            '  output / результат :  HxWx3 uint8 (auto-broadcast & clip; ошибки тихо возвращают кадр)\n'
+            '  examples           :  255 - frame                            # invert / инверт\n'
+            '                      :  np.roll(frame, int(20*np.sin(t*5)), 1)# horizontal slide\n'
+            '                      :  cv2.GaussianBlur(frame, (15,15), 0)   # размытие через cv2'
         )
         tk.Label(ref, text=ref_text, bg=C_TUI_BG, fg=C_TUI_DIM,
                  font=('Courier New', 8), justify='left', anchor='w'
@@ -949,6 +984,12 @@ class MainGUI(tk.Tk):
             footer,
             'note: save / share your formula by saving a Preset — '
             "the expression and a/b/c/d live in the preset's config.",
+            fg=C_TUI_DIM, font=('Courier New', 8, 'italic')
+        ).pack(anchor='w')
+        self._tui_label(
+            footer,
+            'примечание: чтобы сохранить или поделиться формулой — сохраните Preset; '
+            'выражение и значения a/b/c/d живут в конфиге пресета.',
             fg=C_TUI_DIM, font=('Courier New', 8, 'italic')
         ).pack(anchor='w')
 

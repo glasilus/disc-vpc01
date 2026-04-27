@@ -203,8 +203,8 @@ jobs:
             -DVCPKG_MANIFEST_MODE=OFF \
             -G Ninja
           cmake --build rt_cpp/build --config Release
-          cp rt_cpp/build/DiscVPC01-RT dist/DiscVPC01-RT
-          chmod +x dist/DiscVPC01-RT
+          cp -R rt_cpp/build/DiscVPC01-RT.app dist/DiscVPC01-RT.app
+          chmod +x dist/DiscVPC01-RT.app/Contents/MacOS/*
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
@@ -212,8 +212,8 @@ jobs:
           name: Disc-VPC-01-macos
           if-no-files-found: warn
           path: |
-            dist/DiscVPC01
-            dist/DiscVPC01-RT
+            dist/DiscVPC01.app/**
+            dist/DiscVPC01-RT.app/**
             README.MD
             README_RU.MD
             presets/rt_blank.json
@@ -361,8 +361,11 @@ jobs:
         run: |
           cd windows-files && zip -r ../Disc-VPC-01-windows.zip . && cd ..
           if [ -d macos-files ]; then
-            chmod +x macos-files/dist/DiscVPC01 macos-files/dist/DiscVPC01-RT 2>/dev/null || true
-            cd macos-files && zip -r ../Disc-VPC-01-macos.zip . && cd ..
+            chmod +x macos-files/dist/DiscVPC01.app/Contents/MacOS/* 2>/dev/null || true
+            chmod +x macos-files/dist/DiscVPC01-RT.app/Contents/MacOS/* 2>/dev/null || true
+            xattr -dr com.apple.quarantine macos-files/dist/DiscVPC01.app 2>/dev/null || true
+            xattr -dr com.apple.quarantine macos-files/dist/DiscVPC01-RT.app 2>/dev/null || true
+            cd macos-files && zip -ry ../Disc-VPC-01-macos.zip . && cd ..
           fi
           if [ -d linux-files ]; then
             chmod +x linux-files/dist/DiscVPC01 linux-files/dist/DiscVPC01-RT 2>/dev/null || true

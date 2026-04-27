@@ -3,7 +3,10 @@
 Runs the Tk GUI. The same module powers `python -m vpc.gui` directly via
 the `if __name__ == '__main__'` block in `vpc/gui.py`.
 """
-from .gui import MainGUI
+try:
+    from .gui import MainGUI
+except ImportError:
+    from vpc.gui import MainGUI
 
 
 def main() -> None:

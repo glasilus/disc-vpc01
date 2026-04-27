@@ -75,7 +75,18 @@ set(SOURCES
     src/presets/preset_manager.cpp
 )
 
-add_executable(DiscVPC01-RT WIN32 ${SOURCES} ${GENERATED_HEADERS})
+add_executable(DiscVPC01-RT WIN32 MACOSX_BUNDLE ${SOURCES} ${GENERATED_HEADERS})
+
+if(APPLE)
+    set_target_properties(DiscVPC01-RT PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_BUNDLE_NAME "DiscVPC01-RT"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "org.discvpc.rt"
+        MACOSX_BUNDLE_BUNDLE_VERSION "1.0"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
+        MACOSX_BUNDLE_INFO_STRING "Disc VPC 01 RT"
+    )
+endif()
 add_dependencies(DiscVPC01-RT EmbedShaders)
 
 target_include_directories(DiscVPC01-RT PRIVATE
