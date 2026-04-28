@@ -20,6 +20,7 @@
     - [3.2 Loading Source Files](#32-loading-source-files)
     - [3.3 Audio Analysis Engine](#33-audio-analysis-engine)
     - [3.4 Cut Logic](#34-cut-logic)
+    - [3.4a Anatomy of an Effect Block](#34a-anatomy-of-an-effect-block)
     - [3.5 Effects — Core](#35-effects--core)
     - [3.6 Effects — Glitch](#36-effects--glitch)
     - [3.7 Effects — Complex](#37-effects--complex)
@@ -27,6 +28,9 @@
     - [3.9 Effects — Overlays and Chroma Key](#39-effects--overlays-and-chroma-key)
     - [Chroma Key (Green Screen)](#chroma-key-green-screen)
     - [3.10 Effects — Signal Domain](#310-effects--signal-domain)
+    - [3.10b Hide Color-Altering Effects](#310b-hide-color-altering-effects)
+    - [3.10c Effects — Warp](#310c-effects--warp)
+    - [3.10d FORMULA Tab](#310d-formula-tab)
     - [3.11 Export Settings](#311-export-settings)
     - [3.12 Presets](#312-presets)
     - [3.13 Render Modes](#313-render-modes)
@@ -160,8 +164,10 @@ The window is divided into three vertical panels:
 | Panel | Content |
 |---|---|
 | **Left (Sidebar)** | Source file loading, presets, render buttons |
-| **Center** | Effects tabs: EFFECTS / EXPORT / MYSTERY |
+| **Center** | Tabs: EFFECTS / EXPORT / FORMULA / MYSTERY |
 | **Right** | Live preview monitor, progress bar, status log |
+
+The **EFFECTS** tab also has a **Hide color-altering effects** checkbox at the top — see §3.10b.
 
 ### 3.2 Loading Source Files
 
@@ -247,7 +253,41 @@ The number of unique scene timestamps held in memory for random selection during
 
 When enabled, each detected onset is snapped to the nearest beat-grid position if it falls within the **Beat Snap Tolerance** window. This aligns cuts more tightly to the rhythmic pulse of the track.
 
-**Beat Snap Tolerance** *(0.01 – 0.15 sec)* — the maximum distance an onset can be moved to snap to a beat. If the onset is farther than this from the nearest beat, it is left in place.
+**Beat Snap Tolerance** *(0.01 – 0.15 sec)* — the maximum distance an onset can be moved to snap to a beat. If the onset is farther than this from the nearest beat, it is left in place. When snap is on, the detected global BPM appears in the status log next to the segment count (`Audio: 198.4s | Segments: 412 | 142.0 BPM`).
+
+---
+
+### 3.4a Anatomy of an Effect Block
+
+Every effect in the EFFECTS tab follows the same pattern. Once you understand it, all 40+ effects use the same controls.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ ☑ Effect Name  [?]                              ☐ always     │
+│   Chance                              [════●═══════════] 0.45 │
+│   Always-on intensity (only visible when "always" is on)     │
+│                                       [════════●═════] 0.70   │
+│   ─ effect-specific parameters below ─                       │
+│   Param 1                             [══●══════════] 0.30   │
+│   Param 2 (combo)                     [Choice ▾]             │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Enable checkbox** — turns the effect on. When off, the effect is silent regardless of all other controls.
+
+**[?] icon** — hover to read a tooltip explaining what this effect does. Tooltips are in English and Russian (separated by a divider). Almost every label, slider, and checkbox in the program has one — when in doubt, hover.
+
+**Chance** *(0.0 – 1.0)* — probability of the effect firing when a suitable audio segment passes through. `0.0` = never, `1.0` = every eligible segment. Each effect declares a list of segment types it responds to (see §5) — even at chance `1.0` it won't fire on segments outside that list. The displayed value is the user-set chance; internally it's also scaled by **Global Chaos** (the master dial), so identical chance values produce more aggressive output at high chaos.
+
+Effects without a chance slider (Stutter, Feedback Loop) fire on every eligible segment when enabled — they are designed to be omnipresent rather than punctual.
+
+**always** *(checkbox)* — bypasses the segment-type triggers and the chance slider for this one effect. When checked, the effect fires on **every frame** regardless of the audio. Use this when you want a constant base treatment (e.g. permanent scanlines or fisheye) that the audio-reactive effects layer on top of.
+
+This is per-effect: turning `always` on for *Scanlines* does not affect any other effect's audio reactivity.
+
+**Always-on intensity** *(0.0 – 1.0)* — fixed intensity used while `always` is on. The slider is **hidden** when `always` is off (no point in showing controls that have no effect). When `always` is off, the effect uses audio-derived intensity instead.
+
+**Effect-specific parameters** — sliders and combos beneath the standard controls. Their meaning is described in the per-effect sections below.
 
 ---
 
@@ -559,38 +599,187 @@ Constructs a decaying impulse response (a series of diminishing echoes at fixed 
 
 ---
 
+### 3.10b Hide Color-Altering Effects
+
+The **EFFECTS** tab has a top-bar checkbox: **Hide color-altering effects**. When ticked, it does three things at once:
+
+1. Force-disables the listed effects (their checkboxes go off).
+2. Hides their accordion blocks entirely so they can't be re-enabled by accident while the toggle is on.
+3. If `Silence Treatment` was set to `Dim`, switches it to `None` and hides the `Dim` radio button.
+
+When you uncheck it, the previous state of every affected effect — including the `Dim` choice if it was active — is restored from a snapshot taken at the moment you ticked it. So you can flip back and forth without losing your settings.
+
+Effects classified as "color-altering" (the ones the toggle hides):
+
+`Flash Frame`, `RGB Shift`, `Color Bleed / VHS Smear`, `Negative`, `Bitcrush / Posterize`, `Glitch Cascade`, `Temporal RGB Shift`, `FFT Phase Corrupt`, `Waveshaper / Tube Sat`, `Dtype Reinterpret`, `ELA`, `Spatial Reverb`.
+
+Use this when the source video's original colour grading matters (footage from a particular DP, a finished colour-corrected clip, archival material) and you want to layer cuts/glitches on top without the engine pushing the palette around. The default state is **off**.
+
+---
+
+### 3.10c Effects — Warp
+
+The **WARP** group bends pixels through displacement maps. Where Glitch and Degradation effects work locally (per-pixel or per-row), Warp effects move whole regions of the image around — they're closer to optical flow than to corruption. Subtle at low intensity, image-destroying at high.
+
+All four effects in this group support `always`-on for permanent baseline warping.
+
+---
+
+**Deriv Warp (gradient flow)**
+
+*Trigger: IMPACT, NOISE, DROP, SUSTAIN*
+
+Closest CPU analogue to true datamosh. The previous frame's spatial gradient is used as a displacement field for the current frame, so motion in the source seeds smearing in the same direction. With **Feedback Loop** also enabled, the warp accumulates and produces datamosh-grade dragging.
+
+- *Prev Blend* *(0.0 – 0.6)* — how much of the previous frame ghosts through. `0` = pure displacement, `0.6` = heavy persistent smear.
+
+---
+
+**Vortex Warp (spiral)**
+
+*Trigger: BUILD, IMPACT, SUSTAIN, DROP*
+
+Rotates pixels around the canvas centre. Rotation angle is `intensity × gaussian_falloff(radius)`, so the centre swirls more than the edges. At low intensity it's a subtle swirl; at high intensity the entire image collapses into a spiral.
+
+No params — strength is purely audio-driven (or fixed via the always-on intensity slider).
+
+---
+
+**Fractal Warp (organic)**
+
+*Trigger: any segment type*
+
+Builds a multi-octave Simplex noise field and uses it as XY displacement. The field is reseeded on every audio segment, so the distortion shape constantly evolves rather than locking to one pattern. Produces an organic, "melting" warp.
+
+- *Octaves* *(2 – 5)* — number of noise scales summed. `2` = smooth blobs, `5` = jagged fractal.
+
+---
+
+**Self Displace (auto-warp)**
+
+*Trigger: IMPACT, NOISE, DROP, BUILD, SUSTAIN*
+
+A past frame's R channel becomes the X-displacement, its G channel becomes the Y-displacement. The image literally tears itself apart using its own colour values. Combined with `Feedback`, it cascades into datamosh-grade smear that reacts to scene structure rather than random noise.
+
+- *Depth (frames back)* *(1 – 8)* — how far back the displacement source is taken from. Larger = more pronounced lag-induced tearing.
+
+---
+
+### 3.10d FORMULA Tab
+
+The **FORMULA** tab (third tab in the centre panel, BSOD-blue palette) is a free-form NumPy expression effect editor. Type a formula, hit `RENDER FULL VIDEO`, the engine evaluates it on every frame.
+
+This is a single effect — it appears in the effect chain alongside everything else — but its dedicated tab gives it more room than a normal accordion block, with a status line, snippet shortcuts, and four live parameter sliders.
+
+**Enable checkbox + Chance + Blend** — top row.
+- `enable` toggles the effect.
+- `chance` (0–1) — probability per eligible frame. The formula effect listens to every segment type, so chance gates everything.
+- `blend` (0–1) — composites the formula output with the original frame. `0.0` = pure formula, `1.0` = original frame visible only (effect invisible).
+
+**Editor** — multi-line text box. Type any NumPy expression that returns an `H×W×3 uint8` array. The expression is recompiled on every keystroke; the status line below shows `OK compiled clean — formula ready` on success or the syntax error on failure. A failed compile or runtime error silently falls back to the original frame, so a typo never crashes the render — but no effect is applied.
+
+**Live params a / b / c / d** — four sliders (0.0–1.0) you can wire into the expression. Use them when you want to "play" the formula in real time across a render — a single formula can take very different shapes at `(a=0.1, b=0.7)` vs `(a=0.9, b=0.1)`.
+
+**Snippets** — clickable starting points. Clicking replaces the editor contents with the snippet. Available:
+
+| Snippet | What it does |
+|---|---|
+| Identity | `frame` — passthrough; useful base for blends |
+| Invert | `255 - frame` — colour negative |
+| Pulse | brightness pulses in time with `t` |
+| Channel sweep | Red channel rolls right, Blue rolls left, magnitude driven by `a · sin(t·3)` |
+| Posterize | quantize colour depth, depth driven by `a` |
+| Scanlines | every other row darkened by `1-a` |
+| Wave | sinusoidal vertical displacement |
+| Plasma | classic demoscene plasma overlay |
+| Threshold | binary threshold whose level oscillates with `t` |
+| Mirror | left half mirrors right half |
+
+**Available variables in the expression namespace:**
+
+| Name | Type | Meaning |
+|---|---|---|
+| `frame` | `(H, W, 3) uint8` | current input frame |
+| `r`, `g`, `b` | `(H, W) uint8` | per-channel views of `frame` |
+| `x`, `y` | `(H, W) float32` | pixel coordinate grids |
+| `t` | `float` | segment start time in seconds |
+| `i` | `float, 0..1` | current scaled intensity |
+| `a`, `b`, `c`, `d` | `float, 0..1` | live slider values from this tab |
+| `np`, `cv2` | modules | full NumPy and OpenCV available |
+| `sin cos tan abs clip sqrt exp log pi` | aliases | ergonomic shortcuts |
+
+The output is auto-broadcast to the frame shape and clipped to uint8. Returning a single number, a 1D array, an `H×W` array, or an `H×W×3` array all work.
+
+**Reference example formulas:**
+
+```python
+255 - frame                                      # full invert
+np.roll(frame, int(20 * np.sin(t*5)), 1)        # horizontal slide
+cv2.GaussianBlur(frame, (15, 15), 0)             # blur via cv2
+frame * (1 + 0.5 * a * np.sin(t*3))              # pulse driven by `a`
+np.where((y % 2 == 0)[:,:,None], frame, frame//2)  # interlace
+```
+
+Saving formulas: the expression and the four `a/b/c/d` values are part of the cfg, so saving a Preset persists them. To share a formula, save it as a preset and send the user the JSON entry.
+
+---
+
 ### 3.11 Export Settings
 
 Located in the **EXPORT** tab.
 
-**FPS** *(1 – 60, default 24)* — output frame rate. Does not affect the source audio timing; only controls how many video frames are generated per second of output.
+**Frame Rate (FPS)** — `12 / 24 / 30 / 60`, default `24`. Does not affect source audio timing; only controls how many video frames are generated per second of output.
 
-**CRF** *(1 – 51, default 18)* — Constant Rate Factor for H.264/H.265 encoding. Lower values = higher quality and larger file size. A value of `18` is visually near-lossless. `23` is the H.264 default. Values above `30` produce visible compression artefacts.
+**Resolution Mode** — three policies for the output dimensions:
+
+| Mode | Behavior |
+|---|---|
+| **Preset** | Pick from `240p / 360p / 480p / 720p / 1080p`. Default `720p`. |
+| **Match source** | Output dimensions match the first loaded source video pixel-for-pixel. |
+| **Custom** | Type any width/height in the spinboxes (`64 – 7680` × `64 – 4320`). |
+
+In all three modes, dimensions are silently rounded down to the nearest **even** number — `yuv420p` (and ProRes 422) require chroma subsampling on even axes, and odd numbers would crash the ffmpeg pipe. So `1281 × 721 → 1280 × 720`. This includes `Match source` when the source itself has an odd dimension.
+
+**Quality CRF** *(0 – 51, default 18)* — Constant Rate Factor for H.264 / H.265 / VP9 encoding. Lower = higher quality + larger file. `0` is lossless, `18` is visually near-lossless, `23` is the H.264 default, `28` is small-file territory, `51` is artifact art. ProRes ignores CRF (the profile flag controls quality there).
+
+**Codec / Container** — pick a codec/container combination from the dropdown:
+
+| Choice | Container | Video codec | Audio codec | Notes |
+|---|---|---|---|---|
+| **H.264 (MP4)** | `.mp4` | `libx264` | AAC | Universal compatibility. |
+| **H.265 (MP4)** | `.mp4` | `libx265` (`hvc1` tag) | AAC | Smaller files, slower encode, less compatible playback. |
+| **H.264 (MKV)** | `.mkv` | `libx264` | AAC | Matroska — accepts almost any codec, useful when MP4's strict moov layout is a problem. |
+| **H.265 (MKV)** | `.mkv` | `libx265` | AAC | |
+| **H.264 (MOV)** | `.mov` | `libx264` | AAC | QuickTime container. |
+| **ProRes (MOV)** | `.mov` | `prores_ks` (profile 3 = 422 HQ) | PCM 16-bit | Editing-grade master, very large files, perfect for handing off to a DaVinci/Premiere timeline. |
+| **VP9 (WebM)** | `.webm` | `libvpx-vp9` | Opus | Web/streaming-friendly. Slow encode. |
+
+The Save dialog auto-uses the matching extension. If you type a different one, the program logs a warning and respects your choice (useful for unusual codec/container combinations).
+
+**ffmpeg Preset** *(ultrafast / fast / medium / slow)* — encoder speed/efficiency trade-off for x264 / x265. Has no effect on ProRes or VP9 (those have their own internal speed controls).
 
 ---
 
 ### 3.12 Presets
 
-The **Presets** panel (sidebar) provides named parameter sets for common styles.
+The **Presets** panel (sidebar) lists every preset stored in `presets.json` in the program directory.
 
 **Built-in presets:**
 
 | Preset | Character |
 |---|---|
-| **Drillcore (Fast Cut/Stutter)** | High chaos, fast cuts, heavy stutter and block glitch, RGB shift |
-| **Datamosh (P-frame Bleed)** | Scene-detected source, P-frame datamosh, pixel sort, ghost trails, color bleed |
-| **ASCII Rave** | ASCII filter dominant, flash, scanlines, stutter |
-| **Death Grips Mode** | Maximum chaos, minimum cut duration, JPEG crush, bad signal, VHS, negative |
-| **Rhythm Flash (Scene Mix)** | Scene detection, flash on every beat, zoom glitch |
+| **Empty** | All effects off, all sliders at 0, mystery zeroed, silence treatment `none`. The neutral starting point. |
+
+That's the only built-in. The previous "stylistic" presets (Drillcore, Datamosh, ASCII Rave, Death Grips, Rhythm Flash, Vortex Dream) have been removed — they were placeholders, not curated for production use. New curated presets will be added later.
+
+If you upgrade from an older release that wrote those built-ins into your `presets.json`, the program drops them on first launch and keeps any presets you saved yourself. The `Empty` entry is regenerated automatically.
 
 **Working with presets:**
 
-- **Double-click** or select + **Load** — applies all stored parameter values
-- **Save Current** — prompts for a name and saves all current slider/toggle values to `presets.json`
-- **Delete** — removes the selected preset from `presets.json`
-- The active preset name is shown below the list
-
-Custom presets persist between sessions in `presets.json` in the program directory.
+- **Double-click** or select + **Load** — applies the stored parameter values to the entire UI (effects, sliders, mystery, export, formula, silence mode, custom resolution).
+- **Save Current** — prompts for a name and writes the current state to `presets.json` as a non-builtin entry.
+- **Delete** — removes the selected preset (the `Empty` builtin is regenerated if you delete it).
+- Active preset name shows below the list.
 
 ---
 
@@ -614,7 +803,9 @@ Renders the first 5 seconds at full configured resolution and quality. All effec
 
 **RENDER FULL VIDEO**
 
-Renders the complete output video for the entire duration of the audio track. A progress bar and status log show real-time progress. The output file path is shown in the console on completion.
+Renders the complete output video for the entire duration of the audio track. A progress bar and status log show real-time progress.
+
+A native Save dialog opens first; the suggested filename is `disc_XXXX.<ext>` where `XXXX` is a random 4-digit number and `<ext>` matches the codec/container chosen in EXPORT (`.mp4`, `.mkv`, `.mov`, `.webm`). Pick a folder and confirm — the render starts immediately. The final output path is echoed to the status log on completion.
 
 The **STOP** button (right panel) interrupts any active render or preview playback.
 
@@ -672,14 +863,14 @@ The sidebar label shows the filename when one file is loaded, and the count (`3 
 
 Controls how the engine processes frames during **SILENCE** segments longer than 1 second.
 
-Located in the **Cut Logic** section, under *Silence Treatment*.
+Located in the **Cut Logic** section, under *Silence Treatment*. Default: **None**.
 
 | Option | Behavior |
 |---|---|
-| **Dim (darken)** | Multiplies all pixel values by 0.6, reducing brightness. The original behavior. Good for maintaining visual contrast between active and quiet moments. |
-| **Soft Blur** | Applies a Gaussian blur (15×15 kernel). The image stays full brightness but loses sharpness, creating a dreamlike soft-focus look during quiet passages. |
-| **Blur + Dim** | Applies a lighter blur (11×11) combined with a 0.7 brightness multiplier. The strongest treatment — defocused and darkened simultaneously. |
-| **None** | No treatment. Silent segments are rendered identically to active ones. Use when silence is compositionally intentional and should not be visually marked. |
+| **None** *(default)* | No treatment. Silent segments are rendered identically to active ones. Use when silence is compositionally intentional and should not be visually marked. |
+| **Dim** | Multiplies all pixel values by 0.6, reducing brightness. Good for maintaining visual contrast between active and quiet moments. (Hidden when *Hide color-altering effects* is on.) |
+| **Blur** | Applies a Gaussian blur (15×15 kernel). The image stays full brightness but loses sharpness, creating a dreamlike soft-focus look during quiet passages. |
+| **Both** | A lighter blur (11×11) combined with a 0.7 brightness multiplier. The strongest treatment — defocused and darkened simultaneously. |
 
 ---
 
@@ -1228,6 +1419,39 @@ Logic section.
 
 Benign FFmpeg warning from malformed MP3 headers. The audio is still
 decoded correctly. Safely ignored.
+
+**Offline editor: `Invalid NAL unit size`, `partial file`, `moov atom not found` in console**
+
+Expected and harmless when the **Datamosh** effect is enabled. Datamosh
+deliberately produces a broken H.264 stream with no I-frames — that's the
+whole point of the effect — and OpenCV's bundled ffmpeg honestly reports it
+as broken when it reads the file. The program suppresses these warnings
+internally on launch (`OPENCV_FFMPEG_LOGLEVEL=-8`); if you still see them,
+you're on a build older than this fix. Stale `*_dmosh_src.mp4` files left
+behind by an aborted render are also cleaned up before each new render to
+prevent the `moov atom` warning specifically.
+
+**Offline editor: video ends before the song does**
+
+Fixed in the latest build. The render now tracks total target frames
+explicitly (`round(target_duration × fps)`), pays back any rounding
+shortfall by padding the tail with the last produced frame, and drops the
+ffmpeg `-shortest` flag (which used to clip the audio under a too-short
+video stream). If you still see the issue, you're running an older
+checkout — pull and re-run.
+
+**Offline editor: Beat Snap Tolerance slider doesn't move / always reads 0**
+
+Fixed. The slider was being formatted as an integer (rounded `0.05` → `0`),
+which made it look stuck. Pull the latest build and the slider now displays
+the actual float value.
+
+**Offline editor: ffmpeg crash on render with custom resolution**
+
+`yuv420p` (and ProRes 422) require even width and height. The program now
+silently rounds custom dimensions down to the nearest even number, so
+`1281 × 721` becomes `1280 × 720` automatically. If you're on an older
+build and ffmpeg crashes immediately, type even values directly.
 
 **Offline editor: `madmom` install fails on Python 3.11+**
 

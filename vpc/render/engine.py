@@ -18,7 +18,17 @@ import numpy as np
 from vpc.analyzer import AudioAnalyzer, Segment, SegmentType
 from .config import RenderConfig, RENDER_DRAFT, RENDER_FINAL
 from .source import VideoPool
-from .sink import FFmpegSink, ffmpeg_bin
+from .sink import FFmpegSink, EXPORT_FORMATS, ffmpeg_bin
+
+# Datamosh deliberately produces a broken H.264 stream (no I-frames). When
+# OpenCV's bundled ffmpeg decodes it, it spams "Invalid NAL unit size",
+# "Error splitting the input into NAL units", "partial file" warnings. They
+# are expected and harmless — silence them so the log stays readable.
+os.environ.setdefault('OPENCV_FFMPEG_LOGLEVEL', '-8')  # quiet
+try:
+    cv2.setLogLevel(0)  # SILENT
+except Exception:
+    pass
 from ..mystery import MysterySection
 from ..registry import build_chain
 from ..effects.core import FlashEffect
@@ -178,14 +188,15 @@ class BreakcoreEngine:
         flash_fx = FlashEffect(enabled=True, chance=1.0)
 
         # ----- ffmpeg sink -----
-        vcodec = 'libx265' if rc.use_h265 else 'libx264'
-        extra_v = ['-tag:v', 'hvc1'] if rc.use_h265 else []
+        fmt = EXPORT_FORMATS.get(rc.video_codec_label, EXPORT_FORMATS['H.264 (MP4)'])
         sink = FFmpegSink(
             width=out_w, height=out_h, fps=fps,
             audio_path=audio_path, output_path=output_path,
-            vcodec=vcodec, preset=preset, crf=crf,
+            vcodec=fmt['vcodec'], acodec=fmt['acodec'],
+            pix_fmt=fmt['pix_fmt'],
+            preset=preset, crf=crf,
             target_duration=target_duration,
-            extra_v_flags=extra_v,
+            extra_v_flags=fmt.get('extra_v', []),
         )
         self.log('Starting ffmpeg pipe...')
         sink.open()
@@ -196,6 +207,12 @@ class BreakcoreEngine:
         datamosh_total_frames = pool.vid_total_frames
         if is_final and rc.datamosh_enabled:
             dm_path = output_path + '_dmosh_src.mp4'
+            # Stale leftover from a previously aborted render — its missing
+            # moov atom is what produces the "moov atom not found" warning
+            # next time around. Drop it before regenerating.
+            if os.path.exists(dm_path):
+                try: os.remove(dm_path)
+                except OSError: pass
             self.log('Preparing datamosh source (I-frame drop)...')
             if self._prepare_datamosh_source(video_paths[0], dm_path):
                 datamosh_source_path = dm_path
@@ -207,6 +224,15 @@ class BreakcoreEngine:
                 self.log('Datamosh pre-processing failed, falling back to optical flow.')
 
         # ----- main loop -----
+        # Total target frames for the whole render. We track frames_emitted
+        # against this counter — any rounding shortfall is paid back by
+        # padding with the last produced frame after the segment loop ends,
+        # so the encoded video matches audio length exactly. This is the
+        # fix for the "video ends before song" truncation bug.
+        target_total_frames = int(round(target_duration * fps))
+        frames_emitted = 0
+        last_frame_bytes: Optional[bytes] = None
+
         try:
             for seg_idx, seg in enumerate(segments):
                 if self.abort:
@@ -214,7 +240,14 @@ class BreakcoreEngine:
                 seg_dur = min(seg.duration, target_duration - seg.t_start)
                 if seg_dur <= 0:
                     break
-                n_frames = max(1, int(seg_dur * fps))
+                # Per-segment target uses cumulative rounding: compute where
+                # the segment's tail SHOULD land in absolute frame space and
+                # subtract frames already emitted. This eliminates the
+                # accumulated half-frame loss the old `int(seg_dur * fps)`
+                # path produced over hundreds of segments.
+                seg_end_frame = int(round((seg.t_start + seg_dur) * fps))
+                seg_end_frame = min(seg_end_frame, target_total_frames)
+                n_frames = max(1, seg_end_frame - frames_emitted)
 
                 seg_cap, seg_fps, seg_total_frames, seg_duration = pool.random_cap()
                 use_datamosh_src = (
@@ -250,8 +283,12 @@ class BreakcoreEngine:
                     flash_bytes = flash_frame.tobytes()
                     aborted = False
                     for _ in range(flash_frames):
+                        if frames_emitted >= target_total_frames:
+                            break
                         if not sink.write(flash_bytes):
                             aborted = True; break
+                        frames_emitted += 1
+                        last_frame_bytes = flash_bytes
                     if aborted:
                         break
 
@@ -281,15 +318,35 @@ class BreakcoreEngine:
 
                     fb = frame.tobytes()
                     for _ in range(stutter_repeat):
+                        if frames_emitted >= target_total_frames:
+                            break
                         if not sink.write(fb):
                             break
                         frames_written += 1
+                        frames_emitted += 1
+                        last_frame_bytes = fb
                         if frames_written >= n_frames:
                             break
+                if frames_emitted >= target_total_frames:
+                    break
 
                 if self.progress_callback:
                     pct = int((seg_idx / max(1, len(segments))) * 100)
                     self.progress_callback(f'Rendering... {pct}%', pct)
+
+            # ----- pad to target_total_frames -----
+            # Cover any residual gap (last segment dropped by min_segment_dur,
+            # rounding leftovers, or a track that ends in silence with no
+            # final onset). Without this, ffmpeg sees a video stream shorter
+            # than audio and the audio gets truncated at output.
+            if not self.abort and last_frame_bytes is not None:
+                pad_count = target_total_frames - frames_emitted
+                if pad_count > 0:
+                    self.log(f'Padding tail: {pad_count} frame(s) to match audio.')
+                    for _ in range(pad_count):
+                        if not sink.write(last_frame_bytes):
+                            break
+                        frames_emitted += 1
 
         except (BrokenPipeError, OSError):
             self.log('ffmpeg pipe closed early.')

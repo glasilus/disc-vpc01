@@ -59,17 +59,28 @@ class RenderConfig:
 
     # ----- resolution & framerate -----
     def output_size(self, mode: str, source_size: Optional[Tuple[int, int]] = None) -> Tuple[int, int]:
-        """Final (w, h) for the render. Honours draft override."""
+        """Final (w, h) for the render. Honours draft override.
+
+        Width/height are always forced to even numbers — yuv420p (and
+        prores 422) require chroma subsampling on even dimensions, and
+        ffmpeg refuses to start otherwise. Without this, a user typing an
+        odd custom_w/custom_h (or a source video with an odd dimension)
+        would crash the render at the ffmpeg pipe stage.
+        """
+        def _even(w: int, h: int) -> Tuple[int, int]:
+            return max(2, w - (w & 1)), max(2, h - (h & 1))
+
         if mode == RENDER_DRAFT:
             return 480, 270
         rmode = self.raw.get('resolution_mode', 'preset')
         if rmode == 'source' and source_size is not None:
-            return int(source_size[0]), int(source_size[1])
+            return _even(int(source_size[0]), int(source_size[1]))
         if rmode == 'custom':
             w = int(self.raw.get('custom_w', 1280) or 1280)
             h = int(self.raw.get('custom_h', 720) or 720)
-            return max(2, w), max(2, h)
-        return _RES_MAP.get(self.raw.get('resolution', '720p'), (1280, 720))
+            return _even(w, h)
+        w, h = _RES_MAP.get(self.raw.get('resolution', '720p'), (1280, 720))
+        return _even(w, h)
 
     def fps(self, mode: str) -> int:
         if mode == RENDER_DRAFT:
@@ -89,6 +100,15 @@ class RenderConfig:
     @property
     def use_h265(self) -> bool:
         return 'H.265' in self.raw.get('video_codec', 'H.264')
+
+    @property
+    def video_codec_label(self) -> str:
+        """User-facing codec/container label, e.g. 'H.264 (MP4)'.
+
+        Looked up against EXPORT_FORMATS in sink.py to resolve the actual
+        ffmpeg codec/container/pix_fmt triple.
+        """
+        return self.raw.get('video_codec', 'H.264 (MP4)')
 
     # ----- audio analysis params -----
     @property

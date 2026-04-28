@@ -68,81 +68,51 @@ C_TUI_AMBER = '#FFB000'        # amber for headings / values
 C_TUI_RED = '#FF5555'          # error red
 C_TUI_HL = '#0F1F0A'           # subtle highlight row
 
-# ── Built-in presets (sparse overrides on top of defaults) ──
+# ── Built-in presets ─────────────────────────────────────────────────────
+# Only one entry: Empty. All effects off, all sliders at 0, mystery zeroed,
+# silence_mode = none. Anything beyond that is filled in from default_cfg().
+# Custom presets the user makes through the UI live alongside this entry in
+# presets.json (with builtin=False).
+EMPTY_PRESET_NAME = 'Empty'
 PRESETS = {
-    'Blank (No Effects)': {
-        'chaos_level': 0.0, 'threshold': 1.0, 'min_cut_duration': 0.08,
-        'scene_buffer_size': 10, 'use_scene_detect': False,
-        # Blank wipes the True defaults of pixel_sort + rgb_shift
-        'fx_psort': False, 'fx_rgb': False, 'fx_stutter': False, 'fx_flash': False,
-    },
-    'Drillcore (Fast Cut/Stutter)': {
-        'chaos_level': 0.8, 'threshold': 1.0, 'min_cut_duration': 0.05,
-        'scene_buffer_size': 5, 'use_scene_detect': False,
-        'fx_stutter': True,
-        'fx_flash': True, 'fx_flash_chance': 0.5,
-        'fx_rgb': True, 'fx_rgb_chance': 0.7,
-        'fx_block_glitch': True, 'fx_block_glitch_chance': 0.6,
-        'fx_pixel_drift': True, 'fx_pixel_drift_chance': 0.5,
-        'fx_zoom_glitch': True, 'fx_zoom_glitch_chance': 0.7,
-    },
-    'Datamosh (P-frame Bleed)': {
-        'chaos_level': 0.3, 'threshold': 1.4, 'min_cut_duration': 0.12,
-        'scene_buffer_size': 20, 'use_scene_detect': True,
-        'fx_ghost': True, 'fx_ghost_int': 0.6,
-        'fx_datamosh': True, 'fx_datamosh_chance': 0.8,
-        'fx_colorbleed': True, 'fx_colorbleed_chance': 0.7,
-        'fx_freeze_corrupt': True, 'fx_freeze_corrupt_chance': 0.4,
-        'fx_feedback': True,
-        'fx_echo': True, 'fx_echo_chance': 0.5,
-        'fx_spatial_reverb': True, 'fx_spatial_reverb_chance': 0.5, 'fx_spatial_reverb_decay': 0.2,
-        'fx_deriv_warp': True, 'fx_deriv_warp_chance': 0.6, 'fx_deriv_warp_blend': 0.4,
-    },
-    'ASCII Rave': {
-        'chaos_level': 0.5, 'threshold': 1.0, 'min_cut_duration': 0.08,
-        'scene_buffer_size': 10, 'use_scene_detect': False,
-        'fx_ascii': True, 'fx_ascii_chance': 0.9,
-        'fx_ascii_size': 10, 'fx_ascii_blend': 0.3,
-        'fx_rgb': True, 'fx_rgb_chance': 0.5,
-        'fx_scanlines': True, 'fx_scanlines_chance': 0.8,
-        'fx_dither': True, 'fx_dither_chance': 0.5,
-        'fx_kali': True, 'fx_kali_chance': 0.3,
-        'fx_temporal_rgb': True, 'fx_temporal_rgb_lag': 6.0,
-        'mystery_DOT': 0.4,
-    },
-    'Death Grips Mode': {
-        'chaos_level': 0.9, 'threshold': 0.9, 'min_cut_duration': 0.04,
-        'scene_buffer_size': 5, 'use_scene_detect': False,
-        'fx_stutter': True,
-        'fx_flash': True, 'fx_flash_chance': 0.8,
-        'fx_psort': True, 'fx_psort_chance': 0.5, 'fx_psort_int': 0.5,
-        'fx_negative': True, 'fx_negative_chance': 0.3,
-        'fx_jpeg_crush': True, 'fx_jpeg_crush_chance': 0.6,
-        'fx_bad_signal': True, 'fx_bad_signal_chance': 0.5,
-        'fx_vhs': True, 'fx_vhs_chance': 0.4,
-        'fx_cascade': True, 'fx_cascade_chance': 0.5,
-        'fx_self_displace': True, 'fx_self_displace_chance': 0.5,
-    },
-    'Rhythm Flash (Scene Mix)': {
-        'chaos_level': 0.5, 'threshold': 1.1, 'min_cut_duration': 0.08,
-        'scene_buffer_size': 15, 'use_scene_detect': True,
-        'fx_flash': True, 'fx_flash_chance': 1.0,
-        'fx_bitcrush': True, 'fx_bitcrush_chance': 0.4,
-        'fx_fisheye': True, 'fx_fisheye_chance': 0.3,
-        'fx_interlace': True, 'fx_interlace_chance': 0.5,
-        'fx_phase_shift': True, 'fx_phase_shift_chance': 0.5,
-        'fx_overlay': True, 'fx_overlay_chance': 0.4,
-        'mystery_RESONANCE': 0.3,
-    },
-    'Vortex Dream': {
-        'chaos_level': 0.4, 'threshold': 1.0, 'min_cut_duration': 0.1,
-        'use_scene_detect': True, 'scene_buffer_size': 10,
-        'fx_vortex_warp': True, 'fx_vortex_warp_chance': 0.7,
-        'fx_fractal_warp': True, 'fx_fractal_warp_chance': 0.5,
-        'fx_ghost': True, 'fx_ghost_int': 0.5,
-        'fx_temporal_rgb': True, 'fx_temporal_rgb_lag': 10.0,
-    },
+    EMPTY_PRESET_NAME: {},
 }
+
+
+# ── Effects considered "color-altering" ──────────────────────────────────
+# When the "Hide color effects" checkbox is on, these are force-disabled
+# AND hidden from the EFFECTS accordion. Original states are snapshotted
+# on enable and restored on disable so the user can re-enter the mode
+# without losing their settings.
+#
+# The list is curated by the user — these are effects that directly mess
+# with RGB channels or the source palette in a way that breaks "color
+# fidelity" of the input video.
+COLOR_EFFECT_KEYS = (
+    'fx_flash',          # Flash Frame
+    'fx_rgb',            # RGB Shift
+    'fx_colorbleed',     # Color Bleed / VHS Smear
+    'fx_negative',       # Negative
+    'fx_bitcrush',       # Bitcrush / Posterize
+    'fx_cascade',        # Glitch Cascade
+    'fx_temporal_rgb',   # Temporal RGB Shift
+    'fx_fft_phase',      # FFT Phase Corrupt
+    'fx_waveshaper',     # Waveshaper / Tube Sat
+    'fx_dtype_corrupt',  # Dtype Reinterpret
+    'fx_ela',            # ELA
+    'fx_spatial_reverb', # Spatial Reverb
+)
+
+
+# ── BSOD palette (FORMULA tab) ───────────────────────────────────────────
+# Classic Win9x bluescreen — high-contrast, monospace. Used when the
+# default Win95-silver theme is too soft to read code against.
+C_BSOD_BG = '#0000AA'
+C_BSOD_FG = '#FFFFFF'
+C_BSOD_ACCENT = '#FFFF55'   # bright yellow for headings / values
+C_BSOD_DIM = '#AAAAFF'      # muted blue-white for hints
+C_BSOD_RED = '#FF5555'      # error red
+C_BSOD_HL = '#1A1ABB'       # subtle highlight row
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -275,7 +245,10 @@ class MainGUI(tk.Tk):
         self._defaults_all = dict(defaults)
 
         # Side-channel string vars: silence + resolution mode + formula text
-        self.var_silence_mode = tk.StringVar(value='dim')
+        self.var_silence_mode = tk.StringVar(value='none')
+        # Hide-color-effects checkbox state + snapshot taken when toggled on
+        self.var_hide_color_fx = tk.BooleanVar(value=False)
+        self._color_fx_snapshot: dict = {}
         self.var_resolution_mode = tk.StringVar(value='preset')
         self.var_formula_expr = tk.StringVar(value='frame')
 
@@ -289,10 +262,14 @@ class MainGUI(tk.Tk):
             int_keys = {'fps', 'crf', 'fx_ascii_size', 'scene_buffer_size',
                         'custom_w', 'custom_h'}
             int_suffixes = ('_r', '_g', '_b', '_lag', '_iters', '_factor',
-                            '_frames', '_softness', '_tolerance', '_octaves',
-                            '_depth')
-            is_int = (name in int_keys
-                      or any(name.endswith(s) for s in int_suffixes))
+                            '_frames', '_softness', '_octaves', '_depth')
+            # snap_tolerance is a small float (0.01..0.15) — including
+            # `_tolerance` in int_suffixes was a bug: it forced the slider
+            # display to int(0) and the slider stopped responding.
+            float_overrides = {'snap_tolerance'}
+            is_int = ((name in int_keys
+                       or any(name.endswith(s) for s in int_suffixes))
+                      and name not in float_overrides)
 
             def _make_trace(dv, sv, int_mode):
                 def _cb(*_):
@@ -348,7 +325,7 @@ class MainGUI(tk.Tk):
         content_host.pack(fill='both', expand=True, padx=2, pady=2)
         effects_frame = tk.Frame(content_host, bg=C_SILVER)
         export_frame = tk.Frame(content_host, bg=C_SILVER)
-        formula_frame = tk.Frame(content_host, bg=C_TUI_BG)
+        formula_frame = tk.Frame(content_host, bg=C_BSOD_BG)
         mystery_frame = tk.Frame(content_host, bg=C_SILVER)
         self._center_frames = {
             'EFFECTS': effects_frame,
@@ -475,15 +452,58 @@ class MainGUI(tk.Tk):
             ab.configure(style='ActiveTab.TButton')
 
     # ─── widgets primitives ───
+    @staticmethod
+    def _parent_bg(parent):
+        """Return the parent's bg colour so child rows match seamlessly.
+
+        Effect blocks live inside white accordion bodies, but cut-logic /
+        export panels are silver. Hard-coding bg=C_SILVER inside helpers
+        produced visible silver strips on white — the "broken UI" symptom.
+        Reading from the parent makes every helper self-adapting.
+        """
+        try:
+            return parent.cget('bg') or C_SILVER
+        except tk.TclError:
+            return C_SILVER
+
+    def _bind_scale_click_jump(self, scale: ttk.Scale):
+        """Make a ttk.Scale jump to the click position on Button-1 press.
+
+        Default Tk behaviour is page-step (scroll by `bigstep` toward the
+        click), which feels broken on continuous-value sliders — clicking
+        anywhere on the trough usually pings the value to one of the
+        extremes. We compute the value from the click x and assign it
+        directly; drag continues to work as the click already turned into
+        a drag handle when ButtonPress fires.
+        """
+        def _on_press(ev):
+            try:
+                lo = float(scale.cget('from'))
+                hi = float(scale.cget('to'))
+            except tk.TclError:
+                return
+            w = scale.winfo_width() or 1
+            # Account for the slider thumb's half-width on each side so
+            # clicks at the visible extremes map to lo/hi cleanly.
+            margin = 6
+            x = max(margin, min(w - margin, ev.x))
+            frac = (x - margin) / max(1, w - 2 * margin)
+            new_val = lo + frac * (hi - lo)
+            scale.set(new_val)
+            # Return 'break' so Tk's own page-step handler doesn't run after.
+            return 'break'
+        scale.bind('<Button-1>', _on_press)
+
     def _row_with_help(self, parent, text, tooltip='', mono=False):
         """Label + small [?] help icon to the right; both carry the tooltip."""
-        row = tk.Frame(parent, bg=C_SILVER)
+        bg = self._parent_bg(parent)
+        row = tk.Frame(parent, bg=bg)
         row.pack(fill='x', padx=(8, 8), pady=(2, 0))
         f = ('Courier New', 9, 'bold') if mono else ('MS Sans Serif', 9)
-        lbl = tk.Label(row, text=text, bg=C_SILVER, fg=C_TEXT, font=f, anchor='w')
+        lbl = tk.Label(row, text=text, bg=bg, fg=C_TEXT, font=f, anchor='w')
         lbl.pack(side='left')
         if tooltip:
-            help_lbl = tk.Label(row, text='[?]', bg=C_SILVER, fg='#3060A0',
+            help_lbl = tk.Label(row, text='[?]', bg=bg, fg='#3060A0',
                                 cursor='question_arrow',
                                 font=('MS Sans Serif', 8, 'bold'))
             help_lbl.pack(side='left', padx=(4, 0))
@@ -493,20 +513,24 @@ class MainGUI(tk.Tk):
     def _slider(self, parent, name, lo, hi, indent=False):
         """Standalone slider with header showing live numeric value."""
         pad = 20 if indent else 8
-        f = tk.Frame(parent, bg=C_SILVER)
+        bg = self._parent_bg(parent)
+        f = tk.Frame(parent, bg=bg)
         f.pack(fill='x', padx=(pad, 8), pady=(0, 2))
         if name in self._display_vars:
             tk.Label(f, textvariable=self._display_vars[name],
-                     bg=C_SILVER, fg=C_TEXT,
+                     bg=bg, fg=C_TEXT,
                      font=('MS Sans Serif', 9, 'bold'),
                      width=7, anchor='e').pack(side='right')
-        ttk.Scale(f, from_=lo, to=hi, variable=self.vars[name],
-                  orient=tk.HORIZONTAL, style='W95.Horizontal.TScale').pack(
-            fill='x', side='right', expand=True)
+        sc = ttk.Scale(f, from_=lo, to=hi, variable=self.vars[name],
+                       orient=tk.HORIZONTAL, style='W95.Horizontal.TScale')
+        sc.pack(fill='x', side='right', expand=True)
+        self._bind_scale_click_jump(sc)
+        return f
 
     def _combo(self, parent, name, values, indent=False):
         pad = 20 if indent else 8
-        f = tk.Frame(parent, bg=C_SILVER)
+        bg = self._parent_bg(parent)
+        f = tk.Frame(parent, bg=bg)
         f.pack(fill='x', padx=(pad, 8), pady=(0, 2))
         ttk.Combobox(f, values=values, textvariable=self.vars[name],
                      style='W95.TCombobox', width=14).pack(side='left')
@@ -517,6 +541,28 @@ class MainGUI(tk.Tk):
             w.destroy()
         outer = tk.Frame(parent, bg=C_SILVER)
         outer.pack(fill='both', expand=True)
+
+        # Top toolbar: hide-color-effects switch lives here so it's reachable
+        # without scrolling and clearly separate from per-group accordions.
+        tools = tk.Frame(outer, bg=C_SILVER, bd=1, relief='groove')
+        tools.pack(fill='x', side='top', padx=4, pady=(4, 2))
+        cb = ttk.Checkbutton(
+            tools, text='Hide color-altering effects',
+            variable=self.var_hide_color_fx,
+            style='W95.TCheckbutton',
+            command=self._on_toggle_hide_color_fx)
+        cb.pack(side='left', padx=6, pady=4)
+        Tooltip(cb,
+                'Hides and disables effects that significantly alter the '
+                'source palette / RGB channels (Flash, RGB Shift, Color '
+                'Bleed, Negative, Posterize, Glitch Cascade, Temporal RGB, '
+                'FFT Phase, Tube Sat, Dtype Reinterpret, ELA, Spatial '
+                "Reverb) and forces silence-treatment 'dim' to 'none'. "
+                'Previous settings are restored when unchecked.\n──\n'
+                'Скрывает и выключает эффекты, заметно меняющие палитру / '
+                'RGB-каналы исходника. Состояния сохраняются и '
+                'восстанавливаются при снятии галочки.')
+
         canvas = tk.Canvas(outer, bg=C_SILVER, highlightthickness=0)
         vsb = ttk.Scrollbar(outer, orient='vertical', command=canvas.yview)
         canvas.configure(yscrollcommand=vsb.set)
@@ -524,17 +570,54 @@ class MainGUI(tk.Tk):
         canvas.pack(side='left', fill='both', expand=True)
         cf = tk.Frame(canvas, bg=C_SILVER)
         cf_window = canvas.create_window((0, 0), window=cf, anchor='nw')
-        cf.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
-        canvas.bind('<Configure>', lambda e: canvas.itemconfig(cf_window, width=e.width))
-        canvas.bind_all('<MouseWheel>',
-                        lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), 'units'))
+
+        # Recompute scrollregion AND clamp the current view to it. Without
+        # the clamp, after a group collapses the inner frame shrinks but
+        # canvas.yview can still hold a yview position past the new bottom
+        # — that's the "scroll into empty space below" symptom. Same trick
+        # also prevents scroll into negative territory (above the first
+        # block), which appeared after a group expanded with the view
+        # already at top.
+        def _refresh_scrollregion(_evt=None):
+            bbox = canvas.bbox('all')
+            if bbox is None:
+                return
+            x1, y1, x2, y2 = bbox
+            canvas.configure(scrollregion=(x1, y1, x2, y2))
+            # Clamp current yview into the new range.
+            top, _bot = canvas.yview()
+            content_h = max(1, y2 - y1)
+            canvas_h = canvas.winfo_height() or 1
+            max_top = max(0.0, 1.0 - canvas_h / content_h)
+            if top > max_top:
+                canvas.yview_moveto(max_top)
+            elif top < 0:
+                canvas.yview_moveto(0.0)
+        cf.bind('<Configure>', _refresh_scrollregion)
+        canvas.bind('<Configure>',
+                    lambda e: (canvas.itemconfig(cf_window, width=e.width),
+                               _refresh_scrollregion()))
+        # Stash the refresher so accordion toggles can call it directly
+        # — Tk doesn't always emit <Configure> when child frames pack/unpack.
+        self._effects_refresh_scroll = _refresh_scrollregion
+
+        # Mousewheel scroll only when pointer is over this canvas. Using
+        # bind_all caused the wheel to scroll the canvas even when the user
+        # was over a different panel.
+        def _wheel(e):
+            canvas.yview_scroll(int(-1 * (e.delta / 120)), 'units')
+        canvas.bind('<Enter>', lambda e: canvas.bind_all('<MouseWheel>', _wheel))
+        canvas.bind('<Leave>', lambda e: canvas.unbind_all('<MouseWheel>'))
+
+        # Track per-effect block frames so the color-fx hide toggle can
+        # pack_forget / pack them again without rebuilding the whole tree.
+        self._effect_block_frames: dict = {}
 
         # CUT LOGIC group — manual fields (these are not effects, but cfg knobs)
         body = self._acc_group(cf, 'CUT LOGIC', open=True)
         self._build_cut_logic(body)
 
         # Generated effect groups
-        # Bucket effects by group
         by_group = {}
         for spec in EFFECTS:
             by_group.setdefault(spec.group, []).append(spec)
@@ -547,9 +630,14 @@ class MainGUI(tk.Tk):
             opened = group_name in ('CORE FX',)
             body = self._acc_group(cf, group_name, open=opened)
             for s in specs:
-                self._build_effect_block(body, s)
+                blk = self._build_effect_block(body, s)
+                self._effect_block_frames[s.enable_key] = blk
             if group_name == 'OVERLAYS':
                 self._build_overlay_dir_picker(body)
+
+        # Apply current hide-color-fx state to freshly built blocks.
+        if self.var_hide_color_fx.get():
+            self._apply_hide_color_fx(active=True, take_snapshot=False)
 
     def _acc_group(self, parent, title, open=False):
         g = tk.Frame(parent, bg=C_SILVER, bd=1, relief='solid')
@@ -578,9 +666,93 @@ class MainGUI(tk.Tk):
                 body.pack(fill='x')
                 hdr.configure(bg=C_TITLE_BAR); ar_l.configure(bg=C_TITLE_BAR, fg=C_WHITE); t_l.configure(bg=C_TITLE_BAR, fg=C_WHITE)
                 arrow.set('▼')
+            # Rebound scrollregion: collapsing/expanding the body changes
+            # the inner frame height but Tk doesn't emit <Configure> on the
+            # outer cf reliably for pack_forget calls.
+            refresh = getattr(self, '_effects_refresh_scroll', None)
+            if refresh is not None:
+                self.after_idle(refresh)
         for w in (hdr, ar_l, t_l):
             w.bind('<Button-1>', _toggle)
         return body
+
+    # ─── color-fx hide toggle ───
+    def _on_toggle_hide_color_fx(self):
+        """Checkbox callback. Snapshots states + applies, or restores."""
+        active = self.var_hide_color_fx.get()
+        self._apply_hide_color_fx(active=active, take_snapshot=True)
+
+    def _apply_hide_color_fx(self, *, active: bool, take_snapshot: bool):
+        """Hide+disable all color-altering effects, or restore.
+
+        On enable: snapshot current enable-state of every key in
+        COLOR_EFFECT_KEYS plus silence_mode, then force them off / 'none'
+        and pack_forget the corresponding effect blocks.
+        On disable: restore from the snapshot (if any) and re-pack.
+        """
+        if active:
+            if take_snapshot:
+                snap = {}
+                for key in COLOR_EFFECT_KEYS:
+                    if key in self.vars:
+                        try:
+                            snap[key] = bool(self.vars[key].get())
+                        except Exception:
+                            snap[key] = False
+                snap['__silence_mode__'] = self.var_silence_mode.get()
+                self._color_fx_snapshot = snap
+
+            # Disable + hide
+            for key in COLOR_EFFECT_KEYS:
+                if key in self.vars:
+                    try:
+                        self.vars[key].set(False)
+                    except Exception:
+                        pass
+                blk = self._effect_block_frames.get(key) if hasattr(
+                    self, '_effect_block_frames') else None
+                if blk is not None and blk.winfo_ismapped():
+                    blk.pack_forget()
+            # Force silence_mode 'dim' off (other modes survive)
+            if self.var_silence_mode.get() == 'dim':
+                self.var_silence_mode.set('none')
+            self._sync_silence_radio_visibility()
+        else:
+            # Restore
+            snap = self._color_fx_snapshot or {}
+            for key in COLOR_EFFECT_KEYS:
+                if key in self.vars and key in snap:
+                    try:
+                        self.vars[key].set(snap[key])
+                    except Exception:
+                        pass
+                blk = self._effect_block_frames.get(key) if hasattr(
+                    self, '_effect_block_frames') else None
+                if blk is not None and not blk.winfo_ismapped():
+                    blk.pack(fill='x')
+            prev_silence = snap.get('__silence_mode__')
+            if prev_silence:
+                self.var_silence_mode.set(prev_silence)
+            self._color_fx_snapshot = {}
+            self._sync_silence_radio_visibility()
+
+        refresh = getattr(self, '_effects_refresh_scroll', None)
+        if refresh is not None:
+            self.after_idle(refresh)
+
+    def _sync_silence_radio_visibility(self):
+        """Hide the 'Dim' radio button while color-fx hiding is active."""
+        radios = getattr(self, '_silence_radios', None)
+        if not radios:
+            return
+        hide_dim = self.var_hide_color_fx.get()
+        for val, btn in radios.items():
+            if val == 'dim' and hide_dim:
+                if btn.winfo_ismapped():
+                    btn.pack_forget()
+            else:
+                if not btn.winfo_ismapped():
+                    btn.pack(side='left', padx=4)
 
     def _build_cut_logic(self, body):
         self._row_with_help(body, 'Smart Scene Detection', bi(
@@ -635,20 +807,38 @@ class MainGUI(tk.Tk):
 
         # Silence
         self._row_with_help(body, 'Silence Treatment', bi(
-            'How long (>1s) silent stretches are rendered: dim, soft blur, both, or untouched.',
+            'How long (>1s) silent stretches are rendered: dim, soft blur, both, or untouched. '
+            'Default: none.',
             'Как обрабатывать длинные (>1 с) тихие участки: затемнение, размытие, оба варианта '
-            'или без обработки.'))
-        sf = tk.Frame(body, bg=C_WHITE)
+            'или без обработки. По умолчанию: none.'))
+        sf = tk.Frame(body, bg=self._parent_bg(body))
         sf.pack(fill='x', padx=20, pady=(2, 6))
-        for val, lbl in [('dim', 'Dim'), ('blur', 'Blur'), ('both', 'Both'), ('none', 'None')]:
-            tk.Radiobutton(sf, text=lbl, variable=self.var_silence_mode, value=val,
-                           bg=C_WHITE, fg=C_TEXT, selectcolor=C_WHITE,
-                           font=('MS Sans Serif', 9)).pack(side='left', padx=4)
+        # Order: None first so it visually reads as the default.
+        self._silence_radios = {}
+        for val, lbl in [('none', 'None'), ('dim', 'Dim'),
+                         ('blur', 'Blur'), ('both', 'Both')]:
+            rb = tk.Radiobutton(sf, text=lbl, variable=self.var_silence_mode,
+                                value=val, bg=sf.cget('bg'), fg=C_TEXT,
+                                selectcolor=C_WHITE,
+                                font=('MS Sans Serif', 9))
+            rb.pack(side='left', padx=4)
+            self._silence_radios[val] = rb
+        self._sync_silence_radio_visibility()
 
     def _build_effect_block(self, parent, spec):
-        """Build the GUI block for one EffectSpec."""
+        """Build the GUI block for one EffectSpec.
+
+        Returns the outer frame so callers can pack_forget/pack it (used by
+        the hide-color-effects toggle to make these blocks vanish without a
+        full rebuild).
+        """
+        # Outer container — everything below packs into it. This is the
+        # handle hide-color-fx grabs to make a block disappear cleanly.
+        block = tk.Frame(parent, bg=C_WHITE)
+        block.pack(fill='x')
+
         # Header row: checkbox + label + tooltip
-        hr = tk.Frame(parent, bg=C_WHITE)
+        hr = tk.Frame(block, bg=C_WHITE)
         hr.pack(fill='x', padx=4, pady=(4, 0))
         cb = ttk.Checkbutton(hr, text=spec.label, variable=self.vars[spec.enable_key],
                              style='W95.TCheckbutton')
@@ -661,7 +851,6 @@ class MainGUI(tk.Tk):
             Tooltip(cb, spec.tooltip); Tooltip(help_lbl, spec.tooltip)
 
         # Per-effect "always-on" override (backlog #1).
-        # Disables triggers / chance for this effect only — others stay normal.
         if spec.supports_always_for_chain():
             ao_tooltip = (
                 'When ON, this effect ignores its segment-type triggers and chance slider — '
@@ -678,25 +867,46 @@ class MainGUI(tk.Tk):
             Tooltip(ao_cb, ao_tooltip)
 
         if spec.note:
-            tk.Label(parent, text=spec.note, bg=C_WHITE, fg=C_DARK_GRAY,
+            tk.Label(block, text=spec.note, bg=C_WHITE, fg=C_DARK_GRAY,
                      font=('MS Sans Serif', 7, 'italic')).pack(
                 anchor='w', padx=22, pady=(0, 2))
 
         # Chance slider (if any)
         if spec.chance_key is not None:
-            self._row_with_help(parent, 'Chance', bi(
+            self._row_with_help(block, 'Chance', bi(
                 'Probability the effect fires per qualifying frame. Scaled by Global Chaos.',
                 'Вероятность срабатывания эффекта на подходящем кадре. Масштабируется ползунком '
                 'Global Chaos.'))
-            self._slider(parent, spec.chance_key, 0.0, 1.0, indent=True)
+            self._slider(block, spec.chance_key, 0.0, 1.0, indent=True)
 
-        # Always-on intensity slider (only meaningful when always-on is checked)
+        # Always-on intensity slider — visible ONLY while `always` is checked.
+        # Wrapped in a holder so we can pack_forget / repack it on demand
+        # without rebuilding the block.
         if spec.supports_always_for_chain():
-            self._row_with_help(parent, 'Always-on intensity', bi(
+            ai_holder = tk.Frame(block, bg=C_WHITE)
+            self._row_with_help(ai_holder, 'Always-on intensity', bi(
                 'Fixed intensity used while "always" is ON. Has no effect otherwise.',
                 'Фиксированная интенсивность, когда чекбокс «always» включён. В обычном режиме '
                 'не используется.'))
-            self._slider(parent, spec.always_int_key, 0.0, 1.0, indent=True)
+            self._slider(ai_holder, spec.always_int_key, 0.0, 1.0, indent=True)
+
+            always_var = self.vars[spec.always_key]
+
+            def _sync_always_visibility(*_args, holder=ai_holder, av=always_var):
+                if av.get():
+                    if not holder.winfo_ismapped():
+                        holder.pack(fill='x')
+                else:
+                    if holder.winfo_ismapped():
+                        holder.pack_forget()
+                refresh = getattr(self, '_effects_refresh_scroll', None)
+                if refresh is not None:
+                    self.after_idle(refresh)
+
+            always_var.trace_add('write', _sync_always_visibility)
+            _sync_always_visibility()
+
+        return block
 
         # Per-param controls
         for p in spec.params:
@@ -786,8 +996,13 @@ class MainGUI(tk.Tk):
             'H.264 — универсально. H.265 — меньше файл, медленнее кодирование, хуже '
             'совместимость.'))
         cf = tk.Frame(wr, bg=C_SILVER); cf.pack(fill='x', padx=20, pady=2)
-        self.fmt_combo = ttk.Combobox(cf, values=['H.264 (MP4)', 'H.265 (MP4)'],
-                                      style='W95.TCombobox', width=14)
+        self.fmt_combo = ttk.Combobox(
+            cf,
+            values=['H.264 (MP4)', 'H.265 (MP4)',
+                    'H.264 (MKV)', 'H.265 (MKV)',
+                    'H.264 (MOV)', 'ProRes (MOV)',
+                    'VP9 (WebM)'],
+            style='W95.TCombobox', width=18, state='readonly')
         self.fmt_combo.set('H.264 (MP4)'); self.fmt_combo.pack(side='left', padx=4)
 
         self._row_with_help(wr, 'ffmpeg Preset', bi(
@@ -825,178 +1040,226 @@ class MainGUI(tk.Tk):
          'np.where((x < frame.shape[1]/2)[:,:,None], frame, frame[:,::-1])'),
     ]
 
-    def _tui_label(self, parent, text, *, fg=None, font=None, **kw):
+    def _bsod_label(self, parent, text, *, fg=None, font=None, **kw):
+        bg = parent.cget('bg') if hasattr(parent, 'cget') else C_BSOD_BG
         return tk.Label(parent, text=text,
-                        bg=C_TUI_BG, fg=fg or C_TUI_FG,
-                        font=font or ('Courier New', 9),
+                        bg=bg, fg=fg or C_BSOD_FG,
+                        font=font or ('Consolas', 10),
                         **kw)
 
     def _build_formula_panel(self, parent):
-        """Dedicated 'FORMULA' tab — TUI-styled editor for the user formula effect."""
+        """FORMULA tab — Win9x BSOD palette, scrollable, monospace.
+
+        Layout:
+            ┌─ host (BSOD blue) ────────────────────────┐
+            │ canvas + vsb (scrollable region)         │
+            │   ┌─ inner (everything goes here) ───┐   │
+            │   │ heading                          │   │
+            │   │ controls (enable/chance/blend)   │   │
+            │   │ editor                            │   │
+            │   │ status                            │   │
+            │   │ a/b/c/d sliders (2x2 grid)        │   │
+            │   │ snippets                          │   │
+            │   │ reference                         │   │
+            │   └───────────────────────────────────┘   │
+            └────────────────────────────────────────────┘
+        """
         for w in parent.winfo_children():
             w.destroy()
-        parent.configure(bg=C_TUI_BG)
+        parent.configure(bg=C_BSOD_BG)
 
-        # ── Header ───────────────────────────────────────────────────
-        header = tk.Frame(parent, bg=C_TUI_BG)
-        header.pack(fill='x', padx=10, pady=(10, 4))
-        self._tui_label(
-            header, '┌─ FORMULA  ───  user-defined math expression effect',
-            fg=C_TUI_AMBER, font=('Courier New', 11, 'bold')
+        # Outer canvas + vertical scrollbar — the previous version laid out
+        # raw pack rows on the bare panel and ran off-screen on smaller
+        # windows with no way to scroll. Wrapping in a canvas fixes that.
+        canvas = tk.Canvas(parent, bg=C_BSOD_BG, highlightthickness=0,
+                           bd=0)
+        vsb = ttk.Scrollbar(parent, orient='vertical', command=canvas.yview)
+        canvas.configure(yscrollcommand=vsb.set)
+        vsb.pack(side='right', fill='y')
+        canvas.pack(side='left', fill='both', expand=True)
+
+        inner = tk.Frame(canvas, bg=C_BSOD_BG)
+        inner_id = canvas.create_window((0, 0), window=inner, anchor='nw')
+
+        def _refresh(_e=None):
+            bbox = canvas.bbox('all')
+            if bbox is None:
+                return
+            canvas.configure(scrollregion=bbox)
+        inner.bind('<Configure>', _refresh)
+        canvas.bind('<Configure>',
+                    lambda e: canvas.itemconfig(inner_id, width=e.width))
+
+        def _wheel(e):
+            canvas.yview_scroll(int(-1 * (e.delta / 120)), 'units')
+        canvas.bind('<Enter>', lambda e: canvas.bind_all('<MouseWheel>', _wheel))
+        canvas.bind('<Leave>', lambda e: canvas.unbind_all('<MouseWheel>'))
+
+        MONO = ('Consolas', 10)
+        MONO_B = ('Consolas', 11, 'bold')
+        MONO_S = ('Consolas', 9)
+
+        # ── Heading ───────────────────────────────────────────────
+        head = tk.Frame(inner, bg=C_BSOD_BG)
+        head.pack(fill='x', padx=12, pady=(10, 2))
+        self._bsod_label(
+            head,
+            'A problem has been detected and Windows has been shut down to '
+            'prevent damage to your video.',
+            fg=C_BSOD_FG, font=MONO_B, anchor='w', justify='left',
+            wraplength=900
         ).pack(anchor='w')
-        self._tui_label(
-            header,
-            '  type a NumPy expression returning an HxWx3 uint8 frame.  '
-            'available vars: frame  r,g,b  x,y  t  i  a,b,c,d  np  cv2',
-            fg=C_TUI_DIM, font=('Courier New', 8)
-        ).pack(anchor='w')
-        self._tui_label(
-            header,
-            '  введите NumPy-выражение, возвращающее кадр HxWx3 uint8.  '
-            'доступные переменные те же.',
-            fg=C_TUI_DIM, font=('Courier New', 8)
-        ).pack(anchor='w')
+        self._bsod_label(
+            head,
+            'FORMULA_EFFECT_EDITOR  ::  user-defined NumPy expression',
+            fg=C_BSOD_ACCENT, font=MONO_B
+        ).pack(anchor='w', pady=(6, 0))
+        self._bsod_label(
+            head,
+            'Type a NumPy expression returning an HxWx3 uint8 frame. '
+            'Available: frame, r,g,b, x,y, t, i, a,b,c,d, np, cv2.',
+            fg=C_BSOD_DIM, font=MONO_S, anchor='w', justify='left',
+            wraplength=900
+        ).pack(anchor='w', pady=(2, 0))
 
-        # ── Top row: enable + chance + blend ─────────────────────────
-        ctl = tk.Frame(parent, bg=C_TUI_BG)
-        ctl.pack(fill='x', padx=14, pady=(6, 4))
+        # ── Controls row (enable / chance / blend) ────────────────
+        ctl = tk.Frame(inner, bg=C_BSOD_BG)
+        ctl.pack(fill='x', padx=12, pady=(8, 4))
 
-        en_frame = tk.Frame(ctl, bg=C_TUI_BG)
-        en_frame.pack(side='left')
-        self._tui_label(en_frame, '[ enable ]', fg=C_TUI_AMBER).pack(side='left')
-        cb = tk.Checkbutton(
-            en_frame, variable=self.vars['fx_formula'],
-            bg=C_TUI_BG, fg=C_TUI_FG, selectcolor=C_TUI_BG,
-            activebackground=C_TUI_BG, activeforeground=C_TUI_FG,
-            highlightthickness=0, bd=0)
-        cb.pack(side='left', padx=2)
+        self._bsod_label(ctl, '[ENABLE]', fg=C_BSOD_ACCENT, font=MONO).pack(side='left')
+        tk.Checkbutton(ctl, variable=self.vars['fx_formula'],
+                       bg=C_BSOD_BG, fg=C_BSOD_FG, selectcolor=C_BSOD_BG,
+                       activebackground=C_BSOD_BG, activeforeground=C_BSOD_FG,
+                       highlightthickness=0, bd=0
+                       ).pack(side='left', padx=(2, 14))
 
-        ch_frame = tk.Frame(ctl, bg=C_TUI_BG)
-        ch_frame.pack(side='left', padx=20)
-        self._tui_label(ch_frame, 'chance', fg=C_TUI_AMBER).pack(side='left')
-        self._tui_slider(ch_frame, 'fx_formula_chance', 0.0, 1.0, length=140)
+        for label, key in [('chance', 'fx_formula_chance'),
+                           ('blend',  'fx_formula_blend')]:
+            self._bsod_label(ctl, label, fg=C_BSOD_ACCENT,
+                             font=MONO).pack(side='left', padx=(8, 2))
+            self._bsod_slider(ctl, key, 0.0, 1.0, length=160)
+            if key in self._display_vars:
+                tk.Label(ctl, textvariable=self._display_vars[key],
+                         bg=C_BSOD_BG, fg=C_BSOD_FG, font=MONO_S,
+                         width=5, anchor='w').pack(side='left', padx=(2, 0))
 
-        bl_frame = tk.Frame(ctl, bg=C_TUI_BG)
-        bl_frame.pack(side='left', padx=20)
-        self._tui_label(bl_frame, 'blend', fg=C_TUI_AMBER).pack(side='left')
-        self._tui_slider(bl_frame, 'fx_formula_blend', 0.0, 1.0, length=140)
+        # ── Editor box ────────────────────────────────────────────
+        ed_outer = tk.Frame(inner, bg=C_BSOD_FG, bd=0)
+        ed_outer.pack(fill='x', padx=12, pady=(6, 0))
+        ed_head = tk.Frame(ed_outer, bg=C_BSOD_FG)
+        ed_head.pack(fill='x')
+        tk.Label(ed_head, text=' EDITOR ', bg=C_BSOD_FG, fg=C_BSOD_BG,
+                 font=('Consolas', 9, 'bold')).pack(side='left', padx=4, pady=1)
 
-        # ── Editor box ───────────────────────────────────────────────
-        editor_box = tk.Frame(parent, bg=C_TUI_DIM, bd=1)
-        editor_box.pack(fill='x', padx=12, pady=(8, 0))
-        self._tui_label(editor_box, ' EDITOR ',
-                        fg=C_TUI_BG, font=('Courier New', 8, 'bold')
-                        ).pack(side='top', anchor='w', padx=4)
-        editor_inner = tk.Frame(editor_box, bg=C_TUI_BG)
-        editor_inner.pack(fill='x', padx=2, pady=2)
-
+        ed_inner = tk.Frame(ed_outer, bg=C_BSOD_BG)
+        ed_inner.pack(fill='x', padx=1, pady=1)
         self.formula_text = tk.Text(
-            editor_inner, height=10, font=('Courier New', 11),
-            bg=C_TUI_BG, fg=C_TUI_FG, insertbackground=C_TUI_FG,
-            selectbackground=C_TUI_DIM, selectforeground=C_TUI_BG,
-            bd=0, relief='flat', wrap='none', undo=True)
-        self.formula_text.pack(side='left', fill='both', expand=True, padx=4, pady=4)
-        # Initial content from var
+            ed_inner, height=8, font=('Consolas', 11),
+            bg=C_BSOD_BG, fg=C_BSOD_FG, insertbackground=C_BSOD_FG,
+            selectbackground=C_BSOD_FG, selectforeground=C_BSOD_BG,
+            bd=0, relief='flat', wrap='word', undo=True)
+        self.formula_text.pack(side='left', fill='both', expand=True,
+                               padx=4, pady=4)
         initial = self.vars['fx_formula_expr'].get() or 'frame'
         self.formula_text.insert('1.0', initial)
-        # Sync editor → StringVar on every keystroke + recompile for status
         self.formula_text.bind('<KeyRelease>', self._on_formula_text_changed)
         self.formula_text.bind('<<Modified>>', self._on_formula_text_changed)
 
-        # Status line
+        # ── Status line ──────────────────────────────────────────
         self.formula_status_var = tk.StringVar(value='')
-        status = tk.Frame(parent, bg=C_TUI_BG)
-        status.pack(fill='x', padx=14, pady=(2, 6))
-        self._tui_label(status, '> ', fg=C_TUI_DIM).pack(side='left')
+        status = tk.Frame(inner, bg=C_BSOD_BG)
+        status.pack(fill='x', padx=12, pady=(4, 6))
+        tk.Label(status, text='>>> ', bg=C_BSOD_BG, fg=C_BSOD_ACCENT,
+                 font=MONO_B).pack(side='left')
         self.formula_status_label = tk.Label(
             status, textvariable=self.formula_status_var,
-            bg=C_TUI_BG, fg=C_TUI_FG, font=('Courier New', 9),
-            anchor='w')
+            bg=C_BSOD_BG, fg=C_BSOD_FG, font=MONO, anchor='w', justify='left',
+            wraplength=900)
         self.formula_status_label.pack(side='left', fill='x', expand=True)
         self._update_formula_status()
 
-        # ── Live params a / b / c / d ─────────────────────────────────
-        params_box = tk.Frame(parent, bg=C_TUI_BG)
-        params_box.pack(fill='x', padx=12, pady=(4, 4))
-        self._tui_label(
-            params_box,
-            '[ live params — referenced in formula as a, b, c, d ]',
-            fg=C_TUI_AMBER).pack(anchor='w', padx=2)
-        grid = tk.Frame(params_box, bg=C_TUI_BG)
-        grid.pack(fill='x', pady=2)
-        for col, (letter, key) in enumerate([
-            ('a', 'fx_formula_a'), ('b', 'fx_formula_b'),
-            ('c', 'fx_formula_c'), ('d', 'fx_formula_d'),
-        ]):
-            cell = tk.Frame(grid, bg=C_TUI_BG)
-            cell.grid(row=0, column=col, sticky='ew', padx=8)
-            grid.grid_columnconfigure(col, weight=1)
-            self._tui_label(cell, f' {letter}', fg=C_TUI_AMBER,
-                            font=('Courier New', 11, 'bold')).pack(side='left')
+        # ── Live params a/b/c/d in 2x2 grid ───────────────────────
+        pbox = tk.Frame(inner, bg=C_BSOD_BG)
+        pbox.pack(fill='x', padx=12, pady=(2, 4))
+        self._bsod_label(
+            pbox, '[ LIVE PARAMS — referenced as a, b, c, d ]',
+            fg=C_BSOD_ACCENT, font=MONO).pack(anchor='w', pady=(2, 2))
+        grid = tk.Frame(pbox, bg=C_BSOD_BG)
+        grid.pack(fill='x')
+        for idx, (letter, key) in enumerate([
+                ('a', 'fx_formula_a'), ('b', 'fx_formula_b'),
+                ('c', 'fx_formula_c'), ('d', 'fx_formula_d')]):
+            r, c = divmod(idx, 2)
+            cell = tk.Frame(grid, bg=C_BSOD_BG)
+            cell.grid(row=r, column=c, sticky='ew', padx=8, pady=2)
+            grid.grid_columnconfigure(c, weight=1)
+            self._bsod_label(cell, f' {letter} ', fg=C_BSOD_ACCENT,
+                             font=MONO_B).pack(side='left')
+            self._bsod_slider(cell, key, 0.0, 1.0, length=200)
             if key in self._display_vars:
-                self._tui_label(cell, '', fg=C_TUI_FG).pack_forget()
                 tk.Label(cell, textvariable=self._display_vars[key],
-                         bg=C_TUI_BG, fg=C_TUI_FG,
-                         font=('Courier New', 9), width=5, anchor='e'
-                         ).pack(side='right')
-            self._tui_slider(cell, key, 0.0, 1.0, length=160)
+                         bg=C_BSOD_BG, fg=C_BSOD_FG, font=MONO_S,
+                         width=5, anchor='w').pack(side='left', padx=(4, 0))
 
-        # ── Snippets (click to insert) ───────────────────────────────
-        sn_box = tk.Frame(parent, bg=C_TUI_BG)
-        sn_box.pack(fill='x', padx=12, pady=(8, 4))
-        self._tui_label(sn_box, '[ snippets — click to load into the editor ]',
-                        fg=C_TUI_AMBER).pack(anchor='w', padx=2)
-        sn_grid = tk.Frame(sn_box, bg=C_TUI_BG)
-        sn_grid.pack(fill='x', pady=2)
-        for i, (label, expr) in enumerate(self.FORMULA_SNIPPETS):
-            row, col = divmod(i, 5)
+        # ── Snippets ──────────────────────────────────────────────
+        sn = tk.Frame(inner, bg=C_BSOD_BG)
+        sn.pack(fill='x', padx=12, pady=(8, 4))
+        self._bsod_label(sn, '[ SNIPPETS — click to load ]',
+                         fg=C_BSOD_ACCENT, font=MONO).pack(anchor='w')
+        sg = tk.Frame(sn, bg=C_BSOD_BG)
+        sg.pack(fill='x', pady=2)
+        for i, (lbl, expr) in enumerate(self.FORMULA_SNIPPETS):
+            r, c = divmod(i, 5)
             btn = tk.Button(
-                sn_grid, text=label,
+                sg, text=lbl,
                 command=lambda e=expr: self._formula_load_snippet(e),
-                bg=C_TUI_HL, fg=C_TUI_FG, activebackground=C_TUI_DIM,
-                activeforeground=C_TUI_BG,
-                font=('Courier New', 9), bd=1, relief='solid',
-                highlightthickness=0, cursor='hand2', width=14, pady=2)
-            btn.grid(row=row, column=col, padx=3, pady=3, sticky='ew')
-            sn_grid.grid_columnconfigure(col, weight=1)
+                bg=C_BSOD_HL, fg=C_BSOD_FG,
+                activebackground=C_BSOD_FG, activeforeground=C_BSOD_BG,
+                font=MONO_S, bd=1, relief='solid',
+                highlightthickness=0, cursor='hand2', pady=1)
+            btn.grid(row=r, column=c, padx=3, pady=3, sticky='ew')
+            sg.grid_columnconfigure(c, weight=1)
 
-        # ── Reference block ──────────────────────────────────────────
-        ref = tk.Frame(parent, bg=C_TUI_BG)
+        # ── Reference ─────────────────────────────────────────────
+        ref = tk.Frame(inner, bg=C_BSOD_BG)
         ref.pack(fill='x', padx=12, pady=(8, 4))
-        self._tui_label(ref, '[ reference / справка ]', fg=C_TUI_AMBER).pack(anchor='w', padx=2)
+        self._bsod_label(ref, '[ REFERENCE / СПРАВКА ]',
+                         fg=C_BSOD_ACCENT, font=MONO).pack(anchor='w')
         ref_text = (
-            '  vars / переменные  :  frame (HxWx3 uint8)   r,g,b (HxW uint8)   x,y (HxW float32)\n'
-            '                      :  t (segment time, sec)  i (intensity 0..1)  a,b,c,d (sliders 0..1)\n'
-            '  funcs / функции    :  np  cv2  sin cos tan abs clip sqrt exp log  pi\n'
-            '  output / результат :  HxWx3 uint8 (auto-broadcast & clip; ошибки тихо возвращают кадр)\n'
-            '  examples           :  255 - frame                            # invert / инверт\n'
-            '                      :  np.roll(frame, int(20*np.sin(t*5)), 1)# horizontal slide\n'
-            '                      :  cv2.GaussianBlur(frame, (15,15), 0)   # размытие через cv2'
+            '  vars   :  frame (HxWx3 uint8)   r,g,b (HxW uint8)   x,y (HxW float32)\n'
+            '         :  t (sec)   i (intensity)   a,b,c,d (live sliders 0..1)\n'
+            '  funcs  :  np  cv2  sin cos tan abs clip sqrt exp log  pi\n'
+            '  output :  HxWx3 uint8 — auto-broadcast & clip; errors fall back to source\n'
+            '  ex     :  255 - frame\n'
+            '         :  np.roll(frame, int(20*np.sin(t*5)), 1)\n'
+            '         :  cv2.GaussianBlur(frame, (15,15), 0)'
         )
-        tk.Label(ref, text=ref_text, bg=C_TUI_BG, fg=C_TUI_DIM,
-                 font=('Courier New', 8), justify='left', anchor='w'
-                 ).pack(anchor='w', padx=8, pady=(2, 0))
+        tk.Label(ref, text=ref_text, bg=C_BSOD_BG, fg=C_BSOD_DIM,
+                 font=MONO_S, justify='left', anchor='w'
+                 ).pack(anchor='w', padx=4, pady=(2, 0))
 
-        # ── Footer ───────────────────────────────────────────────────
-        footer = tk.Frame(parent, bg=C_TUI_BG)
-        footer.pack(fill='x', padx=12, pady=(6, 10), side='bottom')
-        self._tui_label(
-            footer,
-            'note: save / share your formula by saving a Preset — '
-            "the expression and a/b/c/d live in the preset's config.",
-            fg=C_TUI_DIM, font=('Courier New', 8, 'italic')
-        ).pack(anchor='w')
-        self._tui_label(
-            footer,
-            'примечание: чтобы сохранить или поделиться формулой — сохраните Preset; '
-            'выражение и значения a/b/c/d живут в конфиге пресета.',
-            fg=C_TUI_DIM, font=('Courier New', 8, 'italic')
+        # ── Footer ────────────────────────────────────────────────
+        ft = tk.Frame(inner, bg=C_BSOD_BG)
+        ft.pack(fill='x', padx=12, pady=(8, 14))
+        self._bsod_label(
+            ft,
+            'Save the formula via Preset — expression + a/b/c/d are stored '
+            'in the preset config. Технический контакт со следующим админом.',
+            fg=C_BSOD_DIM, font=MONO_S, anchor='w', justify='left',
+            wraplength=900
         ).pack(anchor='w')
 
+    def _bsod_slider(self, parent, key, lo, hi, length=160):
+        """ttk.Scale with click-jump bound — for the BSOD formula tab."""
+        sc = ttk.Scale(parent, from_=lo, to=hi, variable=self.vars[key],
+                       orient=tk.HORIZONTAL, length=length)
+        sc.pack(side='left', padx=4)
+        self._bind_scale_click_jump(sc)
+        return sc
+
+    # Back-compat shim — older code paths still referenced _tui_slider.
     def _tui_slider(self, parent, key, lo, hi, length=160):
-        """A ttk.Scale with TUI palette (the global ttk style is reused)."""
-        ttk.Scale(parent, from_=lo, to=hi, variable=self.vars[key],
-                  orient=tk.HORIZONTAL, length=length).pack(side='left', padx=4)
+        return self._bsod_slider(parent, key, lo, hi, length=length)
 
     def _on_formula_text_changed(self, _e=None):
         text = self.formula_text.get('1.0', 'end-1c')
@@ -1015,11 +1278,11 @@ class MainGUI(tk.Tk):
         text = self.vars['fx_formula_expr'].get() or 'frame'
         _code, err = compile_formula(text)
         if err is None:
-            self.formula_status_var.set('OK    compiled clean — formula ready')
-            self.formula_status_label.configure(fg=C_TUI_FG)
+            self.formula_status_var.set('OK  compiled clean — formula ready')
+            self.formula_status_label.configure(fg=C_BSOD_FG)
         else:
             self.formula_status_var.set(err)
-            self.formula_status_label.configure(fg=C_TUI_RED)
+            self.formula_status_label.configure(fg=C_BSOD_RED)
 
     def _formula_load_snippet(self, expr: str):
         self.formula_text.delete('1.0', 'end')
@@ -1120,7 +1383,15 @@ class MainGUI(tk.Tk):
                     self.vars[k].set(v)
                 except Exception:
                     pass
-        self.var_silence_mode.set('dim')
+        # Empty preset = everything off + silence none.
+        if name == EMPTY_PRESET_NAME:
+            for spec in EFFECTS:
+                if spec.enable_key in self.vars:
+                    try:
+                        self.vars[spec.enable_key].set(False)
+                    except Exception:
+                        pass
+        self.var_silence_mode.set('none')
         self.var_resolution_mode.set('preset')
         # Apply overrides
         for key, val in PRESETS.get(name, {}).items():
@@ -1143,19 +1414,46 @@ class MainGUI(tk.Tk):
             except (json.JSONDecodeError, OSError):
                 self.log('presets.json corrupt — regenerating')
                 self._generate_builtin_presets_file()
+                self._refresh_presets_listbox()
+                if self._user_presets:
+                    self._presets_listbox.selection_set(0)
+                    self._load_selected_preset()
+                return
+
+            # Migration: drop the old built-in presets but keep any custom
+            # ones the user saved. If after stripping there is no Empty
+            # preset, regenerate the empty-only file.
+            kept = [p for p in self._user_presets if not p.get('builtin')]
+            had_old_builtins = len(kept) != len(self._user_presets)
+            has_empty = any(p.get('name') == EMPTY_PRESET_NAME for p in kept)
+            if had_old_builtins:
+                self.log('Dropped old built-in presets; user presets kept.')
+            if not has_empty:
+                # Build the canonical Empty entry inline.
+                self.res_combo.set('720p')
+                self.preset_enc_combo.set('medium')
+                self.apply_preset(EMPTY_PRESET_NAME)
+                cfg = self.get_current_config()
+                kept.insert(0, {'name': EMPTY_PRESET_NAME,
+                                'builtin': True, 'config': cfg})
+            self._user_presets = kept
+            if had_old_builtins or not has_empty:
+                self._save_presets_file()
         self._refresh_presets_listbox()
         if self._user_presets:
             self._presets_listbox.selection_set(0)
             self._load_selected_preset()
 
     def _generate_builtin_presets_file(self):
+        # Now generates ONLY the Empty preset. Custom presets the user
+        # builds get appended via _save_current_preset.
         self._user_presets = []
-        for name in PRESETS:
-            self.res_combo.set('720p')
-            self.preset_enc_combo.set('medium')
-            self.apply_preset(name)
-            cfg = self.get_current_config()
-            self._user_presets.append({'name': name, 'builtin': True, 'config': cfg})
+        self.res_combo.set('720p')
+        self.preset_enc_combo.set('medium')
+        self.apply_preset(EMPTY_PRESET_NAME)
+        cfg = self.get_current_config()
+        self._user_presets.append({'name': EMPTY_PRESET_NAME,
+                                   'builtin': True, 'config': cfg})
         self._save_presets_file()
 
     def _save_presets_file(self):
@@ -1191,7 +1489,7 @@ class MainGUI(tk.Tk):
                 key = f'mystery_{k}'
                 if key in self.vars:
                     self.vars[key].set(v)
-        self.var_silence_mode.set(cfg.get('silence_mode', 'dim'))
+        self.var_silence_mode.set(cfg.get('silence_mode', 'none'))
         self.var_resolution_mode.set(cfg.get('resolution_mode', 'preset'))
         self._sync_formula_editor_from_var()
         self.res_combo.set(cfg.get('resolution', '720p'))
@@ -1274,11 +1572,23 @@ class MainGUI(tk.Tk):
             self.progress.configure(mode='indeterminate'); self.progress.start(10)
         else:
             cfg['render_mode'] = 'final'
+            # Derive container extension from the selected codec label so
+            # the Save dialog and the ffmpeg sink agree on the file type.
+            from vpc.render.sink import EXPORT_FORMATS
+            fmt = EXPORT_FORMATS.get(cfg.get('video_codec', 'H.264 (MP4)'),
+                                     EXPORT_FORMATS['H.264 (MP4)'])
+            ext = fmt['ext']
             out = filedialog.asksaveasfilename(
-                defaultextension='.mp4', filetypes=[('MP4', '*.mp4')],
-                initialfile=f'disc_{random.randint(1000, 9999)}.mp4')
+                defaultextension=f'.{ext}',
+                filetypes=[(ext.upper(), f'*.{ext}'), ('All files', '*.*')],
+                initialfile=f'disc_{random.randint(1000, 9999)}.{ext}')
             if not out:
                 return
+            # If user typed a different extension, trust them but warn.
+            user_ext = os.path.splitext(out)[1].lower().lstrip('.')
+            if user_ext and user_ext != ext:
+                self.log(f'WARNING: extension .{user_ext} does not match codec '
+                         f'container .{ext} — keeping user extension.')
             cfg['output_path'] = out
             cfg['max_duration'] = None
             self.log('Starting FULL RENDER...')
