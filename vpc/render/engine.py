@@ -24,6 +24,7 @@ from .encoders import (
     EncoderSpec, find_spec as find_encoder_spec,
     fallback_spec as encoder_fallback_spec,
     build_rate_control_args,
+    probe_encoder, last_probe_error,
 )
 
 # Datamosh deliberately produces a broken H.264 stream (no I-frames). When
@@ -156,11 +157,18 @@ class BreakcoreEngine:
         elapsed = now - self._render_t0
         if frames_emitted >= 1 and elapsed > 1.0:
             rate = frames_emitted / elapsed   # encoded frames per sec
-            remaining = max(0, total_frames - frames_emitted)
-            eta = remaining / max(rate, 1e-6)
-            msg = (f'Rendering {pct}% — '
-                   f'ETA {self._fmt_dur(eta)} '
-                   f'({rate:.1f} fps)')
+            # Below ~0.5 fps the rate estimate is dominated by setup
+            # noise (first segment seek, codec warm-up). Showing
+            # "ETA 22h" in that window misleads more than it informs;
+            # report a placeholder until at least 5 frames have landed.
+            if rate < 0.5 or frames_emitted < 5:
+                msg = f'Rendering {pct}% — warming up...'
+            else:
+                remaining = max(0, total_frames - frames_emitted)
+                eta = remaining / rate
+                msg = (f'Rendering {pct}% — '
+                       f'ETA {self._fmt_dur(eta)} '
+                       f'({rate:.1f} fps)')
         else:
             msg = f'Rendering {pct}%...'
         self.progress_callback(msg, pct)
@@ -234,12 +242,6 @@ class BreakcoreEngine:
 
         # Open video pool, then derive output size (backlog #2 needs source).
         pool = VideoPool(video_paths)
-        if pool.any_cached:
-            # The decode is lazy — log only the intent so the user sees
-            # *why* the first segment may take a moment to start. A
-            # corrupt/oversize source falls back transparently.
-            self.log('Source clip(s) eligible for in-memory cache — '
-                     'first read will pre-decode.')
         out_w, out_h = rc.output_size(render_mode, source_size=pool.primary_size)
         fps = rc.fps(render_mode)
         preset = rc.encoder_preset(render_mode)
@@ -272,6 +274,25 @@ class BreakcoreEngine:
             self.log(f"Unknown codec label '{rc.video_codec_label}', "
                      f"using {encoder_fallback_spec().label}.")
             spec = encoder_fallback_spec()
+
+        # Runtime self-probe for HW encoders. Some advertised-but-broken
+        # encoders accept the pipe at init, then never emit an encoded
+        # frame — symptom is a render stuck at 0% forever. Probing with
+        # a short testsrc + hard timeout catches these BEFORE we open
+        # the real sink, then auto-falls back to libx264. Result is
+        # cached per-process, so this only costs ~1-2s on the first
+        # render of the session that uses a given HW encoder. Soft
+        # codecs are trusted unconditionally and skip the probe.
+        if spec.is_hw:
+            self.log(f'Probing HW encoder {spec.vcodec} (1s testsrc)...')
+            if not probe_encoder(spec, timeout=8.0):
+                err = last_probe_error(spec.vcodec) or 'unknown'
+                self.log(f'HW encoder {spec.vcodec} probe failed '
+                         f'({err}). Falling back to libx264 — render '
+                         f'continues automatically.')
+                spec = encoder_fallback_spec()
+            else:
+                self.log(f'HW encoder {spec.vcodec} OK.')
 
         def _open_sink(s: EncoderSpec) -> FFmpegSink:
             rc_args = build_rate_control_args(

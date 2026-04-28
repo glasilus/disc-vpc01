@@ -1110,9 +1110,58 @@ class MainGUI(tk.Tk):
         self._slider(wr, 'crf', 0, 51)
 
         self._row_with_help(wr, 'Codec', bi(
-            'H.264 = universal. H.265 = smaller files, slower encode, less compatible.',
-            'H.264 — универсально. H.265 — меньше файл, медленнее кодирование, хуже '
-            'совместимость.'))
+            'Codec / container combination.\n\n'
+            'GUIDE — pick by use case:\n'
+            '• H.264 (MP4) — default. Universal compatibility, libx264 software '
+            'encode. Always works. Use this if unsure.\n'
+            '• H.265 (MP4/MKV) — ~30% smaller files at same quality, slower CPU '
+            'encode. Less compatible playback (older devices, web embeds).\n'
+            '• MKV variants — Matroska container. Use if MP4 muxer rejects your '
+            'stream (rare; happens with some experimental codec settings).\n'
+            '• ProRes (MOV) — editing-grade master, huge files, perfect for '
+            'handing off to DaVinci/Premiere. Ignores CRF/preset/tune.\n'
+            '• VP9 (WebM) — open codec for web. Slow encode.\n\n'
+            'HARDWARE encoders (only listed if your ffmpeg supports them):\n'
+            '• NVENC — NVIDIA GPU. Fast at 1080p+. Slight quality loss vs '
+            'libx264 at the same bitrate.\n'
+            '• QSV — Intel iGPU / Arc. Similar tradeoff.\n'
+            '• AMF — AMD GPU on Windows.\n'
+            '• VideoToolbox — Apple Silicon / Intel Macs.\n\n'
+            'CAVEAT: HW encoders can be SLOWER than libx264 for sub-720p '
+            'output (PCIe upload + driver init overhead). For ≤480p material, '
+            'use H.264 (MP4).\n\n'
+            'SAFETY: before each render the program runs a 1-second self-test '
+            'against the chosen HW encoder. If the encoder hangs or errors '
+            'out, the render automatically falls back to libx264 with a log '
+            'note — no action needed from you. Result is cached for the '
+            'session, so the test only fires once per HW encoder.',
+
+            'Связка кодек/контейнер.\n\n'
+            'ВЫБОР по сценарию:\n'
+            '• H.264 (MP4) — по умолчанию. Универсальная совместимость, '
+            'программный libx264. Работает всегда. Выбирайте если не уверены.\n'
+            '• H.265 (MP4/MKV) — ~30% меньше файл при том же качестве, '
+            'медленнее на CPU. Хуже совместимость (старые устройства, веб).\n'
+            '• MKV-варианты — контейнер Matroska. Брать, если MP4 muxer '
+            'не пропускает поток (редко; экспериментальные настройки).\n'
+            '• ProRes (MOV) — мастер монтажного качества, огромные файлы, '
+            'для передачи в DaVinci/Premiere. Игнорирует CRF/preset/tune.\n'
+            '• VP9 (WebM) — открытый кодек для веба. Медленный.\n\n'
+            'АППАРАТНЫЕ кодеры (показываются только если их есть в ffmpeg):\n'
+            '• NVENC — GPU NVIDIA. Быстро на 1080p+. Чуть хуже качество '
+            'на том же битрейте, чем libx264.\n'
+            '• QSV — Intel iGPU / Arc. Похожий компромисс.\n'
+            '• AMF — AMD GPU на Windows.\n'
+            '• VideoToolbox — Apple Silicon / Intel Macs.\n\n'
+            'ВАЖНО: HW-кодеры могут быть МЕДЛЕННЕЕ libx264 на разрешениях '
+            'ниже 720p (PCIe-upload + инициализация драйвера). Для ≤480p '
+            'материала используйте H.264 (MP4).\n\n'
+            'БЕЗОПАСНОСТЬ: перед каждым рендером программа сама прогоняет '
+            '1-секундный self-test выбранного HW-кодера. Если он зависает '
+            'или ошибочный — рендер автоматически переключается на libx264 '
+            'с записью в лог, никаких действий от вас не требуется. '
+            'Результат кешируется на сессию: тест запускается один раз '
+            'на каждый HW-кодек.'))
         cf = tk.Frame(wr, bg=C_SILVER); cf.pack(fill='x', padx=20, pady=2)
         # Codec list is filtered at startup against `ffmpeg -encoders` —
         # HW variants (NVENC/QSV/AMF/VideoToolbox) only show up if the

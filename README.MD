@@ -796,7 +796,13 @@ The Save dialog auto-uses the matching extension. If you type a different one, t
 
 **Pipe pixel format** — when the output codec is `yuv420p` (everything except ProRes), frames are converted from RGB to planar I420 *on the Python side* before being piped to ffmpeg, halving inter-process bandwidth. ProRes 4:2:2 10-bit stays on rgb24 to preserve chroma precision. Invisible to the user.
 
-**Source cache (in-memory)** — short source clips (default ≤1.5 GB decompressed) are decoded once into RAM on first read, after which random seeks are O(1) array indexing instead of OpenCV keyframe-rewind + re-decode. Speeds up segment-heavy renders. Long source files transparently fall back to streaming. Tune via env var `VPC_SOURCE_CACHE_MAX_BYTES` (`0` to disable, any byte count to widen).
+**HW encoder caveat (low resolutions)** — for very small outputs (≤480p) GPU encoders sometimes pay more in PCIe upload + HWFrame init than they save on the encode itself. If a short 480p render feels slower with NVENC/QSV/AMF than with libx264, that's expected — switch to `H.264 (MP4)` (libx264) for sub-720p material. HW encoders shine at 1080p and above.
+
+**HW encoder safety net** — `available_specs()` lists every encoder ffmpeg *advertises*, but advertised ≠ working. NVENC / QSV / AMF can all be listed and still hang on init (missing/broken driver, GPU locked by another process, sandboxed VM). To prevent a render from sitting at 0% forever, before each render the engine runs a **1-second self-probe** against the chosen HW encoder with a hard 8-second timeout. If the probe fails or times out, the render **automatically falls back to libx264** and logs the reason — no user intervention needed. Result is cached per-process so the cost is paid once per session.
+
+This makes the EXE distribution safe: even if the user has no Python installed and can't run diagnostic scripts, picking a broken HW encoder from the dropdown won't lock up the program.
+
+For developers running from source, `python tools/check_hw_encoders.py` runs the same probe across every advertised HW encoder at once and prints a status table — useful when validating a new machine or debugging a failing GPU.
 
 **Progress + ETA** — during render the status line updates ~twice a second with current percentage, ETA estimate, and the actual encoded fps. Final log line shows total time and an `Nx realtime` factor.
 

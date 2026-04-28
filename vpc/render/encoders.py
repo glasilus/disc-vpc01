@@ -68,7 +68,9 @@ Adding a new encoder:
 """
 from __future__ import annotations
 
+import os
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -187,6 +189,85 @@ def fallback_spec() -> EncoderSpec:
     s = find_spec('H.264 (MP4)')
     assert s is not None  # part of the static table
     return s
+
+
+# ----- runtime self-probe for HW encoders -----
+#
+# `available_specs()` answers "is this encoder *advertised*?" by parsing
+# `ffmpeg -encoders`. That's necessary but not sufficient: NVENC / QSV /
+# AMF / VideoToolbox can be *advertised* and still hang or fail when you
+# try to use them (driver missing, GPU busy, locked-down VM, broken
+# ffmpeg build). The user-visible symptom: render sits at 0% forever
+# because the GPU swallowed our pipe but never emits an encoded frame.
+#
+# To make this safe for the EXE distribution (where the user can't run
+# diagnostic scripts), the engine probes each HW encoder before use:
+# it spawns a 1-second `testsrc → encoder → temp file` pipeline with a
+# hard timeout. If it succeeds, we cache the OK and use the encoder
+# normally. If it hangs or errors out, we cache the failure and silently
+# fall back to libx264. The cache is per-process, so the probe pays
+# the ~1-2 second cost exactly once per session per HW encoder.
+
+_PROBE_CACHE: dict = {}      # vcodec -> bool
+_PROBE_LAST_ERROR: dict = {}  # vcodec -> str
+
+
+def probe_encoder(spec: EncoderSpec, *, timeout: float = 8.0) -> bool:
+    """True if `spec` actually produces a valid file on this machine.
+
+    Soft codecs (libx264 / libx265 / libvpx-vp9 / prores_ks) are
+    trusted unconditionally — they're CPU-only, available on every
+    ffmpeg build, and starting a probe for them just wastes ~1 second
+    of every render. Only HW encoders go through the runtime check.
+
+    The probe is conservative: 720p @ 24fps for 1 second (24 frames),
+    using `-f lavfi testsrc` so we don't depend on any user file. The
+    output goes to a temp .mp4 that's deleted regardless of outcome.
+    """
+    if not spec.is_hw:
+        return True
+    if spec.vcodec in _PROBE_CACHE:
+        return _PROBE_CACHE[spec.vcodec]
+
+    cmd = [
+        ffmpeg_bin(), '-y', '-hide_banner', '-loglevel', 'error',
+        '-f', 'lavfi', '-i', 'testsrc=duration=1:size=1280x720:rate=24',
+        '-c:v', spec.vcodec, '-pix_fmt', spec.pix_fmt,
+    ]
+    cmd += build_rate_control_args(spec, crf=22, preset='fast', tune='none')
+    if spec.extra_v:
+        cmd += list(spec.extra_v)
+    fd, out = tempfile.mkstemp(suffix='.' + spec.container_ext,
+                               prefix='vpc_hwprobe_')
+    os.close(fd)
+    cmd += ['-t', '1', out]
+
+    ok = False
+    err = ''
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=timeout)
+        ok = (r.returncode == 0
+              and os.path.exists(out)
+              and os.path.getsize(out) > 1000)
+        if not ok:
+            tail = (r.stderr or b'').decode(errors='replace').strip()
+            err = tail.splitlines()[-1] if tail else f'rc={r.returncode}'
+    except subprocess.TimeoutExpired:
+        err = f'timed out after {timeout:.0f}s — encoder hung'
+    except Exception as e:
+        err = f'{type(e).__name__}: {e}'
+    finally:
+        try: os.remove(out)
+        except OSError: pass
+
+    _PROBE_CACHE[spec.vcodec] = ok
+    _PROBE_LAST_ERROR[spec.vcodec] = err
+    return ok
+
+
+def last_probe_error(vcodec: str) -> str:
+    """Reason a previous probe failed (for logging). '' if unknown."""
+    return _PROBE_LAST_ERROR.get(vcodec, '')
 
 
 # ----- rate-control mapping -----
