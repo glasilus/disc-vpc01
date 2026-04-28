@@ -131,11 +131,7 @@ jobs:
 
       - name: Install system build tools
         run: |
-          brew install pkg-config autoconf automake libtool nasm ninja
-
-      - name: Install system deps (audio/libs)
-        run: |
-          brew install ffmpeg portaudio libsndfile
+          brew install pkg-config autoconf automake libtool nasm ninja dylibbundler
 
       - name: Set up Python ${{ env.PY_VERSION }}
         uses: actions/setup-python@v5
@@ -150,11 +146,15 @@ jobs:
           pip install pyinstaller
 
       - name: Build DiscVPC01 (Python)
+        # No --add-binary for ffmpeg: imageio-ffmpeg ships a fully
+        # self-contained static ffmpeg in its wheel, which is what the
+        # codebase calls first via imageio_ffmpeg.get_ffmpeg_exe(). The
+        # old approach copied brew's ffmpeg, which dragged in a tree of
+        # homebrew dylibs that broke on every clean Mac.
         run: |
           pyinstaller \
             --onefile --windowed --clean --noupx \
             --name DiscVPC01 \
-            --add-binary "$(which ffmpeg):." \
             --collect-all cv2 \
             --collect-all librosa \
             --collect-all scipy \
@@ -169,43 +169,39 @@ jobs:
             --paths . \
             vpc/__main__.py
 
-      - name: Bundle dylibs into app
+      - name: Bundle transitive dylibs (dylibbundler)
+        # PyInstaller --windowed creates the .app shell but doesn't
+        # relocate transitive dylib deps from Python C extensions
+        # (sounddevice, soundfile, librosa's audioread/soxr, etc.) — so
+        # they stay pinned to /opt/homebrew or /usr/local and crash on
+        # any other Mac. dylibbundler walks every Mach-O in the bundle
+        # and rewrites all install names to @rpath, copying missing
+        # libs into Contents/Frameworks/.
         run: |
-          APP=dist/DiscVPC01.app/Contents/MacOS
-          LIBDIR=$(brew --prefix)/lib
-          mkdir -p "$APP/libs"
-          cp $LIBDIR/libportaudio*.dylib "$APP/libs/" || true
-          cp $LIBDIR/libsndfile*.dylib "$APP/libs/" || true
-          cp $LIBDIR/libav*.dylib "$APP/libs/" || true
-          cp $LIBDIR/libsw*.dylib "$APP/libs/" || true
-          cp $LIBDIR/libpostproc*.dylib "$APP/libs/" || true
+          APP=dist/DiscVPC01.app
+          mkdir -p "$APP/Contents/Frameworks"
+          # Collect every Mach-O binary we care about (.so/.dylib + main exe).
+          mapfile -t targets < <(
+            find "$APP/Contents/MacOS" -type f -perm -u+x
+            find "$APP/Contents/Resources" -type f \( -name "*.so" -o -name "*.dylib" \)
+            find "$APP/Contents/Frameworks" -type f \( -name "*.so" -o -name "*.dylib" \) 2>/dev/null
+          )
+          xargs_args=()
+          for t in "${targets[@]}"; do xargs_args+=( -x "$t" ); done
+          dylibbundler -od -b -of \
+            "${xargs_args[@]}" \
+            -d "$APP/Contents/Frameworks/" \
+            -p "@rpath/" || true
 
-      - name: Fix dylib paths
+      - name: Ad-hoc codesign (Python app)
+        # install_name_tool / dylibbundler invalidate any prior signature
+        # which makes Gatekeeper say "is damaged and can't be opened".
+        # Ad-hoc signing (--sign -) is free and gives the bundle a valid
+        # signature so the standard "right-click → Open" override works
+        # without the user having to run xattr in Terminal.
         run: |
-          APP=dist/DiscVPC01.app/Contents/MacOS
-          BIN="$APP/DiscVPC01"
-          install_name_tool -add_rpath "@executable_path/libs" "$BIN" || true
-          for lib in $APP/libs/*.dylib; do
-            install_name_tool -id "@rpath/$(basename "$lib")" "$lib" || true
-          done
-
-      - name: Fix ffmpeg permissions
-        run: |
-          chmod +x dist/DiscVPC01.app/Contents/MacOS/ffmpeg || true
-          chmod +x dist/DiscVPC01.app/Contents/MacOS/libs/*.dylib || true
-
-      - name: Patch app to include ffmpeg in PATH
-        run: |
-          APP=dist/DiscVPC01.app/Contents/MacOS/DiscVPC01
-          mv "$APP" "${APP}_bin"
-          cat << 'EOF' > "$APP"
-          #!/bin/bash
-          DIR="$(cd "$(dirname "$0")" && pwd)"
-          export PATH="$DIR:$PATH"
-          export DYLD_LIBRARY_PATH="$DIR/libs:$DYLD_LIBRARY_PATH"
-          exec "$DIR/DiscVPC01_bin"
-          EOF
-              chmod +x "$APP"
+          codesign --force --deep --sign - dist/DiscVPC01.app
+          codesign --verify --deep --strict dist/DiscVPC01.app || true
 
       - name: Bootstrap vcpkg
         run: |
@@ -249,17 +245,53 @@ jobs:
           cp -R rt_cpp/build/DiscVPC01-RT.app dist/DiscVPC01-RT.app
           chmod +x dist/DiscVPC01-RT.app/Contents/MacOS/*
 
+      - name: Ad-hoc codesign (RT app)
+        # vcpkg links statically on macOS (see rt_cpp/triplets/*-osx-release),
+        # so the bundle is already self-contained. We just need a valid
+        # signature so Gatekeeper doesn't claim it's damaged after download.
+        run: |
+          codesign --force --deep --sign - dist/DiscVPC01-RT.app
+          codesign --verify --deep --strict dist/DiscVPC01-RT.app || true
+
+      - name: Build distributable DMG
+        # Ship as a single DMG instead of a folder of files. DMG preserves
+        # the .app bundle structure, executable bits, and code signature
+        # across download — none of which a plain zip reliably does.
+        # Includes a README and a one-click "Setup.command" for the rare
+        # case where Gatekeeper still blocks the unsigned-by-Apple bundle.
+        run: |
+          STAGE=dmg-stage
+          mkdir -p "$STAGE"
+          cp -R dist/DiscVPC01.app    "$STAGE/" || true
+          cp -R dist/DiscVPC01-RT.app "$STAGE/" || true
+          cp README.MD README_RU.MD   "$STAGE/" || true
+          mkdir -p "$STAGE/presets"
+          cp presets/rt_blank.json    "$STAGE/presets/" || true
+          # Convenience link so users can drag-install if they prefer.
+          ln -s /Applications "$STAGE/Applications"
+          # First-run helper — strips quarantine that the browser attaches
+          # on download. Users only need this if right-click → Open also
+          # fails (rare, but happens on locked-down corporate Macs).
+          cat > "$STAGE/Setup (first run).command" << 'EOF'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          xattr -dr com.apple.quarantine "$DIR/DiscVPC01.app"    2>/dev/null || true
+          xattr -dr com.apple.quarantine "$DIR/DiscVPC01-RT.app" 2>/dev/null || true
+          echo "Done. You can now launch the apps normally."
+          read -n 1 -s -r -p "Press any key to close this window..."
+          EOF
+          chmod +x "$STAGE/Setup (first run).command"
+          hdiutil create -volname "Disc VPC 01" \
+            -srcfolder "$STAGE" \
+            -ov -format UDZO \
+            dist/Disc-VPC-01-macos.dmg
+
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: Disc-VPC-01-macos
           if-no-files-found: warn
-          path: |
-            dist/DiscVPC01.app/**
-            dist/DiscVPC01-RT.app/**
-            README.MD
-            README_RU.MD
-            presets/rt_blank.json
+          path: dist/Disc-VPC-01-macos.dmg
 
   # ───────────────────────────────────────────────────────────────────────────
   # 3. Linux  (best-effort)
@@ -400,15 +432,12 @@ jobs:
           name: Disc-VPC-01-linux
           path: linux-files
 
-      - name: Create release ZIPs
+      - name: Stage release files
         run: |
           cd windows-files && zip -r ../Disc-VPC-01-windows.zip . && cd ..
-          if [ -d macos-files ]; then
-            chmod +x macos-files/dist/DiscVPC01.app/Contents/MacOS/* 2>/dev/null || true
-            chmod +x macos-files/dist/DiscVPC01-RT.app/Contents/MacOS/* 2>/dev/null || true
-            xattr -dr com.apple.quarantine macos-files/dist/DiscVPC01.app 2>/dev/null || true
-            xattr -dr com.apple.quarantine macos-files/dist/DiscVPC01-RT.app 2>/dev/null || true
-            cd macos-files && zip -ry ../Disc-VPC-01-macos.zip . && cd ..
+          # macOS artifact is already a single DMG — just rename into place.
+          if [ -f macos-files/Disc-VPC-01-macos.dmg ]; then
+            mv macos-files/Disc-VPC-01-macos.dmg ./Disc-VPC-01-macos.dmg
           fi
           if [ -d linux-files ]; then
             chmod +x linux-files/dist/DiscVPC01 linux-files/dist/DiscVPC01-RT 2>/dev/null || true
@@ -421,6 +450,9 @@ jobs:
           name: "Disc VPC 01 — ${{ github.ref_name }}"
           draft: false
           prerelease: false
-          files: Disc-VPC-01-*.zip
+          files: |
+            Disc-VPC-01-windows.zip
+            Disc-VPC-01-macos.dmg
+            Disc-VPC-01-linux.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
