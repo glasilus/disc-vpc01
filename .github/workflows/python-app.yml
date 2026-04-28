@@ -177,19 +177,25 @@ jobs:
         # any other Mac. dylibbundler walks every Mach-O in the bundle
         # and rewrites all install names to @rpath, copying missing
         # libs into Contents/Frameworks/.
+        # macOS default /bin/bash is 3.2 — no `mapfile`, no process
+        # substitution-friendly arrays. Build the -x flag list with a
+        # plain while-read loop instead.
+        shell: bash
         run: |
+          set -e
           APP=dist/DiscVPC01.app
           mkdir -p "$APP/Contents/Frameworks"
-          # Collect every Mach-O binary we care about (.so/.dylib + main exe).
-          mapfile -t targets < <(
-            find "$APP/Contents/MacOS" -type f -perm -u+x
-            find "$APP/Contents/Resources" -type f \( -name "*.so" -o -name "*.dylib" \)
-            find "$APP/Contents/Frameworks" -type f \( -name "*.so" -o -name "*.dylib" \) 2>/dev/null
+          XARGS=()
+          while IFS= read -r f; do
+            XARGS+=( -x "$f" )
+          done < <(
+            { find "$APP/Contents/MacOS"      -type f -perm -u+x 2>/dev/null;
+              find "$APP/Contents/Resources"  -type f \( -name "*.so" -o -name "*.dylib" \) 2>/dev/null;
+              find "$APP/Contents/Frameworks" -type f \( -name "*.so" -o -name "*.dylib" \) 2>/dev/null;
+            }
           )
-          xargs_args=()
-          for t in "${targets[@]}"; do xargs_args+=( -x "$t" ); done
           dylibbundler -od -b -of \
-            "${xargs_args[@]}" \
+            "${XARGS[@]}" \
             -d "$APP/Contents/Frameworks/" \
             -p "@rpath/" || true
 
