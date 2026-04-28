@@ -1,4 +1,5 @@
 #include "video_source.h"
+#include <GLFW/glfw3.h>
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
@@ -66,6 +67,13 @@ bool VideoSource::open_decoder() {
     duration_ts_     = fmt_ctx_->duration;
     src_w_           = stream->codecpar->width;
     src_h_           = stream->codecpar->height;
+
+    // Frame rate: avg_frame_rate is what we want. Falls back to r_frame_rate
+    // (which can be wrong for VFR sources but is at least non-zero).
+    AVRational fr = stream->avg_frame_rate;
+    if (fr.num <= 0 || fr.den <= 0) fr = stream->r_frame_rate;
+    src_fps_ = (fr.num > 0 && fr.den > 0) ? av_q2d(fr) : 30.0;
+    if (src_fps_ < 1.0 || src_fps_ > 240.0) src_fps_ = 30.0;
 
     const AVCodec* codec = avcodec_find_decoder(stream->codecpar->codec_id);
     if (!codec) {
@@ -138,6 +146,7 @@ bool VideoSource::decode_next(DecodedFrame& out, int /*w*/, int /*h*/) {
             // End of file — loop back
             av_seek_frame(fmt_ctx_, video_stream_idx_, 0, AVSEEK_FLAG_BACKWARD);
             avcodec_flush_buffers(codec_ctx_);
+            loop_count_.fetch_add(1, std::memory_order_relaxed);
             av_packet_free(&pkt);
             pkt = av_packet_alloc();
             tries++;
@@ -183,9 +192,22 @@ void VideoSource::decode_thread_fn() {
 }
 
 void VideoSource::pump_uploads() {
+    // Pace GPU uploads to the source's native FPS. Without this throttle the
+    // render loop drains the decoded queue as fast as it runs (~60 Hz),
+    // playing 30 fps videos at 2× speed. Decoder thread blocks naturally on
+    // the queue once it fills, keeping CPU/RAM bounded.
+    const double now      = glfwGetTime();
+    const double interval = 1.0 / std::max(1.0, src_fps_);
+    if (last_upload_time_ == 0.0) last_upload_time_ = now;
+    double behind = now - last_upload_time_;
+    int budget = (int)(behind / interval);
+    if (budget <= 0) return;
+    if (budget > 3) budget = 3;   // cap catch-up to avoid burst stutter
+    last_upload_time_ += budget * interval;
+
     std::unique_lock<std::mutex> lk(queue_mutex_);
     int uploaded = 0;
-    while (!ready_queue_.empty() && uploaded < 3) {
+    while (!ready_queue_.empty() && uploaded < budget) {
         DecodedFrame& f = ready_queue_.front();
 
         // Defensive: never feed glTexImage2D zero/negative dims or a buffer
@@ -245,10 +267,12 @@ GLuint VideoSource::get_random_frame(int /*w*/, int /*h*/, int* out_w, int* out_
 GLuint VideoSource::get_sequential_frame(int /*w*/, int /*h*/, int* out_w, int* out_h) {
     pump_uploads();
     if (tex_ready_count_ == 0) return 0;
-    int idx = seq_idx_ % tex_ready_count_;
-    GLuint tex = tex_pool_[idx];
+    // Show the most recently uploaded slot. pump_uploads is rate-limited to
+    // src_fps_, so this naturally plays back at native speed regardless of
+    // render FPS. Indexing seq_idx_ at render rate caused 2× playback by
+    // cycling the 12-slot pool faster than frames were produced.
+    int idx = (tex_next_ - 1 + kTexPoolSize) % kTexPoolSize;
     if (out_w) *out_w = tex_w_[idx];
     if (out_h) *out_h = tex_h_[idx];
-    seq_idx_ = (seq_idx_ + 1) % kTexPoolSize;
-    return tex;
+    return tex_pool_[idx];
 }

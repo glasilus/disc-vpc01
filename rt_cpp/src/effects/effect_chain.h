@@ -54,6 +54,7 @@ struct FboPair {
     void   create(int w, int h);
     void   destroy();
     GLuint read_tex()  const { return tex[current]; }
+    GLuint read_fbo()  const { return fbo[current]; }
     GLuint write_fbo() const { return fbo[1 - current]; }
     void   swap()            { current = 1 - current; }
 };
@@ -117,6 +118,12 @@ private:
     // ── Shader programs ───────────────────────────────────────────────────────
     GLuint prog_pass_   = 0;
     GLuint prog_place_  = 0;   // aspect-aware canvas placement
+    GLuint prog_mix_    = 0;   // dry/wet mix for master_intensity blend
+    // Dry copy of the canvas-placed input, captured before any effects run.
+    // Used by the final master_intensity blend to fade the processed result
+    // back toward the un-effected image.
+    GLuint dry_fbo_ = 0;
+    GLuint dry_tex_ = 0;
     GLuint prog_derivwarp_   = 0;
     GLuint prog_flash_       = 0;
     GLuint prog_stutter_     = 0;

@@ -71,10 +71,16 @@ GLuint RtEngine::process_frame(float dt, EngineSettings& settings) {
         bool soft_trigger = (t == SegmentType::BUILD ||
                              (t == SegmentType::SUSTAIN && last_stats_.beat));
 
+        // Time-based fallback: even when no audio is running (or no beats are
+        // detected) Cut mode must still produce visible cuts. Without this the
+        // chain falls through to get_sequential_frame and Cut mode looks
+        // identical to Continuous, which breaks the user-facing distinction.
+        bool time_trigger = (time_since_cut_ >= settings.cut_interval);
+
         if (hard_trigger && time_since_cut_ >= kMinCutMs) {
             time_since_cut_ = 0.f;
             frame_tex = pool_.get_random_frame(width_, height_, &frame_w, &frame_h);
-        } else if (soft_trigger && time_since_cut_ >= settings.cut_interval) {
+        } else if ((soft_trigger || time_trigger) && time_since_cut_ >= settings.cut_interval) {
             time_since_cut_ = 0.f;
             frame_tex = pool_.get_random_frame(width_, height_, &frame_w, &frame_h);
         } else {

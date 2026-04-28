@@ -32,4 +32,9 @@ private:
     std::vector<std::string>                  paths_;
     int                                       round_robin_ = 0;
     int                                       active_idx_  = -1;
+    // Loop-count snapshot of the current round-robin source. When the live
+    // counter exceeds this, the source has played through once and we hop to
+    // the next entry in the pool — giving "play A fully, then B, then C"
+    // semantics without focus, instead of switching every render frame.
+    int                                       rr_loop_baseline_ = 0;
 };

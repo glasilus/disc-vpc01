@@ -70,6 +70,15 @@ private:
     int64_t          duration_ts_      = 0;
     int              src_w_ = 0, src_h_ = 0;   // native video dimensions
     int              dec_w_ = 0, dec_h_ = 0;   // capped decode dimensions
+    double           src_fps_ = 30.0;          // native frame rate (paces uploads)
+    double           last_upload_time_ = 0.0;  // glfwGetTime() of last GPU upload
+public:
+    // Loop counter: incremented every time the decoder seeks back to start.
+    // VideoPool reads this to advance round-robin between sources.
+    int              loop_count() const { return loop_count_; }
+    double           native_fps()  const { return src_fps_; }
+private:
+    std::atomic<int> loop_count_{0};
 
     // GL texture pool — dimensions tracked per-slot because decode runs at
     // native resolution (which can vary if we ever cache mixed-size frames).

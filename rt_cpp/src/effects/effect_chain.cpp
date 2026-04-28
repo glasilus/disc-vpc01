@@ -135,13 +135,14 @@ EffectChain::EffectChain()  = default;
 EffectChain::~EffectChain() { destroy(); }
 
 void EffectChain::setup_quad() {
+    // UV V flipped: sws_scale writes top-left origin, GL samples bottom-left.
     static const float verts[] = {
-        -1.f,-1.f, 0.f,0.f,
-         1.f,-1.f, 1.f,0.f,
-        -1.f, 1.f, 0.f,1.f,
-         1.f,-1.f, 1.f,0.f,
-         1.f, 1.f, 1.f,1.f,
-        -1.f, 1.f, 0.f,1.f,
+        -1.f,-1.f, 0.f,1.f,
+         1.f,-1.f, 1.f,1.f,
+        -1.f, 1.f, 0.f,0.f,
+         1.f,-1.f, 1.f,1.f,
+         1.f, 1.f, 1.f,0.f,
+        -1.f, 1.f, 0.f,0.f,
     };
     glGenVertexArrays(1, &quad_vao_);
     glGenBuffers(1, &quad_vbo_);
@@ -241,6 +242,23 @@ bool EffectChain::init(int w, int h) {
     main_fbo_.create(w, h);
     accum_fbo_.create(w, h);
 
+    // Dry buffer: a single FBO+tex sized to the canvas. We blit the canvas-
+    // placed input into it before any effects run, then sample from it in the
+    // final master_intensity dry/wet mix pass.
+    glGenTextures(1, &dry_tex_);
+    glBindTexture(GL_TEXTURE_2D, dry_tex_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glGenFramebuffers(1, &dry_fbo_);
+    glBindFramebuffer(GL_FRAMEBUFFER, dry_fbo_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D, dry_tex_, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
     // Pre-allocate history textures + FBOs
     glGenTextures(kHistoryLen, hist_tex_);
     glGenFramebuffers(kHistoryLen, hist_fbo_);
@@ -263,6 +281,20 @@ bool EffectChain::init(int w, int h) {
     // Compile all programs
     prog_pass_        = compile_program(k_vert, k_passthrough_frag);
     prog_place_       = compile_program(k_vert, k_canvas_place_frag);
+
+    // Inline dry/wet mix shader: lerp between two textures by uMix.
+    static const char* k_mix_frag =
+        "#version 330 core\n"
+        "in vec2 vUV; out vec4 fragColor;\n"
+        "uniform sampler2D uWet;\n"
+        "uniform sampler2D uDry;\n"
+        "uniform float uMix;\n"
+        "void main(){\n"
+        "  vec3 w = texture(uWet, vUV).rgb;\n"
+        "  vec3 d = texture(uDry, vUV).rgb;\n"
+        "  fragColor = vec4(mix(d, w, clamp(uMix,0.0,1.0)), 1.0);\n"
+        "}\n";
+    prog_mix_ = compile_program(k_vert, k_mix_frag);
     prog_derivwarp_   = compile_program(k_vert, k_deriv_warp_frag);
     prog_flash_       = compile_program(k_vert, k_flash_frag);
     prog_stutter_     = compile_program(k_vert, k_stutter_frag);
@@ -299,6 +331,10 @@ void EffectChain::resize(int w, int h) {
         glBindTexture(GL_TEXTURE_2D, hist_tex_[i]);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
     }
+    if (dry_tex_) {
+        glBindTexture(GL_TEXTURE_2D, dry_tex_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+    }
     glBindTexture(GL_TEXTURE_2D, 0);
     hist_idx_  = 0;
     hist_full_ = false;
@@ -309,10 +345,12 @@ void EffectChain::destroy() {
     accum_fbo_.destroy();
     if (hist_tex_[0]) { glDeleteTextures(kHistoryLen, hist_tex_);    std::memset(hist_tex_, 0, sizeof(hist_tex_)); }
     if (hist_fbo_[0]) { glDeleteFramebuffers(kHistoryLen, hist_fbo_);std::memset(hist_fbo_, 0, sizeof(hist_fbo_)); }
+    if (dry_fbo_) { glDeleteFramebuffers(1, &dry_fbo_); dry_fbo_ = 0; }
+    if (dry_tex_) { glDeleteTextures(1, &dry_tex_);     dry_tex_ = 0; }
     if (ascii_font_tex_) { glDeleteTextures(1, &ascii_font_tex_); ascii_font_tex_ = 0; }
 
     auto del = [](GLuint& p){ if(p){ glDeleteProgram(p); p=0; } };
-    del(prog_pass_); del(prog_place_); del(prog_derivwarp_); del(prog_flash_);
+    del(prog_pass_); del(prog_place_); del(prog_mix_); del(prog_derivwarp_); del(prog_flash_);
     del(prog_stutter_); del(prog_pixsort_); del(prog_ghost_);
     del(prog_scanlines_); del(prog_bitcrush_); del(prog_blockglitch_);
     del(prog_negative_); del(prog_colorbleed_); del(prog_interlace_);
@@ -435,6 +473,17 @@ GLuint EffectChain::apply(
         });
     } else {
         pass(prog_pass_, input_tex, [](GLuint){});
+    }
+
+    // Snapshot the canvas-placed input as the "dry" reference for the final
+    // master_intensity blend. glBlitFramebuffer is well-defined for same-size
+    // color blits and avoids an extra fullscreen quad.
+    if (dry_fbo_ != 0) {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, main_fbo_.read_fbo());
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, dry_fbo_);
+        glBlitFramebuffer(0, 0, W, H, 0, 0, W, H,
+                          GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
     // Helper: fire if enabled + probability check
@@ -650,21 +699,21 @@ GLuint EffectChain::apply(
     }
 
     // ── Master intensity blend (dry/wet) ──────────────────────────────────────
-    // For master_intensity < 1: blend processed result toward dry input
-    if (master_intensity < 0.999f) {
+    // master_intensity = 1 → fully effected; 0 → original placed input.
+    if (master_intensity < 0.999f && prog_mix_ != 0 && dry_tex_ != 0) {
         GLuint wet = main_fbo_.read_tex();
-        // We stored the dry input at the start — it's in h0 (1 frame ago)
-        // Actually "dry" for this frame is input_tex, which we already blitted
-        // into hist_tex[hist_idx before push] at end of frame.
-        // Simplest correct approach: blit the wet output into the write fbo
-        // mixing with input_tex.
         glBindFramebuffer(GL_FRAMEBUFFER, main_fbo_.write_fbo());
-        glViewport(0,0,W,H);
-        glUseProgram(prog_pass_);
+        glViewport(0, 0, W, H);
+        glUseProgram(prog_mix_);
+        glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, wet);
+        glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, dry_tex_);
+        glUniform1i(glGetUniformLocation(prog_mix_, "uWet"), 0);
+        glUniform1i(glGetUniformLocation(prog_mix_, "uDry"), 1);
+        glUniform1f(glGetUniformLocation(prog_mix_, "uMix"), master_intensity);
+        glBindVertexArray(quad_vao_);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        glBindVertexArray(0);
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, wet);
-        glUniform1i(glGetUniformLocation(prog_pass_,"uTex"),0);
-        glBindVertexArray(quad_vao_); glDrawArrays(GL_TRIANGLES,0,6); glBindVertexArray(0);
         main_fbo_.swap();
     }
 
