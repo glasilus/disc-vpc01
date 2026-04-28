@@ -452,13 +452,19 @@ class MainGUI(tk.Tk):
         sb.pack(side='left', fill='y')
         self._presets_listbox.bind('<Double-Button-1>', lambda e: self._load_selected_preset())
 
+        # Three preset action buttons on one row. With `pack(side='left')`
+        # each button auto-sized to its label text, so on the locked-260px
+        # sidebar 'Save Current' ate most of the row and 'Delete' shrank
+        # to a single character. Switching to grid with weight=1 on every
+        # column gives the three buttons exactly one third of the row.
         br = tk.Frame(pp, bg=C_SILVER); br.pack(fill='x', padx=4, pady=2)
-        ttk.Button(br, text='Load', style='W95.TButton',
-                   command=self._load_selected_preset).pack(side='left', padx=2)
-        ttk.Button(br, text='Save Current', style='W95.TButton',
-                   command=self._save_current_preset).pack(side='left', padx=2)
-        ttk.Button(br, text='Delete', style='W95.TButton',
-                   command=self._delete_preset).pack(side='left', padx=2)
+        for col, (label, cmd) in enumerate([
+                ('Load', self._load_selected_preset),
+                ('Save', self._save_current_preset),
+                ('Delete', self._delete_preset)]):
+            ttk.Button(br, text=label, style='W95.TButton', command=cmd
+                       ).grid(row=0, column=col, padx=2, sticky='ew')
+            br.grid_columnconfigure(col, weight=1, uniform='preset_btns')
         self._active_preset_label = tk.Label(pp, text='Active: —',
                                              bg=C_SILVER, fg=C_DARK_GRAY,
                                              font=('MS Sans Serif', 8))
@@ -1415,29 +1421,38 @@ class MainGUI(tk.Tk):
         ref.pack(fill='x', padx=12, pady=(8, 4))
         self._bsod_label(ref, '[ REFERENCE / СПРАВКА ]',
                          fg=C_BSOD_ACCENT, font=MONO).pack(anchor='w')
+        # Lines must stay under ~40 monospace chars so they fit even on a
+        # 600px panel. The previous version had the description after the
+        # colon on the same line and the example expressions inline with
+        # comments, both of which spilled past the right edge on narrow
+        # windows. Now: short header + value on the row, comments on the
+        # line below the example.
         ref_text = (
-            'EN ── variables you can use in the formula ──\n'
-            '  frame   :  current frame, shape (H, W, 3), uint8\n'
-            '  r,g,b   :  per-channel views, shape (H, W), uint8\n'
-            '  x,y     :  pixel-coordinate grids, shape (H, W), float32\n'
-            '  t       :  segment time in seconds (float)\n'
-            '  i       :  current intensity 0..1 (float)\n'
-            '  a,b,c,d :  live sliders 0..1 (float)\n'
-            '  np, cv2 :  NumPy and OpenCV — full APIs available\n'
+            'EN ── available variables ──\n'
+            '  frame    : (H, W, 3) uint8\n'
+            '  r, g, b  : (H, W) uint8 channels\n'
+            '  x, y     : (H, W) float32 grids\n'
+            '  t        : segment time, sec\n'
+            '  i        : intensity 0..1\n'
+            '  a,b,c,d  : live sliders 0..1\n'
+            '  np, cv2  : NumPy + OpenCV\n'
             '\n'
-            'RU ── переменные, которые можно использовать в формуле ──\n'
-            '  frame   :  текущий кадр, форма (H, W, 3), uint8\n'
-            '  r,g,b   :  виды каналов, форма (H, W), uint8\n'
-            '  x,y     :  сетки координат пикселей, (H, W), float32\n'
-            '  t       :  время сегмента в секундах (float)\n'
-            '  i       :  текущая интенсивность 0..1 (float)\n'
-            '  a,b,c,d :  live-слайдеры 0..1 (float)\n'
-            '  np, cv2 :  NumPy и OpenCV — доступны полностью\n'
+            'RU ── доступные переменные ──\n'
+            '  frame    : (H, W, 3) uint8\n'
+            '  r, g, b  : (H, W) uint8 — каналы\n'
+            '  x, y     : (H, W) float32 — сетки\n'
+            '  t        : время сегмента, сек\n'
+            '  i        : интенсивность 0..1\n'
+            '  a,b,c,d  : live-слайдеры 0..1\n'
+            '  np, cv2  : NumPy и OpenCV\n'
             '\n'
             'Examples / примеры:\n'
-            '  255 - frame                        # invert / инверт\n'
-            '  np.roll(frame, int(20*np.sin(t*5)), 1)  # h-slide\n'
-            '  cv2.GaussianBlur(frame, (15,15), 0)     # blur'
+            '  255 - frame\n'
+            '      # invert / инверт\n'
+            '  np.roll(frame, int(20 * a), 1)\n'
+            '      # h-slide / горизонт. сдвиг\n'
+            '  cv2.GaussianBlur(frame, (15,15), 0)\n'
+            '      # blur / размытие'
         )
         ref_lbl = tk.Label(ref, text=ref_text, bg=C_BSOD_BG, fg=C_BSOD_DIM,
                            font=MONO_S, justify='left', anchor='w')
