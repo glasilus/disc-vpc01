@@ -297,9 +297,12 @@ int main() {
         }
         glfwSwapBuffers(window);
 
-        // Output window render (second monitor).
+        // Output window render (second monitor). Pass the master aspect mode
+        // so canvas→monitor fit follows the same setting as source→canvas;
+        // otherwise output silently letterboxes everything.
         if (output.is_open()) {
-            output.render(display_tex, engine.canvas_width(), engine.canvas_height());
+            output.render(display_tex, engine.canvas_width(), engine.canvas_height(),
+                          settings.aspect_mode);
         }
     }
 

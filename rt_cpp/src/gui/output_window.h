@@ -28,9 +28,11 @@ public:
 
     bool is_open() const { return window_ != nullptr; }
 
-    // Draw the canvas texture, letterboxed to the monitor's native aspect.
+    // Draw the canvas texture onto the monitor.
+    // aspect_mode: 0=Contain (letterbox), 1=Cover (fill, crop), 2=Stretch,
+    // 3=Native (1:1, centered). Same enum as EngineSettings::aspect_mode.
     // Switches GL context, renders, swaps, and restores the control context.
-    void render(GLuint canvas_tex, int canvas_w, int canvas_h);
+    void render(GLuint canvas_tex, int canvas_w, int canvas_h, int aspect_mode = 0);
 
     // True iff the user requested closure (ESC or X button) since last query.
     bool consume_close_request();

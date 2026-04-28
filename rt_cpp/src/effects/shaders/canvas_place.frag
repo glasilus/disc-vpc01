@@ -19,7 +19,10 @@ uniform int  uMode;
 
 void main() {
     if (uMode == 2) {
-        fragColor = texture(uTex, vUV);
+        // Stretch: fill canvas. Still V-flip the source sample — sws_scale is
+        // top-left and GL is bottom-left, the same flip every other branch in
+        // this shader applies. Without it Stretch shows the image upside down.
+        fragColor = texture(uTex, vec2(vUV.x, 1.0 - vUV.y));
         return;
     }
 

@@ -12,6 +12,10 @@ static const char* k_vert =
     "out vec2 vUV;\n"
     "void main(){ vUV=aUV; gl_Position=vec4(aPos,0.0,1.0); }\n";
 
+// Same four aspect modes as canvas_place: Contain / Cover / Stretch / Native.
+// Without this, a 4:3 canvas on a 16:9 monitor was always letterboxed even
+// when the user picked Cover at the master level — output had its own
+// hardcoded Contain that overrode the inner choice.
 static const char* k_frag =
     "#version 330 core\n"
     "in vec2 vUV;\n"
@@ -19,10 +23,21 @@ static const char* k_frag =
     "uniform sampler2D uTex;\n"
     "uniform vec2 uCanvasSize;\n"
     "uniform vec2 uWindowSize;\n"
+    "uniform int  uMode;\n"
     "void main(){\n"
+    "  if (uMode == 2) { fragColor = texture(uTex, vUV); return; }\n"
     "  float cA = uCanvasSize.x / uCanvasSize.y;\n"
     "  float wA = uWindowSize.x / uWindowSize.y;\n"
-    "  vec2 frac = (cA > wA) ? vec2(1.0, wA / cA) : vec2(cA / wA, 1.0);\n"
+    "  vec2 frac;\n"
+    "  if (uMode == 3) {\n"
+    "      frac = uCanvasSize / uWindowSize;\n"
+    "  } else if (uMode == 1) {\n"
+    "      // Cover: crop to fill — never any black bars.\n"
+    "      frac = (cA > wA) ? vec2(cA / wA, 1.0) : vec2(1.0, wA / cA);\n"
+    "  } else {\n"
+    "      // Contain: letterbox/pillarbox.\n"
+    "      frac = (cA > wA) ? vec2(1.0, wA / cA) : vec2(cA / wA, 1.0);\n"
+    "  }\n"
     "  vec2 uv = (vUV - 0.5) / frac + 0.5;\n"
     "  if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))))\n"
     "       fragColor = vec4(0.0);\n"
@@ -166,7 +181,7 @@ void OutputWindow::close() {
     mon_idx_ = -1;
 }
 
-void OutputWindow::render(GLuint canvas_tex, int canvas_w, int canvas_h) {
+void OutputWindow::render(GLuint canvas_tex, int canvas_w, int canvas_h, int aspect_mode) {
     if (!window_) return;
     if (glfwWindowShouldClose(window_)) { close(); return; }
 
@@ -191,6 +206,7 @@ void OutputWindow::render(GLuint canvas_tex, int canvas_w, int canvas_h) {
                     (float)canvas_w, (float)canvas_h);
         glUniform2f(glGetUniformLocation(prog_, "uWindowSize"),
                     (float)fb_w,     (float)fb_h);
+        glUniform1i(glGetUniformLocation(prog_, "uMode"), aspect_mode);
         glBindVertexArray(vao_);
         glDrawArrays(GL_TRIANGLES, 0, 6);
         glBindVertexArray(0);
