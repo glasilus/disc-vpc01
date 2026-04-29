@@ -18,7 +18,7 @@ from .glitch import (
 from .degradation import (
     ScanLinesEffect, BitcrushEffect, JPEGCrushEffect, FisheyeEffect,
     VHSTrackingEffect, InterlaceEffect, BadSignalEffect, DitheringEffect,
-    ZoomGlitchEffect,
+    ZoomGlitchEffect, SharpenEffect,
 )
 
 from .complex_fx import (
@@ -47,7 +47,7 @@ __all__ = [
     'ColorBleedEffect', 'FreezeCorruptEffect', 'NegativeEffect',
     'ScanLinesEffect', 'BitcrushEffect', 'JPEGCrushEffect', 'FisheyeEffect',
     'VHSTrackingEffect', 'InterlaceEffect', 'BadSignalEffect', 'DitheringEffect',
-    'ZoomGlitchEffect',
+    'ZoomGlitchEffect', 'SharpenEffect',
     'FeedbackLoopEffect', 'PhaseShiftEffect', 'MosaicPulseEffect', 'EchoCompoundEffect',
     'KaliMirrorEffect', 'GlitchCascadeEffect',
     'ResonantRowsEffect', 'TemporalRGBEffect', 'FFTPhaseCorruptEffect',

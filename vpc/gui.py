@@ -247,6 +247,7 @@ class MainGUI(tk.Tk):
             'chaos_level': 0.6, 'threshold': 1.2, 'transient_thresh': 0.5,
             'min_cut_duration': 0.05, 'scene_buffer_size': 10.0,
             'use_scene_detect': False, 'snap_to_beat': False, 'snap_tolerance': 0.05,
+            'use_manual_bpm': False, 'manual_bpm': 120.0,
         }
         # Export
         export_defaults = {'fps': 24.0, 'crf': 18.0, 'custom_w': 1280.0, 'custom_h': 720.0}
@@ -1053,6 +1054,37 @@ class MainGUI(tk.Tk):
             'Максимальное расстояние онсет→бит для снэпа. Больше — больше онсетов прилипает к '
             'сетке, но теряется микро-ритмика.'))
         self._slider(body, 'snap_tolerance', 0.01, 0.15, indent=True)
+
+        # Manual BPM override — generates a uniform beat grid from a
+        # user-typed tempo value when snap-to-beat is on. Bypasses librosa's
+        # tempo estimator entirely; useful for tracks with weak onsets or
+        # when the exact target BPM is known.
+        self._row_with_help(body, 'Manual BPM Override', bi(
+            'Bypass automatic tempo detection and use a hand-typed BPM for the snap-to-beat grid. '
+            'Requires Snap onsets to beat grid above to be ON.',
+            'Подменяет автодетекцию темпа на введённый вручную BPM при снэпе к биту. '
+            'Чтобы это сработало, выше должно быть включено «Snap onsets to beat grid».'))
+        bpm_row = tk.Frame(body, bg=self._parent_bg(body))
+        bpm_row.pack(fill='x', padx=24, pady=(0, 4))
+        ttk.Checkbutton(bpm_row, text='Use manual BPM:',
+                        variable=self.vars['use_manual_bpm'],
+                        style='W95.TCheckbutton').pack(side='left')
+        bpm_entry = ttk.Entry(bpm_row, width=7,
+                              textvariable=self._display_vars.get('manual_bpm'))
+        bpm_entry.pack(side='left', padx=6)
+
+        def _commit_manual_bpm(*_):
+            try:
+                v = float(self._display_vars['manual_bpm'].get())
+                v = max(20.0, min(400.0, v))
+                self.vars['manual_bpm'].set(v)
+                self._display_vars['manual_bpm'].set(f'{v:.1f}')
+            except (ValueError, KeyError):
+                # Fall back to current var value if the user typed garbage.
+                self._display_vars['manual_bpm'].set(
+                    f"{self.vars['manual_bpm'].get():.1f}")
+        bpm_entry.bind('<FocusOut>', _commit_manual_bpm)
+        bpm_entry.bind('<Return>', _commit_manual_bpm)
 
         # Silence
         self._row_with_help(body, 'Silence Treatment', bi(

@@ -552,10 +552,53 @@ EFFECTS: List[EffectSpec] = [
         cls=degradation.ZoomGlitchEffect,
         enable_key='fx_zoom_glitch', enabled_default=False,
         chance_key='fx_zoom_glitch_chance', default_chance=0.5,
-        note='IMPACT / DROP — sudden centre zoom-in.',
+        params=[ParamSpec('fx_zoom_glitch_dur', 'Snap-back Duration (frames)', 10, 3, 30,
+                          kind='int', kwarg='duration_frames',
+                          tooltip=bi(
+                              'How many frames the elastic return takes. Shorter = sharper '
+                              'whip; longer = visible breathing.',
+                              'За сколько кадров эффект упруго возвращается. Меньше — резче '
+                              'хлыст; больше — заметное «дыхание».',
+                          ))],
+        note='IMPACT / DROP — anisotropic squash/stretch with curved return.',
         tooltip=bi(
-            'Crops the centre and upscales it back with INTER_NEAREST. Punchy on hits.',
-            'Обрезает центр и растягивает обратно через INTER_NEAREST. Резкий «удар» на хитах.',
+            'On trigger picks one axis (X or Y) and either stretches it strongly (≈1.4–2×) or '
+            'squashes it (≈0.45–0.7×). Over the next several frames the scale eases back to '
+            '1.0 along an ease-out cubic — sharp yank on the hit, elastic settle.',
+            'На триггере выбирает ось (X или Y) и либо сильно растягивает её (≈1.4–2×), либо '
+            'сжимает (≈0.45–0.7×). За несколько следующих кадров масштаб упруго возвращается к '
+            '1.0 по кривой ease-out — резкий рывок на ударе, мягкий откат.',
+        ),
+    ),
+    EffectSpec(
+        id='sharpen', label='Sharpen (unsharp mask)', group='DEGRADATION',
+        cls=degradation.SharpenEffect,
+        enable_key='fx_sharpen', enabled_default=False,
+        chance_key='fx_sharpen_chance', default_chance=0.7,
+        params=[
+            ParamSpec('fx_sharpen_amount', 'Amount', 1.5, 0.2, 4.0,
+                      kwarg='amount',
+                      tooltip=bi(
+                          'Strength of the high-pass overshoot. 0.5 polite crispness, 2 hard '
+                          'halo, 4 edge-glow.',
+                          'Сила усиления высоких частот. 0.5 — лёгкая резкость, 2 — жёсткие '
+                          'ореолы, 4 — «свечение» по контурам.',
+                      )),
+            ParamSpec('fx_sharpen_radius', 'Radius (px)', 2.0, 1.0, 9.0,
+                      kwarg='radius',
+                      tooltip=bi(
+                          'Gaussian blur radius for the low-pass component. Larger = thicker '
+                          'halo around edges.',
+                          'Радиус гауссова низкочастотного компонента. Больше — толще «ореолы» '
+                          'вокруг контуров.',
+                      )),
+        ],
+        note='IMPACT / DROP / SUSTAIN / BUILD — unsharp-mask high-pass overshoot.',
+        tooltip=bi(
+            'frame + amount · (frame − blur(frame)). Hard sharpening that punches edges and '
+            'high-frequency detail. Combine with COLOR BLEED for a "neon-edge" look.',
+            'frame + amount · (frame − blur(frame)). Жёсткая резкость, выпячивающая контуры и '
+            'мелкие детали. В паре с COLOR BLEED даёт «неоновую» окантовку.',
         ),
     ),
 

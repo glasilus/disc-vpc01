@@ -227,6 +227,8 @@ class BreakcoreEngine:
             transient_thresh=rc.transient_thresh,
             snap_to_beat=rc.snap_to_beat,
             snap_tolerance=rc.snap_tolerance,
+            manual_bpm=rc.manual_bpm,
+            use_manual_bpm=rc.use_manual_bpm,
         )
         segments, audio_duration = analyzer.analyze()
         if audio_duration == 0.0 or not segments:

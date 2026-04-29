@@ -162,15 +162,112 @@ class DitheringEffect(BaseEffect):
 
 
 class ZoomGlitchEffect(BaseEffect):
+    """Anisotropic squash/stretch on one axis with a curved return.
+
+    On trigger (IMPACT / DROP) the effect arms an animation: it picks an axis
+    (X or Y), a direction (squash to ~0.45× or stretch to ~1.85× — chosen
+    randomly), and a duration of N frames. Each subsequent frame interpolates
+    the current scale toward 1.0 along an ease-out cubic, so the image yanks
+    sharply on the hit and elastically settles back. While the animation is
+    active the effect runs every frame regardless of segment type — once it
+    finishes, it goes idle until the next trigger.
+    """
     trigger_types = [SegmentType.IMPACT, SegmentType.DROP]
 
+    def __init__(self, duration_frames=10, **kw):
+        super().__init__(**kw)
+        self.duration_frames = duration_frames
+        self._active = False
+        self._progress = 0
+        self._total = 1
+        self._axis = 'x'
+        self._peak = 1.0   # peak scale on the active axis at progress=0
+
+    def apply(self, frame, seg, draft):
+        # While an animation is in flight, keep applying every frame regardless
+        # of trigger gating. Otherwise fall through to BaseEffect's gating chain
+        # which may arm a fresh animation on this trigger.
+        if not self.enabled:
+            return frame
+        if self._active:
+            return self._step(frame, draft)
+        return super().apply(frame, seg, draft)
+
+    def _arm(self, intensity: float):
+        self._active = True
+        self._progress = 0
+        self._total = max(3, int(self.duration_frames * (0.6 + intensity * 0.8)))
+        self._axis = random.choice(('x', 'y'))
+        # 50/50 split: stretch (>1) or squash (<1). Magnitude scales with
+        # intensity so loud hits yank harder.
+        if random.random() < 0.5:
+            self._peak = 1.0 + 0.4 + intensity * 0.6   # 1.4 .. 2.0
+        else:
+            self._peak = 1.0 - (0.3 + intensity * 0.25)  # 0.45 .. 0.7
+
     def _apply(self, frame, seg, draft):
+        # Reached only on a fresh trigger — arm the animation and render
+        # the first frame of it.
+        self._arm(self.scaled_intensity(seg))
+        return self._step(frame, draft)
+
+    def _step(self, frame, draft):
         h, w = frame.shape[:2]
-        intensity = self.scaled_intensity(seg)
-        zoom = 1.0 + intensity * 0.4
-        cw, ch = int(w / zoom), int(h / zoom)
-        x1 = (w - cw) // 2
-        y1 = (h - ch) // 2
-        cropped = frame[y1:y1 + ch, x1:x1 + cw]
-        result = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_NEAREST)
+        # Ease-out cubic from peak back to 1.0 over `_total` frames.
+        u = min(1.0, self._progress / max(1, self._total - 1))
+        ease = 1.0 - (1.0 - u) ** 3
+        scale = self._peak + (1.0 - self._peak) * ease
+
+        if self._axis == 'x':
+            sx, sy = scale, 1.0
+        else:
+            sx, sy = 1.0, scale
+
+        # Crop-and-rescale around the centre so the framing stays put.
+        nw = max(2, int(round(w / sx)))
+        nh = max(2, int(round(h / sy)))
+        # When sx > 1, we read from a smaller central crop and stretch up
+        # (zoom-in along that axis); when sx < 1 we read from a larger
+        # region by extending past edges via REFLECT, giving a squashed
+        # look. cv2.warpAffine handles both via a single matrix.
+        cx, cy = w * 0.5, h * 0.5
+        # Affine that maps centre→centre and scales by (sx, sy) about it.
+        M = np.array([
+            [sx, 0.0, cx * (1.0 - sx)],
+            [0.0, sy, cy * (1.0 - sy)],
+        ], dtype=np.float32)
+        interp = cv2.INTER_NEAREST if draft else cv2.INTER_LINEAR
+        result = cv2.warpAffine(frame, M, (w, h),
+                                flags=interp, borderMode=cv2.BORDER_REFLECT)
+
+        self._progress += 1
+        if self._progress >= self._total:
+            self._active = False
+            self._peak = 1.0
         return _ensure_uint8(result)
+
+
+class SharpenEffect(BaseEffect):
+    """Strong unsharp-mask sharpening: frame + amount·(frame − blur(frame))."""
+    trigger_types = [SegmentType.IMPACT, SegmentType.DROP,
+                     SegmentType.SUSTAIN, SegmentType.BUILD]
+
+    def __init__(self, amount=1.5, radius=2.0, **kw):
+        super().__init__(**kw)
+        self.amount = amount
+        self.radius = radius
+
+    def _apply(self, frame, seg, draft):
+        intensity = self.scaled_intensity(seg)
+        # Effective amount scales with audio intensity AND the user's `amount`
+        # ceiling. At low intensity the kernel produces a polite crispness;
+        # at peak it overshoots into hard halo / edge-glow territory.
+        amt = float(self.amount) * (0.4 + intensity * 1.6)
+        # Kernel radius rounded to nearest odd integer ≥ 3.
+        r = max(3, int(round(self.radius)) | 1)
+        if draft:
+            r = max(3, r // 2 | 1)
+        blurred = cv2.GaussianBlur(frame, (r, r), 0)
+        f32 = frame.astype(np.float32)
+        out = f32 + amt * (f32 - blurred.astype(np.float32))
+        return _ensure_uint8(out)

@@ -147,13 +147,21 @@ class AudioAnalyzer:
 
     def __init__(self, audio_path: str, min_segment_dur: float = 0.05,
                  loud_thresh: float = 1.2, transient_thresh: float = 0.5,
-                 snap_to_beat: bool = False, snap_tolerance: float = 0.05):
+                 snap_to_beat: bool = False, snap_tolerance: float = 0.05,
+                 manual_bpm: float = 0.0, use_manual_bpm: bool = False):
         self.audio_path = audio_path
         self.min_segment_dur = min_segment_dur
         self.loud_thresh = loud_thresh
         self.transient_thresh = transient_thresh
         self.snap_to_beat = snap_to_beat
         self.snap_tolerance = snap_tolerance
+        # Manual BPM override: when both `use_manual_bpm` is True and a
+        # positive `manual_bpm` is provided, the beat grid for snap-to-beat
+        # is generated from the user value instead of running librosa's
+        # tempo estimator. Useful when the track has weak/ambiguous onsets
+        # or the user knows the exact target tempo.
+        self.manual_bpm = float(manual_bpm)
+        self.use_manual_bpm = bool(use_manual_bpm)
         self.detected_bpm: float = 0.0  # filled after analyze()
 
     def _load_audio(self, path: str):
@@ -264,13 +272,24 @@ class AudioAnalyzer:
         # cuts land precisely on the rhythmic grid instead of slightly
         # ahead/behind the beat due to spectral onset imprecision.
         if self.snap_to_beat:
-            tempo, beat_frames = librosa.beat.beat_track(
-                y=y, sr=sr, onset_envelope=onset_env, trim=False)
-            beat_times = librosa.frames_to_time(beat_frames, sr=sr)
-            self.detected_bpm = float(np.atleast_1d(tempo)[0])
+            if self.use_manual_bpm and self.manual_bpm > 0:
+                # Manual override — generate a uniform beat grid from the
+                # user-supplied tempo, anchored at t=0. No librosa tempo
+                # estimation is done in this branch.
+                period = 60.0 / self.manual_bpm
+                beat_times = np.arange(0.0, duration + period, period,
+                                       dtype=np.float64)
+                self.detected_bpm = float(self.manual_bpm)
+                src = 'manual'
+            else:
+                tempo, beat_frames = librosa.beat.beat_track(
+                    y=y, sr=sr, onset_envelope=onset_env, trim=False)
+                beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+                self.detected_bpm = float(np.atleast_1d(tempo)[0])
+                src = 'detected'
             onsets = self._snap_onsets_to_beats(
                 onsets, beat_times, self.snap_tolerance)
-            print(f'[ANALYZER] Beat snap active — {self.detected_bpm:.1f} BPM, '
+            print(f'[ANALYZER] Beat snap active ({src}) — {self.detected_bpm:.1f} BPM, '
                   f'tolerance ±{self.snap_tolerance*1000:.0f} ms')
         # -----------------------------------------------------------------
 

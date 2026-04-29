@@ -162,6 +162,14 @@ class RenderConfig:
     def snap_tolerance(self) -> float:
         return float(self.raw.get('snap_tolerance', 0.05))
 
+    @property
+    def manual_bpm(self) -> float:
+        return float(self.raw.get('manual_bpm', 0.0) or 0.0)
+
+    @property
+    def use_manual_bpm(self) -> bool:
+        return bool(self.raw.get('use_manual_bpm', False))
+
     # ----- scene detection -----
     @property
     def use_scene_detect(self) -> bool:

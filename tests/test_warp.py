@@ -52,14 +52,20 @@ def test_vortex_warp_changes_at_high_intensity():
     assert not np.array_equal(out, f)
 
 
-def test_fractal_warp_seed_reproducible():
-    """Same seg.rms + flatness must produce the same warp field."""
+def test_fractal_warp_field_flows_in_time():
+    """Field must visibly evolve frame-to-frame so warp is animated, not static.
+
+    The redesigned FractalNoiseWarp samples opensimplex noise3 with a z-axis
+    advanced by an internal frame counter — passing the SAME frame twice in
+    a row should now produce DIFFERENT outputs (the field has flowed),
+    instead of the previous per-segment determinism.
+    """
     fx = FractalNoiseWarpEffect(enabled=True, chance=1.0)
     seg = make_seg()
     f = make_frame(3)
     o1 = fx.apply(f, seg, False)
     o2 = fx.apply(f, seg, False)
-    assert np.array_equal(o1, o2)
+    assert not np.array_equal(o1, o2)
 
 
 def test_self_displace_history_grows():

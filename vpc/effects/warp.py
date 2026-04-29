@@ -4,18 +4,41 @@ These four effects exist as a CPU-only family of motion-vector distortions —
 direct alternatives to optical-flow datamoshing. Each one uses a different
 displacement-field source: previous-frame Sobel gradient, Gaussian-falloff
 spiral, fBm noise, and the past frame's own colour channels.
+
+All warps maintain a per-effect frame counter (`_t`) that advances on every
+call to `apply()` regardless of whether the effect fires. The counter drives
+slow phase modulations (Lissajous-moving centres, evolving 3-D noise slice,
+breathing amplitude) so the displacement field is in continuous motion
+within a sustained segment instead of snapping to a new static field.
 """
 from __future__ import annotations
 
 import cv2
 import numpy as np
+from opensimplex import noise3array
 
 from vpc.analyzer import SegmentType
 from .base import BaseEffect, _ensure_uint8
 
 
-class DerivWarpEffect(BaseEffect):
-    """Sobel-of-prev-frame as a motion-vector field — closest CPU analogue to datamosh."""
+class _Warpable(BaseEffect):
+    """Mixin: monotonic frame counter advanced on every apply()."""
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self._t = 0
+
+    def apply(self, frame, seg, draft):
+        self._t += 1
+        return super().apply(frame, seg, draft)
+
+
+class DerivWarpEffect(_Warpable):
+    """Sobel-of-prev-frame as a motion-vector field with a slow rotational drift.
+
+    The Sobel gradient gives the local "where is the edge" direction; on top
+    of that we add a slow swirl whose strength oscillates with time so the
+    field never freezes into a still pattern even on a static input.
+    """
     trigger_types = [SegmentType.IMPACT, SegmentType.NOISE,
                      SegmentType.DROP, SegmentType.SUSTAIN]
 
@@ -25,7 +48,6 @@ class DerivWarpEffect(BaseEffect):
         self._prev = None
 
     def apply(self, frame, seg, draft):
-        # Always update _prev, even when effect doesn't fire.
         result = super().apply(frame, seg, draft)
         if result is frame:
             self._prev = frame.copy()
@@ -50,16 +72,25 @@ class DerivWarpEffect(BaseEffect):
             gx = cv2.resize(gx, (w, h))
             gy = cv2.resize(gy, (w, h))
 
-        mag = np.sqrt(gx ** 2 + gy ** 2)
-        max_mag = float(mag.max()) + 1e-6
-        disp_scale = intensity * 40.0
+        max_mag = float(np.sqrt(gx ** 2 + gy ** 2).max()) + 1e-6
+        # Time-varying amplitude — breathes ±25% around the base.
+        breath = 1.0 + 0.25 * np.sin(self._t * 0.13)
+        disp_scale = intensity * 40.0 * breath
         dx = (gx / max_mag) * disp_scale
         dy = (gy / max_mag) * disp_scale
 
-        xs = np.tile(np.arange(w, dtype=np.float32), (h, 1))
-        ys = np.tile(np.arange(h, dtype=np.float32).reshape(-1, 1), (1, w))
-        map_x = np.clip(xs + dx, 0, w - 1).astype(np.float32)
-        map_y = np.clip(ys + dy, 0, h - 1).astype(np.float32)
+        # Slow rotational drift superimposed on top of the Sobel field.
+        # The whole frame rocks back and forth around its centre while the
+        # local gradient warp does its thing.
+        cx, cy = w * 0.5, h * 0.5
+        xs = np.tile(np.arange(w, dtype=np.float32), (h, 1)) - cx
+        ys = np.tile(np.arange(h, dtype=np.float32).reshape(-1, 1), (1, w)) - cy
+        swirl_amp = intensity * 0.06 * np.sin(self._t * 0.07)
+        dx += -ys * swirl_amp
+        dy += xs * swirl_amp
+
+        map_x = np.clip(xs + cx + dx, 0, w - 1).astype(np.float32)
+        map_y = np.clip(ys + cy + dy, 0, h - 1).astype(np.float32)
 
         interp = cv2.INTER_NEAREST if draft else cv2.INTER_LINEAR
         warped = cv2.remap(frame, map_x, map_y, interp, borderMode=cv2.BORDER_REFLECT)
@@ -74,20 +105,31 @@ class DerivWarpEffect(BaseEffect):
         return _ensure_uint8(warped)
 
 
-class VortexWarpEffect(BaseEffect):
-    """Gaussian-falloff spiral rotation around frame centre."""
+class VortexWarpEffect(_Warpable):
+    """Gaussian-falloff spiral whose centre wanders on a Lissajous curve.
+
+    Centre, angular speed and falloff sigma all evolve with `_t`, so the
+    spiral is never the same two frames in a row — it precesses, the
+    rotation rate breathes, and the affected region swells and shrinks.
+    """
     trigger_types = [SegmentType.BUILD, SegmentType.IMPACT,
                      SegmentType.SUSTAIN, SegmentType.DROP]
 
     def _apply(self, frame, seg, draft):
         h, w = frame.shape[:2]
         intensity = self.scaled_intensity(seg)
-        cx, cy = w * 0.5, h * 0.5
-        sigma = min(w, h) * 0.35
-        xs = (np.tile(np.arange(w, dtype=np.float32), (h, 1)) - cx)
-        ys = (np.tile(np.arange(h, dtype=np.float32).reshape(-1, 1), (1, w)) - cy)
+        t = self._t * 0.04
+        # Lissajous-wandering centre — never repeats over short timescales.
+        cx = w * (0.5 + 0.20 * np.sin(t * 1.0))
+        cy = h * (0.5 + 0.18 * np.sin(t * 1.3 + 0.7))
+        sigma = min(w, h) * (0.35 + 0.15 * np.sin(t * 0.6))
+        # Direction reverses periodically so the swirl breathes.
+        rot_mod = np.sin(t * 0.9)
+
+        xs = np.tile(np.arange(w, dtype=np.float32), (h, 1)) - cx
+        ys = np.tile(np.arange(h, dtype=np.float32).reshape(-1, 1), (1, w)) - cy
         r_sq = xs ** 2 + ys ** 2
-        angle = intensity * 5.0 * np.exp(-r_sq / (2.0 * sigma ** 2))
+        angle = intensity * 5.0 * rot_mod * np.exp(-r_sq / (2.0 * sigma ** 2))
         cos_a = np.cos(angle).astype(np.float32)
         sin_a = np.sin(angle).astype(np.float32)
         map_x = np.clip(xs * cos_a - ys * sin_a + cx, 0, w - 1).astype(np.float32)
@@ -107,25 +149,42 @@ class VortexWarpEffect(BaseEffect):
         )
 
 
-class FractalNoiseWarpEffect(BaseEffect):
-    """Domain-warped fractal Brownian motion displacement, reseeded per segment."""
+class FractalNoiseWarpEffect(_Warpable):
+    """Domain-warped fractal noise field that flows through a 3-D noise volume.
+
+    The displacement field is sampled from `opensimplex.noise3` with a slowly
+    advancing z-coordinate (`_t·dt`). That makes the field a continuous
+    cross-section of an animated 3-D fluid — it streams instead of being
+    reseeded as a still pattern per segment.
+    """
     trigger_types = list(SegmentType)
 
     def __init__(self, octaves=4, **kw):
         super().__init__(**kw)
         self.octaves = octaves
 
-    def _make_fbm(self, h, w, seed, octaves, draft):
-        rng = np.random.RandomState(seed)
+    def _make_flow_field(self, h, w, t, octaves, draft):
+        """Build dx, dy by summing octaves of opensimplex noise3.
+
+        Sampled on a coarse grid via the C-vectorised `noise3array`, then
+        upsampled with linear interp. The z-coordinate scales with `_t`,
+        so the field flows continuously instead of being reseeded.
+        """
         dx = np.zeros((h, w), dtype=np.float32)
         dy = np.zeros((h, w), dtype=np.float32)
         amp = 1.0
-        scale = 8 if draft else 4
+        scale = 16 if draft else 8
+        # Two independent z-channels so dx and dy don't move in lockstep.
+        z_x = np.asarray([t * 0.05], dtype=np.float64)
+        z_y = np.asarray([t * 0.05 + 17.3], dtype=np.float64)
         for _ in range(octaves):
-            nh = max(1, h // scale)
-            nw = max(1, w // scale)
-            nx = rng.randn(nh, nw).astype(np.float32)
-            ny = rng.randn(nh, nw).astype(np.float32)
+            nh = max(2, h // scale)
+            nw = max(2, w // scale)
+            freq = 4.0 / max(1, scale // 4)
+            xi = np.linspace(0.0, freq, nw, dtype=np.float64)
+            yi = np.linspace(0.0, freq, nh, dtype=np.float64)
+            nx = np.asarray(noise3array(xi, yi, z_x), dtype=np.float32)[0]
+            ny = np.asarray(noise3array(xi, yi, z_y), dtype=np.float32)[0]
             nx_up = cv2.resize(nx, (w, h), interpolation=cv2.INTER_LINEAR)
             ny_up = cv2.resize(ny, (w, h), interpolation=cv2.INTER_LINEAR)
             dx += nx_up * amp
@@ -137,12 +196,15 @@ class FractalNoiseWarpEffect(BaseEffect):
     def _apply(self, frame, seg, draft):
         h, w = frame.shape[:2]
         intensity = self.scaled_intensity(seg)
-        seed = int(abs(seg.rms * 1e6 + seg.flatness * 1e4)) & 0x7FFFFFFF
-        dx, dy = self._make_fbm(h, w, seed, max(2, self.octaves), draft)
+        dx, dy = self._make_flow_field(h, w, float(self._t),
+                                        max(2, self.octaves), draft)
         for arr in (dx, dy):
             m = float(np.abs(arr).max()) + 1e-6
             arr /= m
-        disp = intensity * 60.0
+        # Amplitude pulses on top of the flowing field — gives a subtle
+        # "tide" feel instead of a constant-strength push.
+        pulse = 1.0 + 0.3 * np.sin(self._t * 0.11)
+        disp = intensity * 60.0 * pulse
         dx *= disp
         dy *= disp
         xs = np.tile(np.arange(w, dtype=np.float32), (h, 1))
@@ -155,8 +217,8 @@ class FractalNoiseWarpEffect(BaseEffect):
         )
 
 
-class SelfDisplaceEffect(BaseEffect):
-    """Past frame's RGB channels used as XY displacement vectors."""
+class SelfDisplaceEffect(_Warpable):
+    """Past frame's RGB channels used as XY displacement vectors, breathing."""
     trigger_types = [SegmentType.IMPACT, SegmentType.NOISE, SegmentType.DROP,
                      SegmentType.BUILD, SegmentType.SUSTAIN]
 
@@ -185,12 +247,19 @@ class SelfDisplaceEffect(BaseEffect):
                 return frame
             return src
 
-        d1 = get_hist(self.depth).astype(np.float32)
-        d2 = get_hist(min(self.depth * 2, n - 1)).astype(np.float32)
-        dx = ((d1[:, :, 0] - 128.0) / 128.0) * intensity * 55.0
-        dy = ((d1[:, :, 1] - 128.0) / 128.0) * intensity * 55.0
-        dx += ((d2[:, :, 0] - 128.0) / 128.0) * intensity * 25.0
-        dy += ((d2[:, :, 2] - 128.0) / 128.0) * intensity * 25.0
+        # Depth and amplitude breathe with time so the displacement keeps
+        # changing even on a long static SUSTAIN segment.
+        breath = 0.7 + 0.3 * np.sin(self._t * 0.09)
+        cross = 0.7 + 0.3 * np.cos(self._t * 0.05)
+        dyn_depth = max(1, min(self.history_len,
+                               self.depth + int(np.sin(self._t * 0.04) * 1.5)))
+
+        d1 = get_hist(dyn_depth).astype(np.float32)
+        d2 = get_hist(min(dyn_depth * 2, n - 1)).astype(np.float32)
+        dx = ((d1[:, :, 0] - 128.0) / 128.0) * intensity * 55.0 * breath
+        dy = ((d1[:, :, 1] - 128.0) / 128.0) * intensity * 55.0 * cross
+        dx += ((d2[:, :, 0] - 128.0) / 128.0) * intensity * 25.0 * cross
+        dy += ((d2[:, :, 2] - 128.0) / 128.0) * intensity * 25.0 * breath
         xs = np.tile(np.arange(w, dtype=np.float32), (h, 1))
         ys = np.tile(np.arange(h, dtype=np.float32).reshape(-1, 1), (1, w))
         map_x = np.clip(xs + dx, 0, w - 1).astype(np.float32)
