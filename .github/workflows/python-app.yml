@@ -65,10 +65,18 @@ jobs:
             --icon CDDRIVE.ico ^
             --splash CDDRIVE.png ^
             --add-data "CDDRIVE.png;." ^
+            --collect-all numpy ^
+            --collect-all PIL ^
             --collect-all cv2 ^
             --collect-all librosa ^
             --collect-all scipy ^
             --collect-all soundfile ^
+            --collect-all sounddevice ^
+            --collect-all cffi ^
+            --collect-all audioread ^
+            --collect-all pooch ^
+            --collect-all lazy_loader ^
+            --collect-all joblib ^
             --collect-all imageio_ffmpeg ^
             --collect-all numba ^
             --collect-all llvmlite ^
@@ -179,10 +187,18 @@ jobs:
             --name DiscVPC01 \
             --icon CDDRIVE.icns \
             --add-data "CDDRIVE.png:." \
+            --collect-all numpy \
+            --collect-all PIL \
             --collect-all cv2 \
             --collect-all librosa \
             --collect-all scipy \
             --collect-all soundfile \
+            --collect-all sounddevice \
+            --collect-all cffi \
+            --collect-all audioread \
+            --collect-all pooch \
+            --collect-all lazy_loader \
+            --collect-all joblib \
             --collect-all imageio_ffmpeg \
             --collect-all numba \
             --collect-all llvmlite \
@@ -375,10 +391,18 @@ jobs:
             --name DiscVPC01 \
             --splash CDDRIVE.png \
             --add-data "CDDRIVE.png:." \
+            --collect-all numpy \
+            --collect-all PIL \
             --collect-all cv2 \
             --collect-all librosa \
             --collect-all scipy \
             --collect-all soundfile \
+            --collect-all sounddevice \
+            --collect-all cffi \
+            --collect-all audioread \
+            --collect-all pooch \
+            --collect-all lazy_loader \
+            --collect-all joblib \
             --collect-all imageio_ffmpeg \
             --collect-all numba \
             --collect-all llvmlite \
