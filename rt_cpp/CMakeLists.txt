@@ -56,6 +56,26 @@ endforeach()
 
 add_custom_target(EmbedShaders ALL DEPENDS ${GENERATED_HEADERS})
 
+# ── Embed AUDIO.png as window icon ────────────────────────────────────────────
+# Loaded at runtime via stb_image_load_from_memory and handed to
+# glfwSetWindowIcon (see src/main.cpp). Embedding the bytes keeps the
+# binary fully self-contained — no missing-icon failures when the user
+# moves the .exe / ELF outside the build dir.
+# AUDIO.png lives at the repo root (one level above rt_cpp/).
+set(ICON_PNG_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../AUDIO.png")
+set(ICON_PNG_HDR "${SHADER_OUT}/audio_icon_png.h")
+add_custom_command(
+    OUTPUT  "${ICON_PNG_HDR}"
+    COMMAND ${CMAKE_COMMAND}
+        -DSRC=${ICON_PNG_SRC} -DDST=${ICON_PNG_HDR} -DNAME=audio_icon_png
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_binary.cmake"
+    DEPENDS "${ICON_PNG_SRC}"
+    COMMENT "Embedding AUDIO.png as binary header"
+    VERBATIM
+)
+list(APPEND GENERATED_HEADERS "${ICON_PNG_HDR}")
+add_custom_target(EmbedIcon ALL DEPENDS "${ICON_PNG_HDR}")
+
 # ── Sources ───────────────────────────────────────────────────────────────────
 set(SOURCES
     src/main.cpp
@@ -75,6 +95,23 @@ set(SOURCES
     src/presets/preset_manager.cpp
 )
 
+# Windows: compile the .rc resource into the PE so Explorer / taskbar pick
+# up the AUDIO.ico icon on the .exe directly (no runtime work needed).
+if(WIN32)
+    list(APPEND SOURCES resources/app.rc)
+endif()
+
+# macOS: copy AUDIO.icns into the .app bundle's Contents/Resources/ and
+# wire it up via Info.plist (MACOSX_BUNDLE_ICON_FILE). The runtime
+# glfwSetWindowIcon() is a no-op on macOS — the bundle icon is what
+# Finder, Dock and Cmd-Tab actually use.
+if(APPLE)
+    set(MAC_ICON_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../AUDIO.icns")
+    set_source_files_properties("${MAC_ICON_SRC}"
+        PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+    list(APPEND SOURCES "${MAC_ICON_SRC}")
+endif()
+
 add_executable(DiscVPC01-RT WIN32 MACOSX_BUNDLE ${SOURCES} ${GENERATED_HEADERS})
 
 if(APPLE)
@@ -85,9 +122,10 @@ if(APPLE)
         MACOSX_BUNDLE_BUNDLE_VERSION "1.0"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
         MACOSX_BUNDLE_INFO_STRING "Disc VPC 01 RT"
+        MACOSX_BUNDLE_ICON_FILE "AUDIO.icns"
     )
 endif()
-add_dependencies(DiscVPC01-RT EmbedShaders)
+add_dependencies(DiscVPC01-RT EmbedShaders EmbedIcon)
 
 target_include_directories(DiscVPC01-RT PRIVATE
     src

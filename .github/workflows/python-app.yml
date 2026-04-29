@@ -47,11 +47,21 @@ jobs:
           pip install pyinstaller
 
       - name: Build DiscVPC01.exe (Python)
+        # --splash CDDRIVE.png shows a window during the slow onefile
+        # extraction (1–5 min cold start because of librosa/numba/scipy
+        # /llvmlite). vpc/__main__.py imports pyi_splash and closes it
+        # once MainGUI is constructed, so the splash dies the moment the
+        # real window is ready.
+        # --icon embeds the .exe icon in the PE header; --add-data ships
+        # the PNG so MainGUI can also set the Tk window icon at runtime.
         shell: cmd
         run: |
           pyinstaller ^
             --onefile --noconsole --clean --noupx ^
             --name DiscVPC01 ^
+            --icon CDDRIVE.ico ^
+            --splash CDDRIVE.png ^
+            --add-data "CDDRIVE.png;." ^
             --collect-all cv2 ^
             --collect-all librosa ^
             --collect-all scipy ^
@@ -151,10 +161,17 @@ jobs:
         # codebase calls first via imageio_ffmpeg.get_ffmpeg_exe(). The
         # old approach copied brew's ffmpeg, which dragged in a tree of
         # homebrew dylibs that broke on every clean Mac.
+        # --icon CDDRIVE.icns sets the .app bundle icon (PyInstaller
+        # writes it into Contents/Resources/ + Info.plist CFBundleIconFile).
+        # --splash is intentionally omitted: PyInstaller's splash on
+        # macos-arm64 is not supported (the Tk-based splash window can't
+        # initialise before the main GUI on Apple Silicon runners).
         run: |
           pyinstaller \
             --onefile --windowed --clean --noupx \
             --name DiscVPC01 \
+            --icon CDDRIVE.icns \
+            --add-data "CDDRIVE.png:." \
             --collect-all cv2 \
             --collect-all librosa \
             --collect-all scipy \
@@ -341,10 +358,16 @@ jobs:
           pip install pyinstaller
 
       - name: Build DiscVPC01 (Python)
+        # PyInstaller has no meaningful --icon flag for ELF on Linux —
+        # window icon is set at runtime via Tk iconphoto from the
+        # bundled CDDRIVE.png (resolved through sys._MEIPASS). Splash
+        # works on Linux and is worth including here too.
         run: |
           xvfb-run --auto-servernum pyinstaller \
             --onefile --noconsole --clean --noupx \
             --name DiscVPC01 \
+            --splash CDDRIVE.png \
+            --add-data "CDDRIVE.png:." \
             --collect-all cv2 \
             --collect-all librosa \
             --collect-all scipy \

@@ -1,0 +1,9 @@
+// Windows resource script — embeds AUDIO.ico in the PE header so the
+// .exe shows the correct icon in Explorer / taskbar / Alt-Tab without
+// any runtime work. The runtime glfwSetWindowIcon() call covers the
+// titlebar on platforms where rc-bound icons aren't visible.
+//
+// IDI_ICON1 = first icon resource; Windows shells pick the lowest-numbered
+// icon for shortcuts. AUDIO.ico lives at the repo root, two levels up
+// from this .rc file.
+IDI_ICON1 ICON "../../AUDIO.ico"

@@ -155,6 +155,19 @@ class MainGUI(tk.Tk):
         self.minsize(900, 700)
         self.configure(bg=C_SILVER)
         self.resizable(True, True)
+        # Window icon (Tk uses iconphoto regardless of OS — covers Linux
+        # WMs and the Tk titlebar on Windows/macOS where the OS-level icon
+        # comes from the bundle/exe). Resource path resolves both the
+        # frozen PyInstaller bundle (sys._MEIPASS) and a dev checkout.
+        try:
+            base = getattr(sys, '_MEIPASS', None) or os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__)))
+            ico_png = os.path.join(base, 'CDDRIVE.png')
+            if os.path.exists(ico_png):
+                self._icon_img = tk.PhotoImage(file=ico_png)
+                self.iconphoto(True, self._icon_img)
+        except Exception:
+            pass
 
         self.audio_path = ''
         self.video_paths = []
@@ -167,6 +180,16 @@ class MainGUI(tk.Tk):
         self._audio_thread = None
         self._audio_wav = None
         self.stop_playback = threading.Event()
+        # Cooperative cancellation: GUI sets engine.abort = True from the
+        # main thread; the worker thread reads it. CPython GIL makes plain
+        # attribute writes atomic, so no lock is needed.
+        self.engine = None
+        # Preview-player pause/volume state. Volume is applied per playback
+        # loop iteration (≤5s latency) — sufficient for a 5s looping preview.
+        self.pause_event = threading.Event()
+        self._volume = 0.8
+        self._volume_pre_mute = 0.8
+        self._muted = False
 
         self.style = ttk.Style(self)
         self._setup_styles()
@@ -372,7 +395,15 @@ class MainGUI(tk.Tk):
             self._center_tab_btns[key] = btn
         self._switch_center_tab('EFFECTS')
 
-        # Right panel: preview + console
+        # Right panel: preview monitor + transport + render controls + log.
+        # Layout (top → bottom):
+        #   1) Title bar
+        #   2) Preview Monitor (640×360 frame)
+        #   3) Transport strip: Pause / Mute / Volume / Clear-monitor
+        #   4) Render progress bar
+        #   5) CANCEL RENDER (only enabled while a render is running)
+        #   6) Status Log (Clear button is inline with the LabelFrame title
+        #      strip so it doesn't waste a full row).
         right = ttk.Frame(self, style='W95.TFrame')
         right.grid(row=0, column=2, padx=(4, 8), pady=8, sticky='nsew')
         tb2 = tk.Frame(right, bg=C_TITLE_BAR, height=28)
@@ -382,32 +413,73 @@ class MainGUI(tk.Tk):
                  font=('MS Sans Serif', 11, 'bold')).pack(side='left', padx=6, pady=3)
         cr = tk.Frame(right, bg=C_SILVER)
         cr.pack(fill='both', expand=True, padx=2, pady=2)
+
+        # 2) Preview monitor
         pmon = tk.LabelFrame(cr, text='Preview Monitor (640×360)',
                              bg=C_SILVER, fg=C_TEXT, bd=2, relief='sunken',
                              font=('MS Sans Serif', 10, 'bold'))
-        pmon.pack(fill='x', padx=8, pady=6)
+        pmon.pack(fill='x', padx=8, pady=(6, 2))
         _blank = ImageTk.PhotoImage(Image.new('RGB', (640, 360), 'black'))
         self.player_label = tk.Label(pmon, image=_blank, bg=C_BLACK, bd=2, relief='sunken')
         self.player_label.imgtk = _blank
         self.player_label.pack(padx=4, pady=4)
+
+        # 3) Transport strip — single row, controls scoped to the preview
+        # player (NOT the renderer). Disabled until a preview is loaded;
+        # toggled together by start_playback / stop_and_clear_playback.
+        pc = tk.Frame(cr, bg=C_SILVER)
+        pc.pack(fill='x', padx=8, pady=(0, 4))
+        self.btn_pause = ttk.Button(pc, text='PAUSE', style='W95.TButton',
+                                    width=7, command=self._toggle_pause,
+                                    state='disabled')
+        self.btn_pause.pack(side='left', padx=(0, 4))
+        self.btn_mute = ttk.Button(pc, text='MUTE', style='W95.TButton',
+                                   width=7, command=self._toggle_mute,
+                                   state='disabled')
+        self.btn_mute.pack(side='left', padx=(0, 4))
+        tk.Label(pc, text='Vol', bg=C_SILVER, fg=C_TEXT,
+                 font=('MS Sans Serif', 9, 'bold')).pack(side='left')
+        self.var_volume = tk.DoubleVar(value=80.0)
+        self.var_volume.trace_add('write', lambda *_: self._on_volume_change())
+        vol = ttk.Scale(pc, from_=0, to=100, variable=self.var_volume,
+                        orient=tk.HORIZONTAL, style='W95.Horizontal.TScale')
+        vol.pack(side='left', fill='x', expand=True, padx=4)
+        self._bind_scale_click_jump(vol)
+        self.btn_clear_monitor = ttk.Button(pc, text='X', style='W95.TButton',
+                                            width=3,
+                                            command=self.stop_and_clear_playback,
+                                            state='disabled')
+        self.btn_clear_monitor.pack(side='left')
+
+        # 4) Render progress
         self.progress = ttk.Progressbar(cr, style='green.W95.Horizontal.TProgressbar',
                                         mode='determinate', maximum=100,
                                         variable=self.progress_var)
-        self.progress.pack(fill='x', padx=8, pady=3)
+        self.progress.pack(fill='x', padx=8, pady=(2, 2))
+
+        # 5) Cancel Render — separate, full-width, disabled outside renders.
+        # Sets engine.abort=True (cooperative cancel implemented in
+        # vpc/render/engine.py). NOT the same as the transport X button.
+        self.btn_cancel_render = ttk.Button(
+            cr, text='CANCEL RENDER',
+            command=self.cancel_render,
+            style='Stop.TButton', state='disabled')
+        self.btn_cancel_render.pack(fill='x', padx=8, pady=(2, 4), ipady=4)
+
+        # 6) Status log — Clear button sits in a thin top strip above
+        # the Text widget. Using a real frame (not place()) so HiDPI /
+        # theme-engine layout shifts can't push the button over the
+        # log content.
         cp = tk.LabelFrame(cr, text='Status Log', bg=C_SILVER, fg=C_TEXT,
                            bd=2, relief='sunken', font=('MS Sans Serif', 10, 'bold'))
-        cp.pack(fill='both', expand=True, padx=8, pady=4)
-        cb = tk.Frame(cp, bg=C_SILVER)
-        cb.pack(fill='x', padx=4, pady=(4, 0))
-        ttk.Button(cb, text='Clear Log', style='W95.TButton',
-                   command=self._clear_log).pack(side='right', padx=2)
-        self.console = tk.Text(cp, height=8, font=('Courier New', 9),
+        cp.pack(fill='both', expand=True, padx=8, pady=(2, 6))
+        log_top = tk.Frame(cp, bg=C_SILVER)
+        log_top.pack(fill='x', padx=4, pady=(2, 0))
+        ttk.Button(log_top, text='Clear', style='W95.TButton',
+                   width=7, command=self._clear_log).pack(side='right')
+        self.console = tk.Text(cp, height=6, font=('Courier New', 9),
                                bg=C_WHITE, fg=C_BLACK, bd=2, relief='sunken')
-        self.console.pack(fill='both', expand=True, padx=4, pady=4)
-        self.btn_stop = ttk.Button(cr, text='STOP',
-                                   command=self.stop_and_clear_playback,
-                                   style='Stop.TButton', state='disabled')
-        self.btn_stop.pack(fill='x', padx=8, pady=(2, 6), ipady=4)
+        self.console.pack(fill='both', expand=True, padx=4, pady=(2, 4))
 
     # ─── source files / presets / tabs ───
     @staticmethod
@@ -568,6 +640,88 @@ class MainGUI(tk.Tk):
             help_lbl.pack(side='left', padx=(4, 0))
             Tooltip(lbl, tooltip); Tooltip(help_lbl, tooltip)
         return row
+
+    def _row_with_help_popup(self, parent, text, short_tip, full_text, mono=False):
+        """Like _row_with_help, but the [?] icon opens a modal popup with
+        the full text instead of relying on the hover tooltip alone.
+
+        Used for fields whose explanation is too long to fit a hover
+        tooltip without overflowing the screen (Codec is the canonical
+        case — bilingual EN/RU description with hardware-encoder caveats).
+        Hover still shows a short one-line summary so the user has a hint
+        without having to click.
+        """
+        bg = self._parent_bg(parent)
+        row = tk.Frame(parent, bg=bg)
+        row.pack(fill='x', padx=(8, 8), pady=(2, 0))
+        f = ('Courier New', 9, 'bold') if mono else ('MS Sans Serif', 9)
+        lbl = tk.Label(row, text=text, bg=bg, fg=C_TEXT, font=f, anchor='w')
+        lbl.pack(side='left')
+        # Distinct cursor + tinted background so the icon visibly differs
+        # from the plain-tooltip [?] — signals "click for more".
+        help_lbl = tk.Label(row, text='[ ? ]', bg='#E8E8FF', fg='#1A1A80',
+                            cursor='hand2', bd=1, relief='raised',
+                            font=('MS Sans Serif', 8, 'bold'),
+                            padx=2)
+        help_lbl.pack(side='left', padx=(6, 0))
+        if short_tip:
+            Tooltip(lbl, short_tip); Tooltip(help_lbl, short_tip + '\n(click for full info)')
+        help_lbl.bind('<Button-1>',
+                      lambda _e: self._open_help_popup(text, full_text))
+        return row
+
+    def _open_help_popup(self, title, body):
+        """Modal-ish popup with scrollable body. Uses Toplevel + transient
+        + grab so it floats above the main window without true OS-modal
+        blocking (Tk's grab_set is enough for a help dialog).
+
+        Sized to ~600x460 with vertical scrollbar — fits any screen down
+        to 800x600 and avoids the screen-overflow problem of the long
+        hover tooltips this replaces.
+        """
+        win = tk.Toplevel(self)
+        win.title(f'Help — {title}')
+        win.configure(bg=C_SILVER)
+        win.transient(self)
+        win.geometry('600x460')
+        win.resizable(True, True)
+        # Title bar (Win95-themed, matches the rest of the app).
+        tb = tk.Frame(win, bg=C_TITLE_BAR, height=24)
+        tb.pack(fill='x')
+        tk.Label(tb, text=title, fg=C_WHITE, bg=C_TITLE_BAR,
+                 font=('MS Sans Serif', 10, 'bold')).pack(side='left',
+                                                           padx=6, pady=2)
+        # Body: Text + Scrollbar (Text rather than Label so users can
+        # select / copy snippets like codec names).
+        body_frame = tk.Frame(win, bg=C_SILVER)
+        body_frame.pack(fill='both', expand=True, padx=8, pady=(8, 0))
+        sb = ttk.Scrollbar(body_frame, orient='vertical')
+        sb.pack(side='right', fill='y')
+        txt = tk.Text(body_frame, wrap='word',
+                      font=('MS Sans Serif', 10),
+                      bg=C_WHITE, fg=C_BLACK, bd=2, relief='sunken',
+                      yscrollcommand=sb.set)
+        txt.pack(side='left', fill='both', expand=True)
+        sb.configure(command=txt.yview)
+        txt.insert('1.0', body)
+        txt.configure(state='disabled')
+        # Close button + Esc binding for keyboard exit.
+        bottom = tk.Frame(win, bg=C_SILVER)
+        bottom.pack(fill='x', padx=8, pady=8)
+        ttk.Button(bottom, text='Close', style='W95.TButton',
+                   width=10, command=win.destroy).pack(side='right')
+        win.bind('<Escape>', lambda _e: win.destroy())
+        # Center over the parent window.
+        win.update_idletasks()
+        try:
+            px = self.winfo_rootx() + (self.winfo_width() - win.winfo_width()) // 2
+            py = self.winfo_rooty() + (self.winfo_height() - win.winfo_height()) // 2
+            win.geometry(f'+{max(0, px)}+{max(0, py)}')
+        except tk.TclError:
+            pass
+        win.grab_set()
+        win.focus_set()
+        return win
 
     def _slider(self, parent, name, lo, hi, indent=False):
         """Standalone slider with header showing live numeric value."""
@@ -1109,7 +1263,13 @@ class MainGUI(tk.Tk):
             'артефактов.'))
         self._slider(wr, 'crf', 0, 51)
 
-        self._row_with_help(wr, 'Codec', bi(
+        self._row_with_help_popup(wr, 'Codec',
+            short_tip=bi(
+                'Codec / container combo. Click [?] for the full guide '
+                '(use cases, HW encoders, fallback behaviour).',
+                'Связка кодек / контейнер. Клик по [?] — полный гид '
+                '(сценарии, аппаратные кодеры, fallback).'),
+            full_text=bi(
             'Codec / container combination.\n\n'
             'GUIDE — pick by use case:\n'
             '• H.264 (MP4) — default. Universal compatibility, libx264 software '
@@ -1993,7 +2153,27 @@ class MainGUI(tk.Tk):
 
         for btn in (self.btn_draft, self.btn_preview, self.btn_run_full):
             btn.configure(state='disabled')
+        # Cancel button is the inverse: enabled exactly during a render.
+        self.btn_cancel_render.configure(state='normal', text='CANCEL RENDER')
         threading.Thread(target=self._render_thread, args=(cfg,), daemon=True).start()
+
+    def cancel_render(self):
+        """Request cooperative abort of the running render.
+
+        Engine checks `self.abort` at segment / frame / pad boundaries
+        (see vpc/render/engine.py). Setting the flag from the GUI thread
+        is safe — CPython makes attribute writes atomic under the GIL,
+        and the worker thread reads the same attribute.
+
+        Note: scene-detection runs synchronously before the segment loop
+        and has no abort checkpoint, so cancellation may take up to the
+        scene-detect phase to actually fire.
+        """
+        eng = self.engine
+        if eng is not None and not eng.abort:
+            eng.abort = True
+            self.log('Cancel requested — finishing current frame and closing sink...')
+            self.btn_cancel_render.configure(state='disabled', text='CANCELLING...')
 
     def _render_thread(self, cfg):
         is_preview = cfg['render_mode'] in ('draft', 'preview')
@@ -2005,29 +2185,104 @@ class MainGUI(tk.Tk):
                 self.after(0, self.progress_var.set, value)
 
         engine = BreakcoreEngine(cfg, progress_callback=on_progress)
+        # Publish the engine reference BEFORE engine.run() so a fast Cancel
+        # click between thread start and run() entry still lands the abort.
+        self.engine = engine
         try:
-            engine.run(render_mode=cfg['render_mode'],
-                       max_output_duration=cfg.get('max_duration'))
-            self.after(0, self.log,
-                       f"--- {'PREVIEW' if is_preview else 'FULL RENDER'} COMPLETE: "
-                       f"{cfg['output_path']} ---")
-            if is_preview:
-                self.after(0, self.start_playback, self.temp_preview_path)
+            ok = engine.run(render_mode=cfg['render_mode'],
+                            max_output_duration=cfg.get('max_duration'))
+            label = 'PREVIEW' if is_preview else 'FULL RENDER'
+            if engine.abort or not ok:
+                # Don't auto-delete the partial output — for full renders
+                # the user picked the path themselves and could have
+                # overwritten an existing file. Just log the path.
+                self.after(0, self.log,
+                           f"--- {label} CANCELLED. Partial output left at: "
+                           f"{cfg['output_path']} ---")
+            else:
+                self.after(0, self.log,
+                           f"--- {label} COMPLETE: {cfg['output_path']} ---")
+                if is_preview:
+                    self.after(0, self.start_playback, self.temp_preview_path)
         except Exception as e:
             self.after(0, self.log, f'ERROR: {e}')
         finally:
+            self.engine = None
             for btn in (self.btn_draft, self.btn_preview, self.btn_run_full):
                 self.after(0, lambda b=btn: b.configure(state='normal'))
+            self.after(0, lambda: self.btn_cancel_render.configure(
+                state='disabled', text='CANCEL RENDER'))
             self.after(0, self.progress.stop)
             self.after(0, self.progress_var.set, 0)
             if is_preview:
                 self.after(0, self.progress.configure,
                            {'mode': 'determinate', 'value': 0})
 
+    # ─── transport (preview player) ───
+    def _on_volume_change(self):
+        """Volume slider callback. Picked up by _audio_loop on the next
+        playback iteration (≤5s — preview is a 5s loop, so this is fine).
+        Moving the slider also implicitly un-mutes (matches every other
+        media player on the planet)."""
+        v = max(0.0, min(1.0, self.var_volume.get() / 100.0))
+        if self._muted and v > 0.0:
+            self._muted = False
+            self.btn_mute.configure(text='MUTE')
+        self._volume = v
+        if not self._muted:
+            self._volume_pre_mute = v
+
+    def _toggle_pause(self):
+        if self.pause_event.is_set():
+            self.pause_event.clear()
+            self.btn_pause.configure(text='PAUSE')
+        else:
+            self.pause_event.set()
+            self.btn_pause.configure(text='PLAY')
+            # Cut audio immediately so pause feels instant. The audio loop
+            # will re-enter sd.play() on the next unpause iteration.
+            if _AUDIO_OK:
+                try: _sd.stop()
+                except Exception: pass
+
+    def _toggle_mute(self):
+        if self._muted:
+            # If the user manually dragged the slider to 0 *before* hitting
+            # MUTE, _volume_pre_mute is 0 and UNMUTE would silently leave
+            # the slider at 0 (looks broken). Snap to a sensible default.
+            restore = self._volume_pre_mute if self._volume_pre_mute > 0.01 else 0.8
+            self._muted = False
+            self._volume = restore
+            # Setting var_volume fires _on_volume_change, but the un-mute
+            # branch there is a no-op (we already cleared _muted).
+            self.var_volume.set(restore * 100.0)
+            self.btn_mute.configure(text='MUTE')
+        else:
+            self._volume_pre_mute = self._volume
+            self._muted = True
+            self._volume = 0.0
+            self.btn_mute.configure(text='UNMUTE')
+
     # ─── playback ───
+    # Settle delay between stop_and_clear_playback() and re-opening the
+    # capture / re-spawning threads. Gives the OS a moment to release the
+    # previous file handle on the temp preview before we read it again
+    # (especially on Windows, where a still-mapped file can refuse a new
+    # VideoCapture open). Empirically 150ms is enough.
+    _PLAYBACK_RESTART_MS = 150
+
     def start_playback(self, path):
+        """Two-phase start. Phase 1 (here, sync on Tk): tear down any
+        previous playback and request controls disabled. Phase 2 runs via
+        `after()` so the settle delay doesn't freeze the GUI thread —
+        previously this used `time.sleep(0.15)` and visibly stuttered Tk
+        on every preview start.
+        """
         self.stop_and_clear_playback()
-        time.sleep(0.15)
+        self.after(self._PLAYBACK_RESTART_MS,
+                   lambda: self._start_playback_phase2(path))
+
+    def _start_playback_phase2(self, path):
         cap = cv2.VideoCapture(path)
         if not cap.isOpened():
             cap.release(); self.log('ERROR: Cannot open preview video.')
@@ -2036,7 +2291,13 @@ class MainGUI(tk.Tk):
         self.video_cap = None
         self._playback_path = path
         self.log('Starting playback (looping)...')
-        self.btn_stop.configure(state='normal')
+        # Enable transport controls. Mute/Volume only meaningful when the
+        # audio backend (sounddevice + soundfile) is available.
+        self.btn_pause.configure(state='normal', text='PAUSE')
+        self.btn_clear_monitor.configure(state='normal')
+        self.btn_mute.configure(state=('normal' if _AUDIO_OK else 'disabled'),
+                                text='MUTE')
+        self.pause_event.clear()
         self.stop_playback.clear()
 
         self._audio_wav = None
@@ -2054,7 +2315,8 @@ class MainGUI(tk.Tk):
                      '-ar', '44100', '-ac', '2', wav_path],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
                 self._audio_wav = wav_path
-            except Exception:
+            except Exception as e:
+                self.log(f'WARNING: audio extract failed ({e}); preview will be silent.')
                 try: os.remove(wav_path)
                 except OSError: pass
 
@@ -2076,6 +2338,17 @@ class MainGUI(tk.Tk):
             frame_dur = 1.0 / fps
             loop_start = time.time(); idx = 0
             while not self.stop_playback.is_set():
+                # Pause: freeze the current frame and shift loop_start by
+                # the paused duration so frame scheduling stays correct
+                # after resume (otherwise the loop "fast-forwards" to make
+                # up the missed time and stutters).
+                if self.pause_event.is_set():
+                    pause_t0 = time.time()
+                    while (self.pause_event.is_set()
+                           and not self.stop_playback.is_set()):
+                        self.stop_playback.wait(0.05)
+                    loop_start += time.time() - pause_t0
+                    continue
                 ret, frame = cap.read()
                 if not ret:
                     break
@@ -2100,14 +2373,56 @@ class MainGUI(tk.Tk):
             return
         try:
             data, sr = _sf.read(wav_path, dtype='float32')
-        except Exception:
+        except Exception as e:
+            # Surface decode failure: previously this branch was silent and
+            # the audio thread would just exit, leaving the user wondering
+            # why preview is muted with the slider untouched.
+            self.after(0, self.log,
+                       f'ERROR: preview audio decode failed ({e}); preview is silent.')
             return
+        dur = len(data) / sr
         while not self.stop_playback.is_set():
+            if self.pause_event.is_set():
+                self.stop_playback.wait(0.1)
+                continue
             try:
-                _sd.play(data, sr)
-                self.stop_playback.wait(len(data) / sr)
+                # Per-iteration volume scaling. ~5s of stereo float32 at
+                # 44.1kHz is ~1.7 MB; multiply is sub-millisecond. Skip
+                # the copy when volume is effectively unity.
+                v = self._volume
+                if v <= 0.0:
+                    # Fully muted — sleep one loop length and re-check.
+                    # _sd.stop() is mandatory here: if v dropped to 0
+                    # mid-playback (slider → 0 / mute hit), the previous
+                    # sd.play buffer would otherwise keep playing at the
+                    # OLD gain through to its natural end (~5s ghost).
+                    try: _sd.stop()
+                    except Exception: pass
+                    if self.stop_playback.wait(dur):
+                        break
+                    continue
+                buf = data if v >= 0.999 else (data * v).astype(np.float32)
+                _sd.play(buf, sr)
+                # Wake periodically so pause/stop/volume-zero respond
+                # within ~50ms instead of waiting up to 5s for the loop
+                # to expire. Bailing on `_volume <= 0.0` matters: without
+                # it, dragging the slider to 0 would let the prior
+                # sd.play buffer finish at the ORIGINAL gain (ghost play).
+                end_t = time.time() + dur
+                while (not self.stop_playback.is_set()
+                       and not self.pause_event.is_set()
+                       and self._volume > 0.0
+                       and time.time() < end_t):
+                    self.stop_playback.wait(0.05)
                 _sd.stop()
-            except Exception:
+            except Exception as e:
+                # Same rationale as the decode-error branch above: a
+                # mid-playback PortAudio failure (device unplugged, sample
+                # rate refused, etc.) used to silently kill this thread.
+                # Log once and exit — the loop is unrecoverable from here
+                # because the device handle is what failed.
+                self.after(0, self.log,
+                           f'ERROR: preview audio playback aborted ({e}).')
                 break
 
     def stop_and_clear_playback(self):
@@ -2127,7 +2442,12 @@ class MainGUI(tk.Tk):
             except OSError: pass
         self._audio_wav = None
         self.stop_playback.clear()
-        self.btn_stop.configure(state='disabled')
+        # Reset transport state. _muted/_volume_pre_mute persist across
+        # previews intentionally (user-set preference).
+        self.pause_event.clear()
+        self.btn_pause.configure(state='disabled', text='PAUSE')
+        self.btn_mute.configure(state='disabled')
+        self.btn_clear_monitor.configure(state='disabled')
         self.player_label.configure(image=None,
                                     text='Preview stopped / ready', bg=C_BLACK)
 
