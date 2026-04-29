@@ -2,7 +2,7 @@
 #include <cstdio>
 
 // Lightweight logger that mirrors writes to:
-//   1. A file `disc_vpc.log` next to the executable's working directory.
+//   1. A file `vpc01rt.log` next to the executable's working directory.
 //   2. stderr (visible if a console is attached).
 //
 // All writes are flushed immediately so log lines survive a crash. Initialize

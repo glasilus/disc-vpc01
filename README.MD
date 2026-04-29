@@ -168,7 +168,7 @@ Disc-VPC-01-windows/
 └── README_RU.MD             ← this document (Russian)
 ```
 
-Run `DiscVPC01-RT.exe` directly. A `disc_vpc.log` file is written next to the
+Run `DiscVPC01-RT.exe` directly. A `vpc01rt.log` file is written next to the
 executable on every launch — see §4.13.
 
 ---
@@ -1328,7 +1328,7 @@ inside an ImGui text-input field.
 
 ### 4.13 Diagnostic Log
 
-On every launch the program writes `disc_vpc.log` to its working directory
+On every launch the program writes `vpc01rt.log` to its working directory
 with unbuffered, line-flushed output. The log captures:
 
 - The full audio device table from PortAudio (host API, channel counts,
@@ -1405,12 +1405,12 @@ Effects declare which segment types they respond to. An effect will not fire on 
 
 If something isn't working, don't panic — almost every issue has a one-line cause and a one-line fix, and most of them are listed below.
 
-For the live (R-T) program: there's a file called `disc_vpc.log` that's written next to the program every time you start it. It records what audio devices were seen, what happened when you tried to open one, what happened when a video was loaded, and (if the program crashes) where it crashed. Open that file in any text editor — most issues become obvious within a few lines.
+For the live (R-T) program: there's a file called `vpc01rt.log` that's written next to the program every time you start it. It records what audio devices were seen, what happened when you tried to open one, what happened when a video was loaded, and (if the program crashes) where it crashed. Open that file in any text editor — most issues become obvious within a few lines.
 
 **R-T: audio meters flat — no reaction to sound**
 
 The audio stream may not have opened, or the OS isn't delivering samples.
-Open `disc_vpc.log` and look for `[audio]` lines. The Transport panel also
+Open `vpc01rt.log` and look for `[audio]` lines. The Transport panel also
 shows `Audio cb: N` — if it stays at 0 after pressing START, samples aren't
 arriving. Common causes: muted exclusive-mode WASAPI device, picking a
 loopback device that isn't enabled in Windows Sound settings. Try a

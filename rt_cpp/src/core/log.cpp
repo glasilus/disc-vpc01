@@ -14,7 +14,7 @@ static FILE* g_file = nullptr;
 
 #if defined(_WIN32)
 // Re-open stderr & stdout to the log file. After this, every fprintf(stderr,...)
-// call in the program goes into disc_vpc.log automatically — no need to touch
+// call in the program goes into vpc01rt.log automatically — no need to touch
 // existing call sites.
 static void redirect_streams_to_file(const char* path) {
     FILE* f = nullptr;
@@ -42,7 +42,7 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep) {
 #endif
 
 void init() {
-    const char* path = "disc_vpc.log";
+    const char* path = "vpc01rt.log";
 #if defined(_WIN32)
     redirect_streams_to_file(path);
     SetUnhandledExceptionFilter(crash_handler);
@@ -50,7 +50,7 @@ void init() {
     g_file = std::freopen(path, "w", stderr);
     if (g_file) std::setvbuf(g_file, nullptr, _IONBF, 0);
 #endif
-    std::fprintf(stderr, "[log] disc_vpc.log opened\n");
+    std::fprintf(stderr, "[log] vpc01rt.log opened\n");
 }
 
 void shutdown() {

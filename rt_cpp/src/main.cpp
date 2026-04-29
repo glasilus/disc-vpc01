@@ -199,7 +199,7 @@ static void key_callback(GLFWwindow* w, int key, int /*sc*/, int action, int mod
 }
 
 int main() {
-    // First thing: redirect stderr/stdout to disc_vpc.log so every diagnostic
+    // First thing: redirect stderr/stdout to vpc01rt.log so every diagnostic
     // (including ones written before any console can be attached) is
     // recoverable after a crash. Logs go next to the working directory.
     Log::init();

@@ -46,18 +46,21 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build DiscVPC01.exe (Python)
-        # --splash CDDRIVE.png shows a window during the slow onefile
-        # extraction (1–5 min cold start because of librosa/numba/scipy
-        # /llvmlite). vpc/__main__.py imports pyi_splash and closes it
-        # once MainGUI is constructed, so the splash dies the moment the
-        # real window is ready.
-        # --icon embeds the .exe icon in the PE header; --add-data ships
-        # the PNG so MainGUI can also set the Tk window icon at runtime.
+      - name: Build DiscVPC01 (Python, --onedir)
+        # --onedir (was --onefile): produces dist/DiscVPC01/ with the
+        # .exe + _internal/ alongside. Cold start drops from ~5 min to
+        # a few seconds because the bundle is no longer extracted to
+        # %TEMP% on every launch — Defender scans the DLLs once when
+        # the user unzips the distribution, not on every run.
+        # --splash kept: it now covers the residual cold-import time
+        # for librosa/numba/scipy (≈5–15 s) instead of the extraction.
+        # --icon embeds the (multi-resolution) icon into the PE so
+        # Explorer / desktop / Alt-Tab all render it at the right size.
+        # --add-data ships the PNG for MainGUI's runtime iconphoto().
         shell: cmd
         run: |
           pyinstaller ^
-            --onefile --noconsole --clean --noupx ^
+            --onedir --noconsole --clean --noupx ^
             --name DiscVPC01 ^
             --icon CDDRIVE.ico ^
             --splash CDDRIVE.png ^
@@ -116,12 +119,16 @@ jobs:
           copy /Y rt_cpp\build\Release\DiscVPC01-RT.exe dist\DiscVPC01-RT.exe || exit /b 1
 
       - name: Upload Windows artifact
+        # `dist/DiscVPC01/**` is the --onedir tree (DiscVPC01.exe at the
+        # root + a sibling `_internal/` with all DLLs). Uploading the
+        # whole subtree preserves that layout; the release zip step
+        # below packs it together with the standalone RT exe.
         uses: actions/upload-artifact@v4
         with:
           name: Disc-VPC-01-windows
           if-no-files-found: error
           path: |
-            dist/DiscVPC01.exe
+            dist/DiscVPC01/**
             dist/DiscVPC01-RT.exe
             README.MD
             README_RU.MD
