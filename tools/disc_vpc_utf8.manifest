@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Application manifest with <activeCodePage>UTF-8</activeCodePage>.
+
+  Why this exists
+  ===============
+  On Windows 10 build 1903+ this manifest setting tells the OS to treat
+  ANSI-API calls (LoadLibraryA, GetProcAddressA, fopen, etc.) inside
+  this process as if they were UTF-8 — instead of the legacy 8-bit
+  codepage (cp1251 / cp1252).
+
+  PyInstaller's bootloader and several of Python's C extensions
+  (notably NumPy's _multiarray_umath.pyd) load DLLs through ANSI APIs
+  during early startup. If the executable lives at a path containing
+  non-ASCII characters (e.g. C:\Users\Майя\Downloads\...) the ANSI
+  conversion mangles the path and DLLs fail to load, producing the
+  generic "Importing the numpy C-extensions failed" message.
+
+  This manifest fixes that without requiring users to relocate the
+  app to an ASCII-only path. It is a no-op on older Windows or when
+  the path is already ASCII.
+
+  References:
+    https://learn.microsoft.com/en-us/windows/apps/design/globalizing/use-utf8-code-page
+    https://github.com/pyinstaller/pyinstaller/issues/8021
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity
+      type="win32"
+      name="DiscVPC01"
+      version="1.0.0.0"
+      processorArchitecture="*" />
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+    </windowsSettings>
+  </application>
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 / 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
+</assembly>

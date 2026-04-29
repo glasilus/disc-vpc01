@@ -64,6 +64,7 @@ jobs:
             --name DiscVPC01 ^
             --icon CDDRIVE.ico ^
             --splash CDDRIVE.png ^
+            --manifest tools/disc_vpc_utf8.manifest ^
             --add-data "CDDRIVE.png;." ^
             --collect-all numpy ^
             --collect-all PIL ^
