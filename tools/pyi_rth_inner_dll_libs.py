@@ -50,18 +50,55 @@ import sys
 # add_dll_directory is Windows-only and Python 3.8+. On macOS/Linux
 # this hook is a no-op — the dynamic linker uses RPATH/RUNPATH and
 # PyInstaller already sets those correctly.
+def _diag(msg):
+    """Append a single diagnostic line to dll_search.log next to the
+    executable. Used to verify that this runtime hook actually runs and
+    to record what it did. Stripped to a no-op once the bundle works.
+    """
+    try:
+        log = os.path.join(os.path.dirname(sys.executable), "dll_search.log")
+        with open(log, "a", encoding="utf-8") as f:
+            f.write(msg + "\n")
+    except Exception:
+        pass
+
+
+_diag("=" * 60)
+_diag(f"runtime hook fired. _MEIPASS={getattr(sys, '_MEIPASS', None)}")
+_diag(f"add_dll_directory available={hasattr(os, 'add_dll_directory')}")
+
 if hasattr(os, "add_dll_directory") and getattr(sys, "_MEIPASS", None):
     _base = sys._MEIPASS
+    _diag(f"scanning {_base}")
     try:
-        for _entry in os.listdir(_base):
-            _inner = os.path.join(_base, _entry, ".libs")
+        _entries = sorted(os.listdir(_base))
+        _diag(f"  top-level entries: {len(_entries)}")
+        for _entry in _entries:
+            _full = os.path.join(_base, _entry)
+            # Sibling .libs (delvewheel convention).
+            if os.path.isdir(_full) and _entry.endswith(".libs"):
+                _diag(f"  sibling-libs: {_entry}/")
+                try:
+                    os.add_dll_directory(_full)
+                    _diag(f"    add_dll_directory OK")
+                except OSError as e:
+                    _diag(f"    add_dll_directory FAIL: {e}")
+            # Inner .libs (auditwheel/cibuildwheel convention).
+            _inner = os.path.join(_full, ".libs")
             if os.path.isdir(_inner):
+                _dlls = [f for f in os.listdir(_inner)
+                         if f.lower().endswith(".dll")]
+                _diag(f"  inner-libs: {_entry}/.libs/ ({len(_dlls)} DLL)")
                 try:
                     os.add_dll_directory(_inner)
-                except OSError:
-                    # Path was deleted between listdir and the call,
-                    # or the OS rejected the path. Best-effort hook —
-                    # skip and let the import fail loudly downstream.
-                    pass
-    except OSError:
-        pass
+                    _diag(f"    add_dll_directory OK")
+                except OSError as e:
+                    _diag(f"    add_dll_directory FAIL: {e}")
+        # Also walk one level deeper inside numpy/scipy in case PyInstaller
+        # placed DLLs directly in `numpy/core/` etc. — diagnostic only.
+        for _key in ("numpy", "scipy", "sklearn"):
+            _pkg = os.path.join(_base, _key)
+            if os.path.isdir(_pkg):
+                _diag(f"  {_key}/ contents: {sorted(os.listdir(_pkg))[:20]}")
+    except OSError as e:
+        _diag(f"scan FAIL: {e}")

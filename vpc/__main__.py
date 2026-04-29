@@ -64,10 +64,37 @@ def _write_crash_log(exc: BaseException) -> str:
             f.write(f'Python: {_sys.version}\n')
             f.write(f'Executable: {_sys.executable}\n')
             f.write(f'Frozen: {getattr(_sys, "frozen", False)}\n')
-            f.write(f'_MEIPASS: {getattr(_sys, "_MEIPASS", "n/a")}\n')
+            mei = getattr(_sys, '_MEIPASS', None)
+            f.write(f'_MEIPASS: {mei}\n')
             f.write(f'cwd: {_os.getcwd()}\n')
+            f.write(f'PATH (first 5 entries): {_os.environ.get("PATH","").split(_os.pathsep)[:5]}\n')
             f.write('-' * 70 + '\n')
             _tb.print_exception(type(exc), exc, exc.__traceback__, file=f)
+            # Diagnostic dump: list _MEIPASS, plus the contents of
+            # numpy/, numpy/.libs, scipy.libs etc. — so we can see if
+            # the relevant DLLs are actually in the bundle.
+            f.write('\n' + '-' * 70 + '\n')
+            f.write('_MEIPASS structure (debug):\n')
+            if mei and _os.path.isdir(mei):
+                try:
+                    top = sorted(_os.listdir(mei))
+                    f.write(f'  top-level ({len(top)} entries):\n')
+                    for name in top:
+                        full = _os.path.join(mei, name)
+                        marker = '/' if _os.path.isdir(full) else ''
+                        f.write(f'    {name}{marker}\n')
+                    for probe in ('numpy', 'numpy/.libs', 'numpy.libs',
+                                  'scipy', 'scipy.libs',
+                                  'sklearn', 'sklearn/.libs'):
+                        p = _os.path.join(mei, *probe.split('/'))
+                        if _os.path.isdir(p):
+                            try:
+                                items = sorted(_os.listdir(p))
+                                f.write(f'  {probe}/ -> {items[:30]}\n')
+                            except OSError as e:
+                                f.write(f'  {probe}/ -> <error: {e}>\n')
+                except OSError as e:
+                    f.write(f'  <listdir error: {e}>\n')
         return target
     except Exception:
         return ''
