@@ -72,19 +72,44 @@ def extract_audio_track(video_path: str, log: LogFn) -> Optional[str]:
 
 def prepare_datamosh_source(video_path: str, output_path: str,
                             log: LogFn) -> bool:
-    """Re-encode `video_path` with all I-frames stripped (datamosh prep).
+    """Re-encode `video_path` for "true" datamosh: long-GOP, P-frames only,
+    single-reference chains, then strip the source's existing I-frames.
 
-    The resulting file is a deliberately broken H.264 stream (only P-frames)
-    that, when decoded, smears motion vectors across what would have been
-    keyframes — the classic datamosh look.
+    The encoder flags matter for the look:
+      • ``-bf 0`` — kill B-frames. B-frames decode in non-display order
+        and reference both directions; they'd reset the smear chain and
+        ruin the effect.
+      • ``-sc_threshold 0`` — forbid the encoder from inserting its own
+        scene-cut I-frames. Without this libx264 silently sprinkles I's
+        wherever motion changes a lot, breaking the long P-chain that
+        the datamosh look depends on.
+      • ``-g 99999 -keyint_min 99999`` — force the longest possible GOP
+        so essentially everything is a P-frame.
+      • ``-refs 1`` — each P-frame references only its immediate
+        predecessor; produces the long, drifting motion-vector chain
+        characteristic of "real" datamosh.
+      • ``-preset slow`` — far better motion estimation than ultrafast.
+        With ultrafast the encoder gives up on hard-to-track regions
+        and emits intra blocks INSIDE P-frames, which look like static
+        bricks instead of smear.
+    Then ``select=not(eq(pict_type,I))`` drops the source's own I-frames
+    from the resulting stream so the decoder is forced to reuse the
+    previous P-frame's content — that's where the motion smear comes from.
     """
     cmd = [
         ffmpeg_bin(), '-y', '-i', video_path,
-        '-vf', "select=not(eq(pict_type\\,I))",
+        '-vf', 'select=not(eq(pict_type\\,I))',
         '-vsync', 'vfr',
-        '-vcodec', 'libx264',
-        '-x264opts', 'keyint=1000:no-scenecut',
-        '-preset', 'ultrafast',
+        '-c:v', 'libx264',
+        '-preset', 'slow',
+        '-bf', '0',
+        '-g', '99999',
+        '-keyint_min', '99999',
+        '-sc_threshold', '0',
+        '-refs', '1',
+        '-crf', '20',
+        '-pix_fmt', 'yuv420p',
+        '-an',
         output_path,
     ]
     result = subprocess.run(cmd, capture_output=True)

@@ -710,15 +710,23 @@ class BreakcoreEngine:
     def _run_passthrough_loop(self, ctx: '_RenderCtx') -> int:
         """Read frames sequentially from the source video; map each frame's
         timestamp to a segment via a monotonic linear cursor (frames advance
-        in order, so a full binary search isn't needed). No stutter/flash
-        insertion,
-        no random sampling, no datamosh swap — every input frame yields
-        exactly one output frame so the original audio stays in sync.
+        in order, so a full binary search isn't needed).
+
+        Stutter, Flash and Datamosh all work here, but Stutter and Flash
+        switch to REPLACE-mode (cut-mode INSERT-mode would shift output
+        relative to input audio): for the next N frames they overwrite the
+        emitted frame with a held copy (stutter) or a flash colour while
+        still calling cap.grab() so the source pointer keeps stepping in
+        lockstep with audio. Datamosh is just a regular effect in the chain
+        (DatamoshEffect, optical-flow-based motion-vector smear) — no
+        prebake here, since dropping I-frames from a 1:1 stream would
+        change frame count and desync audio.
 
         If `segments` is empty (no audio / extraction failed), every frame
         is rendered with a synthesised SILENCE segment, i.e. effects gated
         on non-silence types stay quiet.
         """
+        rc = self.config
         sink = ctx.sink; pool = ctx.pool
         cap, src_fps, src_total, _src_dur = pool.primary_cap()
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -748,10 +756,57 @@ class BreakcoreEngine:
         n_segs = len(seg_list)
         cursor = 0
 
+        # Replace-mode state for Stutter and Flash. Both effects "fire" by
+        # latching one of these counters to N>0 — for the next N frames the
+        # loop overrides the per-frame output (held copy or flash colour)
+        # while STILL stepping the source pointer via cap.grab(). This way
+        # output stays 1:1 with input frames and audio sync is preserved.
+        # Triggers fire at most once per segment so the held/flash phase
+        # spans the segment boundary cleanly instead of re-firing each
+        # frame inside the same segment.
+        stutter_remaining = 0
+        held_frame_bytes: Optional[bytes] = None
+        flash_remaining = 0
+        flash_frame_bytes: Optional[bytes] = None
+        last_trigger_cursor = -1
+
         last_frame_bytes: Optional[bytes] = None
         for fi in range(ctx.target_total_frames):
             if self.abort:
                 break
+            t = fi / ctx.fps
+            if n_segs > 0:
+                while cursor + 1 < n_segs and seg_starts[cursor + 1] <= t:
+                    cursor += 1
+                seg = seg_list[cursor]
+            else:
+                seg = idle_seg
+
+            # In replace-mode we still need source pointer to advance, but
+            # we discard the decoded image (cap.grab() is the cheap form
+            # that decodes only enough to advance — no retrieve()).
+            in_replace = (stutter_remaining > 0 or flash_remaining > 0)
+            if in_replace:
+                if not cap.grab():
+                    break
+                if flash_remaining > 0:
+                    fb = flash_frame_bytes or last_frame_bytes
+                    flash_remaining -= 1
+                else:
+                    fb = held_frame_bytes or last_frame_bytes
+                    stutter_remaining -= 1
+                if fb is None:
+                    # Defensive: very first frame somehow entered replace —
+                    # fall back to a real decode this iteration.
+                    in_replace = False
+                else:
+                    if not sink.write(fb):
+                        break
+                    ctx.frames_emitted += 1
+                    last_frame_bytes = fb
+                    self._emit_progress(ctx.frames_emitted, ctx.target_total_frames)
+                    continue
+
             ret, frame_bgr = cap.read()
             if not ret:
                 if fi == 0:
@@ -764,13 +819,6 @@ class BreakcoreEngine:
                 # with the last good frame (if any) so audio doesn't get
                 # truncated by ffmpeg.
                 break
-            t = fi / ctx.fps
-            if n_segs > 0:
-                while cursor + 1 < n_segs and seg_starts[cursor + 1] <= t:
-                    cursor += 1
-                seg = seg_list[cursor]
-            else:
-                seg = idle_seg
 
             frame = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
             if frame.shape[0] != ctx.out_h or frame.shape[1] != ctx.out_w:
@@ -782,6 +830,38 @@ class BreakcoreEngine:
             frame = self._apply_chain(frame, seg, ctx)
 
             fb = self._pack_frame(frame, sink.input_pix_fmt)
+
+            # Per-segment trigger arming. cursor advances when we cross a
+            # segment boundary; we use it as a one-shot key so a long
+            # SUSTAIN/IMPACT doesn't re-fire stutter every frame.
+            if cursor != last_trigger_cursor and stutter_remaining == 0 and flash_remaining == 0:
+                last_trigger_cursor = cursor
+                # Flash: DROP / IMPACT, gated by flash_chance.
+                if (rc.flash_enabled
+                        and seg.type in (SegmentType.DROP, SegmentType.IMPACT)
+                        and random.random() < ctx.flash_chance):
+                    n_flash = random.randint(1, 2)
+                    dummy = np.zeros((ctx.out_h, ctx.out_w, 3), dtype=np.uint8)
+                    try:
+                        ff = ctx.flash_fx._apply(dummy, seg, ctx.is_draft)
+                        ff = cv2.resize(ff, (ctx.out_w, ctx.out_h))
+                    except (cv2.error, ValueError, MemoryError) as e:
+                        self._log_fx_fail(ctx.flash_fx, e)
+                        ff = dummy
+                    flash_frame_bytes = self._pack_frame(ff, sink.input_pix_fmt)
+                    flash_remaining = n_flash
+                # Stutter: short IMPACT, gated by chaos.
+                elif (rc.stutter_enabled
+                        and seg.type == SegmentType.IMPACT
+                        and seg.duration < 0.3
+                        and random.random() < (0.3 + ctx.chaos * 0.5)):
+                    # Stutter length: 2/4/8 frames — same buckets as cut
+                    # mode. Subtract 1 because the current frame already
+                    # carries the "first" of the held sequence.
+                    n_stut = random.choice([2, 4, 8])
+                    held_frame_bytes = fb
+                    stutter_remaining = n_stut - 1
+
             if not sink.write(fb):
                 break
             ctx.frames_emitted += 1

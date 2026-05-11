@@ -100,11 +100,17 @@ PRESETS = {
 # passthrough mode is on, exactly like COLOR_EFFECT_KEYS does for
 # hide-color-fx, and their cfg flags are forced off so the engine can't
 # accidentally trip them either.
-PASSTHROUGH_HIDDEN_KEYS = (
-    'fx_stutter',
-    'fx_flash',
-    'fx_datamosh',
-)
+# Empty: stutter / flash / datamosh now all WORK in passthrough mode.
+#   • Datamosh runs via DatamoshEffect (optical-flow motion-vector smear)
+#     through the regular effect chain — no prebake needed in passthrough.
+#   • Stutter and Flash use REPLACE-mode in the passthrough loop instead
+#     of the cut-mode INSERT-mode: source `cap.grab()` advances the read
+#     pointer normally, but the written frame is overridden with a held
+#     copy (stutter) or a flash colour (flash). Output frame count stays
+#     1:1 with input, so the source audio stays in perfect sync.
+# Left as a tuple constant so the existing snapshot/restore machinery
+# still works if any key is ever re-added.
+PASSTHROUGH_HIDDEN_KEYS = ()
 
 
 COLOR_EFFECT_KEYS = (
@@ -770,6 +776,78 @@ class MainGUI(tk.Tk):
         f.pack(fill='x', padx=(pad, 8), pady=(0, 2))
         ttk.Combobox(f, values=values, textvariable=self.vars[name],
                      style='W95.TCombobox', width=14).pack(side='left')
+        return f
+
+    # ─── conditional enable / position-preserving repack helpers ───
+    # Two-tier UX: HIDE for "this whole control group is irrelevant in
+    # the current mode" (effect block when its enable_key is OFF, or
+    # passthrough hiding stutter/flash/datamosh) and DISABLE-grey for
+    # "this control still belongs here but its parent flag pinned its
+    # value" (chance slider while `always` is ON, BPM entry while
+    # snap-to-beat is OFF). Disable cascades naturally: a predicate of
+    # the form `lambda: a.get() and b.get()` is enabled only when both
+    # parents are truthy.
+
+    _SKIP_RECOLOR_TEXTS = ('[?]', '[ ? ]')
+
+    def _set_widget_enabled(self, w, enabled: bool):
+        """Recursively grey/ungrey a Tk subtree (skips help-icon labels)."""
+        cls = w.winfo_class()
+        try:
+            if cls in ('TButton', 'TCheckbutton', 'TEntry', 'TCombobox',
+                       'TScale', 'TRadiobutton'):
+                w.state(['!disabled'] if enabled else ['disabled'])
+            elif cls in ('Button', 'Checkbutton', 'Entry', 'Radiobutton',
+                         'Scale', 'Spinbox'):
+                w.configure(state=('normal' if enabled else 'disabled'))
+            elif cls == 'Label':
+                if w.cget('text') not in self._SKIP_RECOLOR_TEXTS:
+                    w.configure(fg=(C_TEXT if enabled else C_DARK_GRAY))
+        except tk.TclError:
+            pass
+        for child in w.winfo_children():
+            self._set_widget_enabled(child, enabled)
+
+    def _bind_dep(self, widgets, predicate, watch_vars):
+        """Tie `widgets` enabled-state to `predicate()`, re-evaluated
+        whenever any var in `watch_vars` is written. Applies once
+        immediately so layout matches current var values.
+        """
+        targets = list(widgets)
+        def _apply(*_a):
+            ok = bool(predicate())
+            for w in targets:
+                self._set_widget_enabled(w, ok)
+        for v in watch_vars:
+            v.trace_add('write', _apply)
+        _apply()
+
+    def _repack_in_order(self, widget, order, **pack_kw):
+        """Re-pack `widget` so it lands at its original position from
+        `order` (a snapshot of its parent's children taken at build).
+        Walks `order` forward from `widget`'s slot to find the next
+        currently-mapped sibling and packs `before=` it. Falls back to
+        plain pack (end) if nothing later is visible.
+
+        Fixes the bug where pack_forget'd widgets always reappeared at
+        the bottom of their parent (passthrough cut-widgets, color-fx
+        hidden effect blocks).
+        """
+        try:
+            idx = order.index(widget)
+        except ValueError:
+            widget.pack(**pack_kw)
+            return
+        parent = widget.master
+        for sibling in order[idx + 1:]:
+            try:
+                if (sibling.winfo_exists() and sibling.winfo_ismapped()
+                        and sibling.master is parent):
+                    widget.pack(before=sibling, **pack_kw)
+                    return
+            except tk.TclError:
+                continue
+        widget.pack(**pack_kw)
 
     # ─── effects accordion (registry-driven) ───
     def _build_effects_accordion(self, parent):
@@ -883,6 +961,10 @@ class MainGUI(tk.Tk):
                 self._effect_block_frames[s.enable_key] = blk
             if group_name == 'OVERLAYS':
                 self._build_overlay_dir_picker(body)
+            # Snapshot child order so passthrough/color-fx restoration
+            # re-packs hidden blocks back into their original slots
+            # instead of dumping them at the end of the body.
+            body._sb_initial_order = list(body.winfo_children())
 
         # Apply current hide-color-fx state to freshly built blocks.
         if self.var_hide_color_fx.get():
@@ -1011,12 +1093,21 @@ class MainGUI(tk.Tk):
                 shared_hidden = color_active and key in COLOR_EFFECT_KEYS
                 if (blk is not None and not blk.winfo_ismapped()
                         and not shared_hidden):
-                    blk.pack(fill='x')
-            # Re-pack cut-only widgets in original build order. They were
-            # appended in that order, so iterating forward preserves layout.
+                    order = getattr(blk.master, '_sb_initial_order', None)
+                    if order is not None:
+                        self._repack_in_order(blk, order, fill='x')
+                    else:
+                        blk.pack(fill='x')
+            # Re-pack cut-only widgets in their ORIGINAL slots, not at
+            # the end. Plain `pack(fill='x')` previously dumped them
+            # below every Cut Logic control because tk.pack appends.
             for w in getattr(self, '_passthrough_cut_widgets', []):
                 if not w.winfo_ismapped():
-                    w.pack(fill='x')
+                    order = getattr(w.master, '_sb_initial_order', None)
+                    if order is not None:
+                        self._repack_in_order(w, order, fill='x')
+                    else:
+                        w.pack(fill='x')
             # Re-enable the audio picker.
             btn = getattr(self, '_audio_btn', None)
             if btn is not None:
@@ -1079,7 +1170,11 @@ class MainGUI(tk.Tk):
                 blk = self._effect_block_frames.get(key) if hasattr(
                     self, '_effect_block_frames') else None
                 if blk is not None and not blk.winfo_ismapped():
-                    blk.pack(fill='x')
+                    order = getattr(blk.master, '_sb_initial_order', None)
+                    if order is not None:
+                        self._repack_in_order(blk, order, fill='x')
+                    else:
+                        blk.pack(fill='x')
             prev_silence = snap.get('__silence_mode__')
             if prev_silence:
                 self.var_silence_mode.set(prev_silence)
@@ -1191,43 +1286,70 @@ class MainGUI(tk.Tk):
                 'How many detected scene cuts to keep around as candidates.',
                 'Сколько найденных точек смены сцен держать в пуле кандидатов.')),
         ]
+        cut_only_widgets: dict = {}
         for lbl, key, lo, hi, tt in sliders_cut_only:
             row = self._row_with_help(body, lbl, tt)
             sf = self._slider(body, key, lo, hi)
             self._passthrough_cut_widgets.extend([row, sf])
+            cut_only_widgets[key] = (row, sf)
 
-        self._row_with_help(body, 'Snap Cuts to Beat Grid', bi(
+        # Scene Buffer Size only matters when scene-cut detection is on —
+        # grey it out otherwise so the user knows the slider is dormant.
+        sb_pair = cut_only_widgets.get('scene_buffer_size')
+        if sb_pair is not None:
+            self._bind_dep(list(sb_pair),
+                           lambda: bool(self.vars['use_scene_detect'].get()),
+                           [self.vars['use_scene_detect']])
+
+        snap_hdr = self._row_with_help(body, 'Snap Cuts to Beat Grid', bi(
             'After onset detection, pull each onset to the nearest beat within tolerance. '
             'Improves rhythmic precision; required for tight drillcore sync.',
             'После детекции онсетов притягивает каждый онсет к ближайшему биту в пределах '
             'tolerance. Улучшает ритмическую точность; обязательно для плотного drillcore.'))
-        ttk.Checkbutton(body, text='Snap onsets to beat grid',
+        snap_cb = ttk.Checkbutton(body, text='Snap onsets to beat grid',
                         variable=self.vars['snap_to_beat'],
-                        style='W95.TCheckbutton').pack(anchor='w', padx=24, pady=(0, 2))
-        self._row_with_help(body, 'Beat Snap Tolerance (sec)', bi(
+                        style='W95.TCheckbutton')
+        snap_cb.pack(anchor='w', padx=24, pady=(0, 2))
+        tol_row = self._row_with_help(body, 'Beat Snap Tolerance (sec)', bi(
             'Maximum onset→beat distance for snapping. Larger = more onsets pulled to grid but '
             'at the cost of micro-rhythm.',
             'Максимальное расстояние онсет→бит для снэпа. Больше — больше онсетов прилипает к '
             'сетке, но теряется микро-ритмика.'))
-        self._slider(body, 'snap_tolerance', 0.01, 0.15, indent=True)
+        tol_slider = self._slider(body, 'snap_tolerance', 0.01, 0.15, indent=True)
 
         # Manual BPM override — generates a uniform beat grid from a
         # user-typed tempo value when snap-to-beat is on. Bypasses librosa's
         # tempo estimator entirely; useful for tracks with weak onsets or
         # when the exact target BPM is known.
-        self._row_with_help(body, 'Manual BPM Override', bi(
+        bpm_hdr = self._row_with_help(body, 'Manual BPM Override', bi(
             'Bypass automatic tempo detection and use a hand-typed BPM for the snap-to-beat grid. '
             'Requires Snap onsets to beat grid above to be ON.',
             'Подменяет автодетекцию темпа на введённый вручную BPM при снэпе к биту. '
             'Чтобы это сработало, выше должно быть включено «Snap onsets to beat grid».'))
         bpm_row = tk.Frame(body, bg=self._parent_bg(body))
         bpm_row.pack(fill='x', padx=24, pady=(0, 4))
-        ttk.Checkbutton(bpm_row, text='Use manual BPM:',
+        bpm_cb = ttk.Checkbutton(bpm_row, text='Use manual BPM:',
                         variable=self.vars['use_manual_bpm'],
-                        style='W95.TCheckbutton').pack(side='left')
+                        style='W95.TCheckbutton')
+        bpm_cb.pack(side='left')
         bpm_entry = ttk.Entry(bpm_row, width=7,
                               textvariable=self._display_vars.get('manual_bpm'))
         bpm_entry.pack(side='left', padx=6)
+
+        # Snap cascade. Beat-snap-tolerance and the entire manual-BPM
+        # subgroup (header label + checkbox + numeric entry) only matter
+        # when snap-to-beat is ON. Inside that subgroup the BPM entry has
+        # an extra dependency on `use_manual_bpm` — disabled even with
+        # snap ON if the user hasn't ticked "Use manual BPM:". The
+        # cascade is encoded directly in the predicate (AND of vars).
+        snap_var = self.vars['snap_to_beat']
+        manual_var = self.vars['use_manual_bpm']
+        self._bind_dep([tol_row, tol_slider, bpm_hdr, bpm_cb],
+                       lambda: bool(snap_var.get()),
+                       [snap_var])
+        self._bind_dep([bpm_entry],
+                       lambda: bool(snap_var.get()) and bool(manual_var.get()),
+                       [snap_var, manual_var])
 
         def _commit_manual_bpm(*_):
             try:
@@ -1250,13 +1372,14 @@ class MainGUI(tk.Tk):
         self._row_with_help(body, 'Passthrough Mode', bi(
             "Process the source video 1:1 — no cuts, no resampling, native frame order. "
             "Audio is taken from the video's own track and used both for analysis (effect "
-            "triggers) and for the output. No external audio file is needed. While ON, "
-            "Stutter / Flash / Datamosh are hidden because they would break audio sync.",
+            "triggers) and for the output. No external audio file is needed. Stutter / "
+            "Flash / Datamosh ALL work here too: they switch to replace-mode (overwrite "
+            "frames in place instead of inserting new ones) so audio stays in sync.",
             "Прогон исходного видео 1:1 — без нарезки, без рандомного семплинга, в "
             "нативном порядке кадров. Аудио берётся из самого видео и используется и для "
-            "анализа (триггеры эффектов), и в выводе. Внешний аудиофайл не нужен. Пока "
-            "включено, Stutter / Flash / Datamosh скрываются — иначе сломалась бы "
-            "синхронизация аудио."))
+            "анализа (триггеры эффектов), и в выводе. Внешний аудиофайл не нужен. "
+            "Stutter / Flash / Datamosh тоже работают: они переключаются в режим замены "
+            "кадров (вместо вставки новых) — аудио остаётся в синхроне."))
         ttk.Checkbutton(body, text='Passthrough mode (use source video as-is)',
                         variable=self.vars['passthrough_mode'],
                         command=self._on_toggle_passthrough,
@@ -1282,19 +1405,37 @@ class MainGUI(tk.Tk):
             self._silence_radios[val] = rb
         self._sync_silence_radio_visibility()
 
+        # Snapshot the body's child order so the passthrough toggle can
+        # re-pack cut-only widgets back into their original slots via
+        # `before=` anchors, instead of dumping them at the bottom.
+        body._sb_initial_order = list(body.winfo_children())
+
     def _build_effect_block(self, parent, spec):
         """Build the GUI block for one EffectSpec.
 
-        Returns the outer frame so callers can pack_forget/pack it (used by
-        the hide-color-effects toggle to make these blocks vanish without a
-        full rebuild).
+        Three visibility tiers cooperate inside the returned frame:
+          • header (checkbox + label + `always` toggle) is always visible
+            while the block itself is mapped — it's the user's only handle
+            to turn the effect back on;
+          • `inner` (chance / params / always-on intensity) is HIDDEN while
+            the effect's enable_key is OFF — keeps the panel uncluttered
+            and removes "dead" sliders the user can't influence;
+          • `ai_holder` (always-on intensity) is hidden unless `always` is
+            ON, and lives INSIDE `inner` between the chance row and the
+            params (sentinel anchors the slot) — fixes the previous bug
+            where it appeared below the block separator.
+
+        The thin separator stays a direct child of `block` (NOT `inner`)
+        so it keeps marking the boundary between blocks even when the
+        effect is off and `inner` is hidden.
+
+        Returns the outer frame so callers (hide-color-fx, passthrough)
+        can pack_forget/pack the WHOLE block as a unit.
         """
-        # Outer container — everything below packs into it. This is the
-        # handle hide-color-fx grabs to make a block disappear cleanly.
         block = tk.Frame(parent, bg=C_WHITE)
         block.pack(fill='x')
 
-        # Header row: checkbox + label + tooltip
+        # Header row: checkbox + label + tooltip + (optional) always toggle.
         hr = tk.Frame(block, bg=C_WHITE)
         hr.pack(fill='x', padx=4, pady=(4, 0))
         cb = ttk.Checkbutton(hr, text=spec.label, variable=self.vars[spec.enable_key],
@@ -1307,7 +1448,6 @@ class MainGUI(tk.Tk):
             help_lbl.pack(side='left', padx=(2, 0))
             Tooltip(cb, spec.tooltip); Tooltip(help_lbl, spec.tooltip)
 
-        # Per-effect "always-on" override (backlog #1).
         if spec.supports_always_for_chain():
             ao_tooltip = (
                 'When ON, this effect ignores its segment-type triggers and chance slider — '
@@ -1328,60 +1468,106 @@ class MainGUI(tk.Tk):
                      font=('MS Sans Serif', 7, 'italic')).pack(
                 anchor='w', padx=22, pady=(0, 2))
 
-        # Chance slider (if any)
+        # `inner` carries every per-effect knob and is hidden whole when
+        # the effect's enable checkbox is OFF.
+        inner = tk.Frame(block, bg=C_WHITE)
+
+        chance_widgets: list = []
         if spec.chance_key is not None:
-            self._row_with_help(block, 'Chance', bi(
+            ch_row = self._row_with_help(inner, 'Chance', bi(
                 'Probability the effect fires per qualifying frame. Scaled by Global Chaos.',
                 'Вероятность срабатывания эффекта на подходящем кадре. Масштабируется ползунком '
                 'Global Chaos.'))
-            self._slider(block, spec.chance_key, 0.0, 1.0, indent=True)
+            ch_slider = self._slider(inner, spec.chance_key, 0.0, 1.0, indent=True)
+            chance_widgets = [ch_row, ch_slider]
 
-        # Always-on intensity slider — visible ONLY while `always` is checked.
-        # Wrapped in a holder so we can pack_forget / repack it on demand
-        # without rebuilding the block.
+        # Always-on intensity. Built INSIDE inner so its visual slot sits
+        # between chance and params. A zero-height sentinel pinned right
+        # after it serves as the `before=` anchor when the holder is
+        # toggled visible later — without it, re-pack would land below
+        # the params instead.
+        ai_holder = None
+        params_anchor = None
         if spec.supports_always_for_chain():
-            ai_holder = tk.Frame(block, bg=C_WHITE)
+            ai_holder = tk.Frame(inner, bg=C_WHITE)
             self._row_with_help(ai_holder, 'Always-on intensity', bi(
                 'Fixed intensity used while "always" is ON. Has no effect otherwise.',
                 'Фиксированная интенсивность, когда чекбокс «always» включён. В обычном режиме '
                 'не используется.'))
             self._slider(ai_holder, spec.always_int_key, 0.0, 1.0, indent=True)
+            ai_holder.pack(fill='x')
+            params_anchor = tk.Frame(inner, bg=C_WHITE, height=0)
+            params_anchor.pack(fill='x')
 
-            always_var = self.vars[spec.always_key]
-
-            def _sync_always_visibility(*_args, holder=ai_holder, av=always_var):
-                if av.get():
-                    if not holder.winfo_ismapped():
-                        holder.pack(fill='x')
-                else:
-                    if holder.winfo_ismapped():
-                        holder.pack_forget()
-                refresh = getattr(self, '_effects_refresh_scroll', None)
-                if refresh is not None:
-                    self.after_idle(refresh)
-
-            always_var.trace_add('write', _sync_always_visibility)
-            _sync_always_visibility()
-
-        # Per-effect parameter controls. These pack into `block`, NOT into
-        # the accordion body, so the hide-color-fx toggle correctly hides
-        # the whole effect (including its params) by pack_forget'ing the
-        # single block frame.
+        # Per-effect parameter controls.
         for p in spec.params:
             if p.kind == 'choice':
-                self._row_with_help(block, p.label, p.tooltip)
-                self._combo(block, p.key, p.choices, indent=True)
+                self._row_with_help(inner, p.label, p.tooltip)
+                self._combo(inner, p.key, p.choices, indent=True)
             elif p.kind == 'string':
-                self._row_with_help(block, p.label, p.tooltip)
-                row = tk.Frame(block, bg=C_WHITE)
+                self._row_with_help(inner, p.label, p.tooltip)
+                row = tk.Frame(inner, bg=C_WHITE)
                 row.pack(fill='x', padx=20, pady=2)
                 ent = ttk.Entry(row, textvariable=self.vars[p.key])
                 ent.pack(fill='x')
             else:
-                self._row_with_help(block, p.label, p.tooltip)
-                self._slider(block, p.key, p.lo, p.hi, indent=True)
+                self._row_with_help(inner, p.label, p.tooltip)
+                self._slider(inner, p.key, p.lo, p.hi, indent=True)
 
-        tk.Frame(block, bg=C_DARK_GRAY, height=1).pack(fill='x', padx=4)
+        # Bottom separator — sits in `block`, not `inner`, so it remains
+        # visible while the effect is off and keeps marking boundaries.
+        sep = tk.Frame(block, bg=C_DARK_GRAY, height=1)
+        sep.pack(fill='x', padx=4)
+
+        # Visibility wiring.
+        enable_var = self.vars[spec.enable_key]
+
+        def _refresh_scroll():
+            fn = getattr(self, '_effects_refresh_scroll', None)
+            if fn is not None:
+                self.after_idle(fn)
+
+        def _sync_inner(*_a):
+            if enable_var.get():
+                if not inner.winfo_ismapped():
+                    inner.pack(fill='x', before=sep)
+            else:
+                if inner.winfo_ismapped():
+                    inner.pack_forget()
+            _refresh_scroll()
+
+        enable_var.trace_add('write', _sync_inner)
+
+        if ai_holder is not None:
+            always_var = self.vars[spec.always_key]
+
+            def _sync_always(*_a):
+                if always_var.get():
+                    if not ai_holder.winfo_ismapped():
+                        # `before=params_anchor` keeps ai_holder slotted
+                        # between chance and params instead of bouncing
+                        # to the bottom of `inner` on each toggle.
+                        if (params_anchor is not None
+                                and params_anchor.winfo_ismapped()):
+                            ai_holder.pack(fill='x', before=params_anchor)
+                        else:
+                            ai_holder.pack(fill='x')
+                else:
+                    if ai_holder.winfo_ismapped():
+                        ai_holder.pack_forget()
+                _refresh_scroll()
+
+            always_var.trace_add('write', _sync_always)
+            # Chance is meaningless under `always` — grey it out so the
+            # user sees it's pinned. When `inner` is hidden (effect OFF)
+            # the grey state is invisible anyway, which is fine.
+            if chance_widgets:
+                self._bind_dep(chance_widgets,
+                               lambda av=always_var: not av.get(),
+                               [always_var])
+            _sync_always()
+
+        _sync_inner()
         return block
 
     def _build_overlay_dir_picker(self, body):
