@@ -30,7 +30,7 @@ void main() {
     vec2  grad = vec2(gx, gy);
 
     // Accumulate displacement over several "flow steps"
-    float scale = uIntensity * 0.08;
+    float scale = uIntensity * 0.13;
     vec2  disp  = grad * scale;
 
     // Sample current frame with displacement — like motion vectors

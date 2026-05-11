@@ -29,8 +29,13 @@ Segment classify_segment(const AudioStats& s, float gate_threshold) noexcept {
         seg.type = SegmentType::SUSTAIN;
         seg.intensity = std::clamp((s.rms - ref) / ref, 0.f, 1.f);
     } else {
-        seg.type = SegmentType::SILENCE;
-        seg.intensity = 0.f;
+        // Audible-but-near-mean: previously fell through to SILENCE which
+        // killed every effect (audio_active gate). Treat as low-intensity
+        // SUSTAIN so the chain still has SOMETHING to react to. Without
+        // this, ordinary "average loudness" content read as "no audio"
+        // and effects appeared to never trigger in the realtime build.
+        seg.type = SegmentType::SUSTAIN;
+        seg.intensity = std::clamp(s.rms / ref * 0.5f, 0.05f, 1.f);
     }
     return seg;
 }

@@ -21,6 +21,34 @@ from vpc.analyzer import SegmentType
 from .base import BaseEffect, _ensure_uint8
 
 
+_GRID_CACHE: dict = {}
+
+
+def _grid(h: int, w: int):
+    """Return cached (xs, ys) coordinate grids for shape (h, w).
+
+    Always-on warp effects allocate ~80-150 MB of float32 grids per frame.
+    Caching by (h, w) keeps two arrays alive instead — a constant memory
+    footprint vs. per-frame allocations that the GC can't keep up with.
+    The cached arrays are read-only by convention (callers always do
+    `xs - cx` / `xs + dx` which produces a new array).
+    """
+    key = (h, w)
+    g = _GRID_CACHE.get(key)
+    if g is None:
+        # Cap the cache: more than ~3 distinct sizes means draft+preview+
+        # final all alive at once, which is the most we ever expect.
+        if len(_GRID_CACHE) > 4:
+            _GRID_CACHE.clear()
+        xs = np.tile(np.arange(w, dtype=np.float32), (h, 1))
+        ys = np.tile(np.arange(h, dtype=np.float32).reshape(-1, 1), (1, w))
+        xs.setflags(write=False)
+        ys.setflags(write=False)
+        g = (xs, ys)
+        _GRID_CACHE[key] = g
+    return g
+
+
 class _Warpable(BaseEffect):
     """Mixin: monotonic frame counter advanced on every apply()."""
     def __init__(self, **kw):
@@ -83,14 +111,13 @@ class DerivWarpEffect(_Warpable):
         # The whole frame rocks back and forth around its centre while the
         # local gradient warp does its thing.
         cx, cy = w * 0.5, h * 0.5
-        xs = np.tile(np.arange(w, dtype=np.float32), (h, 1)) - cx
-        ys = np.tile(np.arange(h, dtype=np.float32).reshape(-1, 1), (1, w)) - cy
+        xs_g, ys_g = _grid(h, w)
         swirl_amp = intensity * 0.06 * np.sin(self._t * 0.07)
-        dx += -ys * swirl_amp
-        dy += xs * swirl_amp
+        dx += -(ys_g - cy) * swirl_amp
+        dy += (xs_g - cx) * swirl_amp
 
-        map_x = np.clip(xs + cx + dx, 0, w - 1).astype(np.float32)
-        map_y = np.clip(ys + cy + dy, 0, h - 1).astype(np.float32)
+        map_x = np.clip(xs_g + dx, 0, w - 1).astype(np.float32)
+        map_y = np.clip(ys_g + dy, 0, h - 1).astype(np.float32)
 
         interp = cv2.INTER_NEAREST if draft else cv2.INTER_LINEAR
         warped = cv2.remap(frame, map_x, map_y, interp, borderMode=cv2.BORDER_REFLECT)
@@ -126,14 +153,23 @@ class VortexWarpEffect(_Warpable):
         # Direction reverses periodically so the swirl breathes.
         rot_mod = np.sin(t * 0.9)
 
-        xs = np.tile(np.arange(w, dtype=np.float32), (h, 1)) - cx
-        ys = np.tile(np.arange(h, dtype=np.float32).reshape(-1, 1), (1, w)) - cy
-        r_sq = xs ** 2 + ys ** 2
-        angle = intensity * 5.0 * rot_mod * np.exp(-r_sq / (2.0 * sigma ** 2))
-        cos_a = np.cos(angle).astype(np.float32)
-        sin_a = np.sin(angle).astype(np.float32)
+        xs_g, ys_g = _grid(h, w)
+        xs = xs_g - cx
+        ys = ys_g - cy
+        r_sq = xs * xs + ys * ys
+        # Soft-cap angle so always-on + max intensity can't push a single
+        # pixel through arbitrarily large rotations (was 5 rad → 286°).
+        angle = (intensity * 3.5 * rot_mod
+                 * np.exp(-r_sq / (2.0 * sigma * sigma + 1e-6))).astype(np.float32)
+        cos_a = np.cos(angle, dtype=np.float32)
+        sin_a = np.sin(angle, dtype=np.float32)
         map_x = np.clip(xs * cos_a - ys * sin_a + cx, 0, w - 1).astype(np.float32)
         map_y = np.clip(xs * sin_a + ys * cos_a + cy, 0, h - 1).astype(np.float32)
+        # Belt-and-suspenders: scrub any NaN/Inf that crept in from a
+        # degenerate sigma or angle. cv2.remap on NaN coords is a hard SIGSEGV
+        # on some Windows OpenCV builds.
+        np.nan_to_num(map_x, copy=False, nan=0.0, posinf=w - 1.0, neginf=0.0)
+        np.nan_to_num(map_y, copy=False, nan=0.0, posinf=h - 1.0, neginf=0.0)
 
         if draft:
             mh, mw = h // 2, w // 2
@@ -207,10 +243,9 @@ class FractalNoiseWarpEffect(_Warpable):
         disp = intensity * 60.0 * pulse
         dx *= disp
         dy *= disp
-        xs = np.tile(np.arange(w, dtype=np.float32), (h, 1))
-        ys = np.tile(np.arange(h, dtype=np.float32).reshape(-1, 1), (1, w))
-        map_x = np.clip(xs + dx, 0, w - 1).astype(np.float32)
-        map_y = np.clip(ys + dy, 0, h - 1).astype(np.float32)
+        xs_g, ys_g = _grid(h, w)
+        map_x = np.clip(xs_g + dx, 0, w - 1).astype(np.float32)
+        map_y = np.clip(ys_g + dy, 0, h - 1).astype(np.float32)
         interp = cv2.INTER_NEAREST if draft else cv2.INTER_LINEAR
         return _ensure_uint8(
             cv2.remap(frame, map_x, map_y, interp, borderMode=cv2.BORDER_WRAP)
@@ -260,16 +295,15 @@ class SelfDisplaceEffect(_Warpable):
         dy = ((d1[:, :, 1] - 128.0) / 128.0) * intensity * 55.0 * cross
         dx += ((d2[:, :, 0] - 128.0) / 128.0) * intensity * 25.0 * cross
         dy += ((d2[:, :, 2] - 128.0) / 128.0) * intensity * 25.0 * breath
-        xs = np.tile(np.arange(w, dtype=np.float32), (h, 1))
-        ys = np.tile(np.arange(h, dtype=np.float32).reshape(-1, 1), (1, w))
-        map_x = np.clip(xs + dx, 0, w - 1).astype(np.float32)
-        map_y = np.clip(ys + dy, 0, h - 1).astype(np.float32)
+        xs_g, ys_g = _grid(h, w)
+        map_x = np.clip(xs_g + dx, 0, w - 1).astype(np.float32)
+        map_y = np.clip(ys_g + dy, 0, h - 1).astype(np.float32)
         interp = cv2.INTER_NEAREST if draft else cv2.INTER_LINEAR
         displaced = cv2.remap(frame, map_x, map_y, interp, borderMode=cv2.BORDER_WRAP)
 
         ghost_age = get_hist(1)
-        ghost_map_x = np.clip(xs + dx * 0.3, 0, w - 1).astype(np.float32)
-        ghost_map_y = np.clip(ys + dy * 0.3, 0, h - 1).astype(np.float32)
+        ghost_map_x = np.clip(xs_g + dx * 0.3, 0, w - 1).astype(np.float32)
+        ghost_map_y = np.clip(ys_g + dy * 0.3, 0, h - 1).astype(np.float32)
         ghost = cv2.remap(ghost_age, ghost_map_x, ghost_map_y,
                           interp, borderMode=cv2.BORDER_WRAP)
         blend = min(0.45, intensity * 0.4)

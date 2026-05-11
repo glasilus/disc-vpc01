@@ -64,12 +64,84 @@ class ChromaKeyEffect:
         return _ensure_uint8(result)
 
 
-def load_overlay_frames(folder: str):
-    """Load all PNG/JPG/video images from folder as RGB numpy arrays."""
+class _LazyVideoFrame:
+    """Stand-in for a single overlay-video frame, decoded on demand.
+
+    Eager-loading every frame of every overlay clip into RAM was the source
+    of OOM crashes on long renders (a one-minute 1080p clip ≈ 11 GB). Now
+    we keep a sparse sample of frame indices per clip and re-open the file
+    only when a frame is actually requested.
+    """
+    __slots__ = ('_path', '_idx', '_max_w', '_cache')
+
+    def __init__(self, path: str, idx: int, max_w: int = 1920):
+        self._path = path
+        self._idx = idx
+        self._max_w = max_w
+        self._cache: np.ndarray | None = None
+
+    def _decode(self) -> np.ndarray | None:
+        cap = cv2.VideoCapture(self._path)
+        try:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, self._idx)
+            ret, frame = cap.read()
+            if not ret:
+                return None
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h, w = frame.shape[:2]
+            if w > self._max_w:
+                new_h = int(h * self._max_w / w)
+                frame = cv2.resize(frame, (self._max_w, new_h),
+                                   interpolation=cv2.INTER_AREA)
+            return frame
+        finally:
+            cap.release()
+
+    @property
+    def shape(self):
+        if self._cache is None:
+            self._cache = self._decode()
+            if self._cache is None:
+                # Tiny black placeholder so callers' .shape access doesn't crash.
+                self._cache = np.zeros((4, 4, 3), dtype=np.uint8)
+        return self._cache.shape
+
+    def __array__(self, dtype=None):
+        if self._cache is None:
+            self._cache = self._decode()
+            if self._cache is None:
+                self._cache = np.zeros((4, 4, 3), dtype=np.uint8)
+        return self._cache if dtype is None else self._cache.astype(dtype)
+
+    def __getitem__(self, item):
+        arr = np.asarray(self)
+        return arr[item]
+
+    def astype(self, dtype):
+        return np.asarray(self).astype(dtype)
+
+
+def load_overlay_frames(folder: str, *, max_video_samples: int = 48,
+                        max_w: int = 1920):
+    """Load PNG/JPG images eagerly; sample N lazy frames per video.
+
+    The old behaviour eager-decoded every frame of every video file into a
+    list of numpy arrays, which blew up RAM on anything longer than a few
+    seconds. The new contract:
+
+    * Image files → real numpy arrays (small, decoded once).
+    * Video files → at most `max_video_samples` evenly-spaced `_LazyVideoFrame`
+      handles. Each handle decodes on first access and caches its single
+      frame downscaled to `max_w` width.
+
+    The composite path in `OverlayEffect._apply` already calls `cv2.resize`
+    on the frame, so an opaque object that satisfies `.shape` + array
+    coercion is enough — callers don't need to change.
+    """
     from PIL import Image as PILImage
     img_exts = {'.png', '.jpg', '.jpeg', '.bmp', '.webp'}
     vid_exts = {'.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.mpg', '.mpeg'}
-    frames = []
+    frames: list = []
     try:
         entries = sorted(os.listdir(folder))
     except OSError:
@@ -87,11 +159,15 @@ def load_overlay_frames(folder: str):
             cap = None
             try:
                 cap = cv2.VideoCapture(path)
-                while True:
-                    ret, frame = cap.read()
-                    if not ret:
-                        break
-                    frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+                if total <= 0:
+                    continue
+                # Sparse, evenly-spaced sample of frame indices.
+                n = max(1, min(max_video_samples, total))
+                step = max(1, total // n)
+                idxs = list(range(0, total, step))[:max_video_samples]
+                for i in idxs:
+                    frames.append(_LazyVideoFrame(path, i, max_w=max_w))
             except Exception:
                 pass
             finally:
@@ -194,8 +270,10 @@ class OverlayEffect(BaseEffect):
         tw, th = self._seg_tw, self._seg_th
         x0, y0 = self._seg_x0, self._seg_y0
         ov_src = self.overlay_frames[self._seg_ov_idx]
+        # _LazyVideoFrame is not a real ndarray — coerce before cv2 calls.
+        ov_arr = np.asarray(ov_src)
         interp = cv2.INTER_AREA if draft else cv2.INTER_LINEAR
-        ov = cv2.resize(ov_src, (tw, th), interpolation=interp)
+        ov = cv2.resize(ov_arr, (tw, th), interpolation=interp)
         intensity = self.scaled_intensity(seg)
         alpha = min(1.0, self.opacity * (0.4 + intensity * 0.6))
         result = frame.copy()
@@ -206,14 +284,14 @@ class OverlayEffect(BaseEffect):
         if self.chroma_mode == 'dominant':
             ck = self._ck_cache.get(self._seg_ov_idx)
             if ck is None:
-                ck = ChromaKeyEffect.from_frame(ov_src, rank=0,
+                ck = ChromaKeyEffect.from_frame(ov_arr, rank=0,
                                                 tolerance=self.chroma_tolerance,
                                                 edge_softness=self.chroma_softness)
                 self._ck_cache[self._seg_ov_idx] = ck
         elif self.chroma_mode == 'secondary':
             ck = self._ck_cache.get(self._seg_ov_idx)
             if ck is None:
-                ck = ChromaKeyEffect.from_frame(ov_src, rank=1,
+                ck = ChromaKeyEffect.from_frame(ov_arr, rank=1,
                                                 tolerance=self.chroma_tolerance,
                                                 edge_softness=self.chroma_softness)
                 self._ck_cache[self._seg_ov_idx] = ck
@@ -221,7 +299,7 @@ class OverlayEffect(BaseEffect):
             ck = self.chroma_key
 
         if ck is not None:
-            mask_src = ck.get_mask(ov_src)
+            mask_src = ck.get_mask(ov_arr)
             mask = cv2.resize(mask_src, (tw, th), interpolation=interp)
             per_pixel_alpha = (mask.astype(np.float32) / 255.0) * alpha
             ppa = per_pixel_alpha[:, :, np.newaxis]

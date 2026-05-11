@@ -7,7 +7,7 @@ from vpc.render.config import RenderConfig, RENDER_DRAFT, RENDER_FINAL
 def test_defaults():
     rc = RenderConfig({})
     assert rc.fps('final') == 24
-    assert rc.crf('final') == 18
+    assert rc.crf('final') == 22
     assert rc.crf(RENDER_DRAFT) == 28
     assert rc.fps(RENDER_DRAFT) == 24
     assert rc.encoder_preset(RENDER_DRAFT) == 'ultrafast'

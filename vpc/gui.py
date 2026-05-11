@@ -265,7 +265,7 @@ class MainGUI(tk.Tk):
             'passthrough_mode': False,
         }
         # Export
-        export_defaults = {'fps': 24.0, 'crf': 18.0, 'custom_w': 1280.0, 'custom_h': 720.0}
+        export_defaults = {'fps': 24.0, 'crf': 22.0, 'custom_w': 1280.0, 'custom_h': 720.0}
         # Mystery
         mystery_defaults = {f'mystery_{k}': 0.0 for k in
                             ('VESSEL', 'ENTROPY_7', 'DELTA_OMEGA', 'STATIC_MIND',
@@ -807,20 +807,20 @@ class MainGUI(tk.Tk):
         cf = tk.Frame(canvas, bg=C_SILVER)
         cf_window = canvas.create_window((0, 0), window=cf, anchor='nw')
 
-        # Recompute scrollregion AND clamp the current view to it. Without
-        # the clamp, after a group collapses the inner frame shrinks but
-        # canvas.yview can still hold a yview position past the new bottom
-        # — that's the "scroll into empty space below" symptom. Same trick
-        # also prevents scroll into negative territory (above the first
-        # block), which appeared after a group expanded with the view
-        # already at top.
-        def _refresh_scrollregion(_evt=None):
+        # Recompute scrollregion AND clamp the current view to it.
+        # Debounced via a single after_idle slot so multiple <Configure>
+        # events (cf + canvas + accordion toggles can all fire in the same
+        # tick) coalesce into one refresh — was producing visible
+        # "doubling" / scrollbar-thumb-flicker on every group expansion.
+        _scroll_state = {'pending': False, 'last_w': -1}
+
+        def _do_refresh():
+            _scroll_state['pending'] = False
             bbox = canvas.bbox('all')
             if bbox is None:
                 return
             x1, y1, x2, y2 = bbox
             canvas.configure(scrollregion=(x1, y1, x2, y2))
-            # Clamp current yview into the new range.
             top, _bot = canvas.yview()
             content_h = max(1, y2 - y1)
             canvas_h = canvas.winfo_height() or 1
@@ -829,17 +829,30 @@ class MainGUI(tk.Tk):
                 canvas.yview_moveto(max_top)
             elif top < 0:
                 canvas.yview_moveto(0.0)
+
+        def _refresh_scrollregion(_evt=None):
+            if _scroll_state['pending']:
+                return
+            _scroll_state['pending'] = True
+            self.after_idle(_do_refresh)
+
         cf.bind('<Configure>', _refresh_scrollregion)
-        canvas.bind('<Configure>',
-                    lambda e: (canvas.itemconfig(cf_window, width=e.width),
-                               _refresh_scrollregion()))
-        # Stash the refresher so accordion toggles can call it directly
-        # — Tk doesn't always emit <Configure> when child frames pack/unpack.
+
+        def _on_canvas_configure(e):
+            # Only re-stretch the inner frame when width actually changed —
+            # itemconfig on the same width still triggers a <Configure>
+            # cascade that fed back into refresh and caused the flicker.
+            if e.width != _scroll_state['last_w']:
+                _scroll_state['last_w'] = e.width
+                canvas.itemconfig(cf_window, width=e.width)
+            _refresh_scrollregion()
+        canvas.bind('<Configure>', _on_canvas_configure)
         self._effects_refresh_scroll = _refresh_scrollregion
 
         # Mousewheel scroll only when pointer is over this canvas. Using
-        # bind_all caused the wheel to scroll the canvas even when the user
-        # was over a different panel.
+        # bind_all is the only reliable way to catch wheel events that
+        # children would otherwise swallow; pair it with Enter/Leave so
+        # the global handler is only attached while the pointer is here.
         def _wheel(e):
             canvas.yview_scroll(int(-1 * (e.delta / 120)), 'units')
         canvas.bind('<Enter>', lambda e: canvas.bind_all('<MouseWheel>', _wheel))
@@ -2091,7 +2104,7 @@ class MainGUI(tk.Tk):
 
         cfg['scene_buffer_size'] = int(cfg.get('scene_buffer_size', 10))
         cfg['fps'] = int(cfg.get('fps', 24))
-        cfg['crf'] = int(cfg.get('crf', 18))
+        cfg['crf'] = int(cfg.get('crf', 22))
         cfg['fx_ascii_size'] = int(cfg.get('fx_ascii_size', 12))
         cfg['custom_w'] = int(cfg.get('custom_w', 1280))
         cfg['custom_h'] = int(cfg.get('custom_h', 720))

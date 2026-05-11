@@ -7,5 +7,5 @@ uniform float uIntensity;
 void main() {
     vec4 cur  = texture(uTex,  vUV);
     vec4 prev = texture(uPrev, vUV);
-    FragColor = mix(cur, prev, uIntensity * 0.6);
+    FragColor = mix(cur, prev, uIntensity * 0.85);
 }

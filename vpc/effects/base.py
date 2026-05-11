@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 import random
 from typing import List
 
+import cv2
 import numpy as np
 
 from vpc.analyzer import Segment, SegmentType
@@ -35,10 +36,35 @@ class BaseEffect(ABC):
             return frame
         if random.random() > self.chance:
             return frame
-        return self._apply(frame, seg, draft)
+        try:
+            out = self._apply(frame, seg, draft)
+        except (MemoryError, ValueError, cv2.error) as e:  # type: ignore[name-defined]
+            # Don't kill the whole render pipeline on a transient effect
+            # failure — most often a numpy/cv2 OOM under heavy always-on
+            # combos, or an out-of-range remap on degenerate input.
+            self._fail_count = getattr(self, '_fail_count', 0) + 1
+            if self._fail_count <= 3 or self._fail_count % 250 == 0:
+                print(f'[FX-FAIL] {type(self).__name__}: {e!r} '
+                      f'(suppressed={self._fail_count})')
+            if self._fail_count > 50:
+                self.enabled = False
+                print(f'[FX-FAIL] {type(self).__name__} disabled '
+                      f'after {self._fail_count} failures.')
+            return frame
+        # Sanity: NaN/Inf in float intermediates → cv2.remap can crash later
+        # if the value silently propagates into a follow-up effect.
+        if out is None:
+            return frame
+        if out.dtype != np.uint8:
+            out = _ensure_uint8(out)
+        return out
 
     def scaled_intensity(self, seg: Segment) -> float:
-        return self.intensity_min + seg.intensity * (self.intensity_max - self.intensity_min)
+        v = self.intensity_min + seg.intensity * (self.intensity_max - self.intensity_min)
+        # Hard-cap the upper end. Always-on with intensity=1.0 pushes some
+        # warps (Vortex angle 5 rad, Sobel breath ×1.25) into edge-case
+        # parameter regions that occasionally crash cv2.remap on Windows.
+        return max(0.0, min(0.95, v))
 
     @abstractmethod
     def _apply(self, frame: np.ndarray, seg: Segment, draft: bool) -> np.ndarray: ...

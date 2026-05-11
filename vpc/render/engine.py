@@ -96,20 +96,71 @@ class BreakcoreEngine:
         if self.progress_callback:
             self.progress_callback(message, value)
 
+    def _log_fx_fail(self, fx, exc: BaseException) -> None:
+        """Throttled per-effect failure log.
+
+        A single misbehaving effect used to spam one log line per frame —
+        on a 30-min render that's hundreds of thousands of lines, which
+        bloated the GUI Text widget and the stdout buffer enough to OOM.
+        Now we log the first 3 occurrences then once every 500 frames per
+        effect class, and after 100 failures we disable the effect for
+        the rest of the render.
+        """
+        cache = getattr(self, '_fx_fail_counts', None)
+        if cache is None:
+            cache = {}
+            self._fx_fail_counts = cache
+        name = type(fx).__name__
+        n = cache.get(name, 0) + 1
+        cache[name] = n
+        if n <= 3 or n % 500 == 0:
+            self.log(f'Effect error ({name}) [{n}x]: {exc}')
+        if n >= 100 and getattr(fx, 'enabled', False):
+            try:
+                fx.enabled = False
+                self.log(f'{name}: disabled after {n} failures.')
+            except Exception:
+                pass
+
     # ----- scene detection -----
     def detect_scenes(self, video_paths: List[str], duration: float):
         if not self.config.use_scene_detect:
             return
         from scenedetect import VideoManager, SceneManager
         from scenedetect.detectors import ContentDetector
+        # Hard upper bound on per-source duration we'll scan. Scene
+        # detection on a 30-min source took minutes of CPU + a multi-GB
+        # RAM spike on the render thread and frequently OOM'd before the
+        # render even started. 8 minutes covers the typical music video.
+        SCENE_DETECT_LIMIT_SEC = 480
         self.log('Detecting scenes...')
         all_cuts: List[float] = []
         for video_path in video_paths:
+            if self.abort:
+                break
+            # Probe duration cheaply via ffprobe-equivalent (cv2). Skip
+            # scene detection for very long sources — they'd OOM the
+            # render thread before the first frame is encoded.
+            try:
+                _cap = cv2.VideoCapture(video_path)
+                _fps = float(_cap.get(cv2.CAP_PROP_FPS) or 24.0)
+                _n = float(_cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0)
+                _cap.release()
+                src_dur = (_n / _fps) if _fps > 0 else 0.0
+            except Exception:
+                src_dur = 0.0
+            if src_dur > SCENE_DETECT_LIMIT_SEC:
+                self.log(f'Skipping scene detection on {os.path.basename(video_path)} '
+                         f'({src_dur:.0f}s > {SCENE_DETECT_LIMIT_SEC}s) — too long.')
+                continue
             vm = VideoManager([video_path])
             sm = SceneManager()
             sm.add_detector(ContentDetector(threshold=30.0))
             try:
-                vm.set_downscale_factor()
+                # Aggressive downscale: PySceneDetect's default 'auto' picks
+                # too large a frame for HD content, costing RAM with no
+                # detection-quality gain.
+                vm.set_downscale_factor(4)
                 vm.start()
                 sm.detect_scenes(frame_source=vm)
                 scene_list = sm.get_scene_list()
@@ -153,13 +204,33 @@ class BreakcoreEngine:
         import tempfile
         tmp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
         tmp.close()
+        # Probe duration cheaply so we can scale the ffmpeg timeout. The old
+        # hard 120 s ceiling killed extraction on 30+ minute passthrough
+        # sources mid-write and left an empty/broken WAV behind.
+        try:
+            _cap = cv2.VideoCapture(video_path)
+            _fps = float(_cap.get(cv2.CAP_PROP_FPS) or 24.0)
+            _n = float(_cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0)
+            _cap.release()
+            src_dur = (_n / _fps) if _fps > 0 else 0.0
+        except Exception:
+            src_dur = 0.0
+        # ~1 s of wall-clock per 60 s of audio is conservative; clamp to a
+        # 60 s floor and a 30 min ceiling to avoid runaway hangs.
+        extract_timeout = int(max(60.0, min(1800.0, 60.0 + src_dur)))
+        # Keep stereo 44.1 kHz: this WAV is BOTH analysed AND muxed back
+        # into the output as the audio track. Downsampling here would be
+        # audible in the rendered video (mono panorama collapse, lost
+        # high-end). The analyzer does its own downsample on the in-memory
+        # waveform, so the temp file size cost (~10.6 MB/min) is fine.
         cmd = [
             ffmpeg_bin(), '-y', '-i', video_path,
             '-vn', '-ac', '2', '-ar', '44100', '-sample_fmt', 's16',
             tmp.name,
         ]
         try:
-            result = subprocess.run(cmd, capture_output=True, timeout=120)
+            result = subprocess.run(cmd, capture_output=True,
+                                    timeout=extract_timeout)
         except (subprocess.TimeoutExpired, OSError) as exc:
             self.log(f'Audio extraction failed: {exc}')
             try: os.remove(tmp.name)
@@ -608,8 +679,12 @@ class BreakcoreEngine:
                     and random.random() < ctx.flash_chance):
                 flash_frames = random.randint(1, 2)
                 dummy = np.zeros((ctx.out_h, ctx.out_w, 3), dtype=np.uint8)
-                flash_frame = ctx.flash_fx._apply(dummy, seg, ctx.is_draft)
-                flash_frame = cv2.resize(flash_frame, (ctx.out_w, ctx.out_h))
+                try:
+                    flash_frame = ctx.flash_fx._apply(dummy, seg, ctx.is_draft)
+                    flash_frame = cv2.resize(flash_frame, (ctx.out_w, ctx.out_h))
+                except (cv2.error, ValueError, MemoryError) as e:
+                    self._log_fx_fail(ctx.flash_fx, e)
+                    flash_frame = dummy
                 flash_bytes = self._pack_frame(flash_frame, sink.input_pix_fmt)
                 aborted = False
                 for _ in range(flash_frames):
@@ -640,11 +715,16 @@ class BreakcoreEngine:
                     try:
                         frame = fx.apply(frame, seg, ctx.is_draft)
                     except Exception as e:
-                        self.log(f'Effect error ({type(fx).__name__}): {e}')
+                        self._log_fx_fail(fx, e)
                 try:
                     frame = ctx.mystery.apply(frame, seg, ctx.is_draft)
                 except Exception as e:
-                    self.log(f'Mystery error: {e}')
+                    self._log_fx_fail(ctx.mystery, e)
+
+                # Cooperative cancel inside the per-segment loop so a long
+                # SUSTAIN doesn't make the cancel button feel frozen.
+                if frames_written and (frames_written & 31) == 0 and self.abort:
+                    break
 
                 fb = self._pack_frame(frame, sink.input_pix_fmt)
                 for _ in range(stutter_repeat):
@@ -749,11 +829,11 @@ class BreakcoreEngine:
                 try:
                     frame = fx.apply(frame, seg, ctx.is_draft)
                 except Exception as e:
-                    self.log(f'Effect error ({type(fx).__name__}): {e}')
+                    self._log_fx_fail(fx, e)
             try:
                 frame = ctx.mystery.apply(frame, seg, ctx.is_draft)
             except Exception as e:
-                self.log(f'Mystery error: {e}')
+                self._log_fx_fail(ctx.mystery, e)
 
             fb = self._pack_frame(frame, sink.input_pix_fmt)
             if not sink.write(fb):

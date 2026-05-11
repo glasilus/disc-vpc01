@@ -95,7 +95,12 @@ class RenderConfig:
     def crf(self, mode: str) -> int:
         if mode == RENDER_DRAFT:
             return 28
-        return int(self.raw.get('crf', 18) or 18)
+        # Default raised from 18 → 22: 18 is visually-lossless for clean
+        # content, but with heavy effect chains the artefacts dominate
+        # detail anyway, so 18 only inflates file size (~2× larger) with
+        # no visible quality benefit. 22 is x264's standard "good quality
+        # web" CRF.
+        return int(self.raw.get('crf', 22) or 22)
 
     @property
     def use_h265(self) -> bool:

@@ -165,15 +165,34 @@ class AudioAnalyzer:
         self.detected_bpm: float = 0.0  # filled after analyze()
 
     def _load_audio(self, path: str):
-        """Try to load audio, falling back to ffmpeg transcoding if needed."""
+        """Try to load audio, falling back to ffmpeg transcoding if needed.
+
+        For very large source files we explicitly downsample to 11025 Hz at
+        load time. Default `librosa.load` (sr=22050) needs ~600 MB of float32
+        STFT scratch for a 30-minute track on top of the raw waveform; on a
+        machine with 8 GB free that's a frequent OOM kill of the render
+        thread. Downsampling cuts both the waveform and the STFT in half
+        with no measurable loss for onset/RMS/flatness detection (those are
+        all sensitive to sub-Nyquist content for typical music).
+        """
         import subprocess, tempfile
 
-        def _try_librosa(p):
+        # Pick a working sample rate based on file size. Anything above
+        # ~150 MB on disk is almost certainly a long uncompressed WAV
+        # (passthrough extracts at 44.1 kHz s16 stereo → ~10.6 MB/min) or a
+        # very long compressed track — either way we want the lower sr.
+        try:
+            file_bytes = os.path.getsize(path)
+        except OSError:
+            file_bytes = 0
+        target_sr = 11025 if file_bytes > 150 * 1024 * 1024 else 22050
+
+        def _try_librosa(p, sr=target_sr):
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore')
                 with _suppress_stderr():
                     try:
-                        return librosa.load(p)
+                        return librosa.load(p, sr=sr, mono=True)
                     except Exception:
                         return None, None
 
@@ -256,13 +275,27 @@ class AudioAnalyzer:
 
         duration = len(y) / sr
 
-        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+        # Long-track guard: bigger hop + smaller n_fft cuts STFT scratch
+        # roughly 4× without measurable impact on onset/RMS/flatness for
+        # music-rate analysis. Without this, a 30-min track at sr=22050
+        # produces a (1025, ~77k) complex64 STFT (~620 MB) that frequently
+        # OOM-killed the render thread before any frame was encoded.
+        if duration > 600.0:
+            hop = 2048
+            n_fft = 1024
+        else:
+            hop = 512
+            n_fft = 2048
+
+        onset_env = librosa.onset.onset_strength(
+            y=y, sr=sr, hop_length=hop, n_fft=n_fft)
         onsets = librosa.onset.onset_detect(
-            onset_envelope=onset_env, sr=sr, units='time', backtrack=True
+            onset_envelope=onset_env, sr=sr, hop_length=hop,
+            units='time', backtrack=True,
         )
-        hop = 512
         rms_frames = librosa.feature.rms(y=y, hop_length=hop)[0]
-        flat_frames = librosa.feature.spectral_flatness(y=y, hop_length=hop)[0]
+        flat_frames = librosa.feature.spectral_flatness(
+            y=y, hop_length=hop, n_fft=n_fft)[0]
 
         onsets = list(onsets)
 
@@ -324,7 +357,7 @@ class AudioAnalyzer:
                 continue
 
             frame_idx = min(
-                librosa.time_to_frames(t_start, sr=sr, hop_length=hop),
+                int(librosa.time_to_frames(t_start, sr=sr, hop_length=hop)),
                 len(rms_frames) - 1
             )
             rms = float(rms_frames[frame_idx])

@@ -110,23 +110,31 @@ class FFmpegSink:
     def open(self):
         self._proc = subprocess.Popen(
             self._cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-        # Capture stderr instead of just dropping it — ffmpeg writes the
-        # encoder init failure (`Cannot load nvcuda.dll`, `No NVENC
-        # capable devices`, etc.) here, and the engine needs to read it
-        # to decide whether to fall back to libx264.
+        # Capture stderr (NVENC init failures live here) but cap the
+        # retained tail. ffmpeg can emit warnings on every GOP for noisy
+        # encoders; an unbounded list grew into tens of MB on long
+        # renders and pinned the GIL on every append.
         self._stderr_chunks: list[bytes] = []
+        self._stderr_total = [0]
+        STDERR_CAP_BYTES = 64 * 1024  # last 64 KiB is plenty for diagnostics.
 
-        def _drain(pipe, sink):
+        def _drain(pipe, sink, total):
             try:
                 while True:
                     chunk = pipe.read(4096)
                     if not chunk:
                         break
                     sink.append(chunk)
+                    total[0] += len(chunk)
+                    # Trim from the head so we keep a rolling tail.
+                    while total[0] > STDERR_CAP_BYTES and len(sink) > 1:
+                        head = sink.pop(0)
+                        total[0] -= len(head)
             except Exception:
                 pass
         threading.Thread(target=_drain, args=(self._proc.stderr,
-                                              self._stderr_chunks),
+                                              self._stderr_chunks,
+                                              self._stderr_total),
                          daemon=True).start()
         return self
 

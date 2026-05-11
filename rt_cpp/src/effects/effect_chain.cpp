@@ -458,17 +458,21 @@ GLuint EffectChain::apply(
     //     before all dials are at max, which matches the "0..1 = fully
     //     applied" contract that shaders expect.
     const float seg_boost   = std::sqrt(std::clamp(seg.intensity, 0.f, 1.f));
-    const float drive       = std::clamp(chaos * (0.6f + 0.4f * master_intensity), 0.f, 1.f);
-    // No floor: silence (seg.intensity == 0) → fi_base == 0 → effects do
-    // nothing visible. The previous 0.25 floor caused every enabled effect to
-    // fire at 25 % even in dead silence, which read as "overreacting".
-    const float fi_base     = std::clamp(1.4f * drive * seg_boost, 0.f, 1.f);
+    // Decouple the audio-driven term from chaos×master so that chaos=0 or
+    // master=0 doesn't zero everything out — those dials should attenuate,
+    // not gate. `drive` retains the (chaos×master) contribution.
+    const float drive       = std::clamp(0.4f + 0.6f * chaos * (0.5f + 0.5f * master_intensity),
+                                         0.f, 1.f);
+    // Floor of ~0.35 keeps effects clearly visible on quiet/average material —
+    // the previous 0.18 floor passed through to shaders that internally
+    // multiply by 0.4–0.6, leaving the visible result barely perceptible.
+    // 0.35 + 1.2 × drive × seg_boost still saturates to 1.0 at peak.
+    const float fi_base     = std::clamp(0.35f + 1.2f * drive * seg_boost, 0.f, 1.f);
 
-    // Audio gate for fire(): below this segment intensity we skip random fires
-    // entirely. Otherwise the chance roll keeps triggering effects in silence
-    // even though their visual intensity is now 0 — wasting GPU and producing
-    // momentary artifacts on effects that have non-multiplicative components.
-    const bool  audio_active = (seg.intensity > 0.02f);
+    // Audio gate: only suppress effects in *true* silence (analyzer-marked).
+    // Previously gated on intensity > 0.02 which excluded the SUSTAIN range
+    // we just remapped, leaving the chain visually dead.
+    const bool  audio_active = (seg.type != SegmentType::SILENCE);
 
     // Place the input onto the canvas with correct aspect handling. If we
     // don't have usable dimensions yet (no decoded frame this tick) or the
