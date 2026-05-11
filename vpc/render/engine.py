@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 import random
-import subprocess
 import time
 from dataclasses import dataclass
 from typing import Callable, List, Optional
@@ -21,6 +20,7 @@ from vpc.analyzer import AudioAnalyzer, Segment, SegmentType
 from .config import RenderConfig, RENDER_DRAFT, RENDER_FINAL
 from .source import VideoPool
 from .sink import FFmpegSink, EXPORT_FORMATS, ffmpeg_bin
+from .engine_setup import extract_audio_track, prepare_datamosh_source
 from .encoders import (
     EncoderSpec, find_spec as find_encoder_spec,
     fallback_spec as encoder_fallback_spec,
@@ -195,71 +195,13 @@ class BreakcoreEngine:
 
     # ----- passthrough audio extraction -----
     def _extract_audio_track(self, video_path: str) -> Optional[str]:
-        """Demux the audio of `video_path` into a temp WAV; return its path.
-
-        Returns None if the video has no audio stream or extraction fails —
-        in that case the engine still renders, but with no segments and no
-        audio in the output.
-        """
-        import tempfile
-        tmp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
-        tmp.close()
-        # Probe duration cheaply so we can scale the ffmpeg timeout. The old
-        # hard 120 s ceiling killed extraction on 30+ minute passthrough
-        # sources mid-write and left an empty/broken WAV behind.
-        try:
-            _cap = cv2.VideoCapture(video_path)
-            _fps = float(_cap.get(cv2.CAP_PROP_FPS) or 24.0)
-            _n = float(_cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0)
-            _cap.release()
-            src_dur = (_n / _fps) if _fps > 0 else 0.0
-        except Exception:
-            src_dur = 0.0
-        # ~1 s of wall-clock per 60 s of audio is conservative; clamp to a
-        # 60 s floor and a 30 min ceiling to avoid runaway hangs.
-        extract_timeout = int(max(60.0, min(1800.0, 60.0 + src_dur)))
-        # Keep stereo 44.1 kHz: this WAV is BOTH analysed AND muxed back
-        # into the output as the audio track. Downsampling here would be
-        # audible in the rendered video (mono panorama collapse, lost
-        # high-end). The analyzer does its own downsample on the in-memory
-        # waveform, so the temp file size cost (~10.6 MB/min) is fine.
-        cmd = [
-            ffmpeg_bin(), '-y', '-i', video_path,
-            '-vn', '-ac', '2', '-ar', '44100', '-sample_fmt', 's16',
-            tmp.name,
-        ]
-        try:
-            result = subprocess.run(cmd, capture_output=True,
-                                    timeout=extract_timeout)
-        except (subprocess.TimeoutExpired, OSError) as exc:
-            self.log(f'Audio extraction failed: {exc}')
-            try: os.remove(tmp.name)
-            except OSError: pass
-            return None
-        if result.returncode != 0 or os.path.getsize(tmp.name) == 0:
-            err = (result.stderr or b'')[:200].decode(errors='replace').strip()
-            self.log(f'Audio extraction: no track / ffmpeg error ({err}).')
-            try: os.remove(tmp.name)
-            except OSError: pass
-            return None
-        return tmp.name
+        """Thin wrapper over `engine_setup.extract_audio_track` with our log."""
+        return extract_audio_track(video_path, self.log)
 
     # ----- datamosh helper -----
     def _prepare_datamosh_source(self, video_path: str, output_path: str) -> bool:
-        cmd = [
-            ffmpeg_bin(), '-y', '-i', video_path,
-            '-vf', "select=not(eq(pict_type\\,I))",
-            '-vsync', 'vfr',
-            '-vcodec', 'libx264',
-            '-x264opts', 'keyint=1000:no-scenecut',
-            '-preset', 'ultrafast',
-            output_path,
-        ]
-        result = subprocess.run(cmd, capture_output=True)
-        if result.returncode != 0:
-            self.log(f'Datamosh ffmpeg error: '
-                     f'{result.stderr[:200].decode(errors="replace")}')
-        return result.returncode == 0
+        """Thin wrapper over `engine_setup.prepare_datamosh_source`."""
+        return prepare_datamosh_source(video_path, output_path, self.log)
 
     # ----- progress / ETA -----
     @staticmethod
@@ -314,6 +256,26 @@ class BreakcoreEngine:
         else:
             msg = f'Rendering {pct}%...'
         self.progress_callback(msg, pct)
+
+    # ----- effect-chain runner (shared by both render loops) -----
+    def _apply_chain(self, frame: np.ndarray, seg: 'Segment',
+                     ctx: '_RenderCtx') -> np.ndarray:
+        """Run the per-frame effect chain + mystery section.
+
+        Identical body that lived inline twice (`_run_segment_loop` and
+        `_run_passthrough_loop`). Behaviour is byte-for-byte equivalent —
+        same iteration order, same per-effect throttled error logging.
+        """
+        for fx in ctx.effects:
+            try:
+                frame = fx.apply(frame, seg, ctx.is_draft)
+            except Exception as e:
+                self._log_fx_fail(fx, e)
+        try:
+            frame = ctx.mystery.apply(frame, seg, ctx.is_draft)
+        except Exception as e:
+            self._log_fx_fail(ctx.mystery, e)
+        return frame
 
     # ----- pipe packing -----
     @staticmethod
@@ -711,15 +673,7 @@ class BreakcoreEngine:
                 if seg.type == SegmentType.SILENCE and seg.duration > 1.0:
                     frame = self._apply_silence(frame)
 
-                for fx in ctx.effects:
-                    try:
-                        frame = fx.apply(frame, seg, ctx.is_draft)
-                    except Exception as e:
-                        self._log_fx_fail(fx, e)
-                try:
-                    frame = ctx.mystery.apply(frame, seg, ctx.is_draft)
-                except Exception as e:
-                    self._log_fx_fail(ctx.mystery, e)
+                frame = self._apply_chain(frame, seg, ctx)
 
                 # Cooperative cancel inside the per-segment loop so a long
                 # SUSTAIN doesn't make the cancel button feel frozen.
@@ -825,15 +779,7 @@ class BreakcoreEngine:
             if seg.type == SegmentType.SILENCE and seg.duration > 1.0:
                 frame = self._apply_silence(frame)
 
-            for fx in ctx.effects:
-                try:
-                    frame = fx.apply(frame, seg, ctx.is_draft)
-                except Exception as e:
-                    self._log_fx_fail(fx, e)
-            try:
-                frame = ctx.mystery.apply(frame, seg, ctx.is_draft)
-            except Exception as e:
-                self._log_fx_fail(ctx.mystery, e)
+            frame = self._apply_chain(frame, seg, ctx)
 
             fb = self._pack_frame(frame, sink.input_pix_fmt)
             if not sink.write(fb):
