@@ -304,6 +304,11 @@ class MainGUI(tk.Tk):
         self._passthrough_snapshot: dict = {}
         self.var_resolution_mode = tk.StringVar(value='preset')
         self.var_formula_expr = tk.StringVar(value='frame')
+        # Preview length (seconds) — UI-only, intentionally NOT in self.vars
+        # so it bypasses preset save/load (avoids any compat risk with
+        # existing preset files). Read at render-time via
+        # `_get_preview_seconds()` which clamps to [1, 90].
+        self.var_preview_seconds = tk.IntVar(value=5)
         # Encoder quality fields. The Quality dropdown is a convenience —
         # picking a preset writes crf/export_preset/tune below; touching
         # any of those by hand flips the dropdown to 'Custom'. Manual
@@ -375,10 +380,20 @@ class MainGUI(tk.Tk):
                                     command=lambda: self.run('draft'),
                                     style='Draft.TButton')
         self.btn_draft.pack(fill='x', pady=2, ipady=4)
-        self.btn_preview = ttk.Button(rf, text='PREVIEW  (5 sec)',
+        # Preview length row — sits directly above the PREVIEW button so
+        # the duration control is visually attached to it. fill='x' keeps
+        # the sidebar grid stable; spinbox is right-justified, label left.
+        prf = tk.Frame(rf, bg=C_SILVER)
+        prf.pack(fill='x', pady=(4, 0))
+        tk.Label(prf, text='Preview length (s):', bg=C_SILVER, fg=C_TEXT,
+                 font=('MS Sans Serif', 9)).pack(side='left')
+        ttk.Spinbox(prf, from_=1, to=90,
+                    textvariable=self.var_preview_seconds,
+                    width=5).pack(side='right')
+        self.btn_preview = ttk.Button(rf, text='PREVIEW',
                                       command=lambda: self.run('preview'),
                                       style='Preview.TButton')
-        self.btn_preview.pack(fill='x', pady=2, ipady=4)
+        self.btn_preview.pack(fill='x', pady=(2, 2), ipady=4)
         self.btn_run_full = ttk.Button(rf, text='RENDER FULL VIDEO',
                                        command=lambda: self.run('final'),
                                        style='FullRender.TButton')
@@ -2582,6 +2597,19 @@ class MainGUI(tk.Tk):
         self.log(f'Match FPS: source {src_fps:.3f} → output {rounded} fps.')
 
     # ─── render ───
+    def _get_preview_seconds(self) -> float:
+        """Read preview length from the spinbox, clamped to [1, 90].
+
+        Isolates the engine from any user-typed garbage in the spinbox
+        (TclError on `.get()` for non-numeric input). Falls back to 5s
+        on any parse failure so a render is still possible.
+        """
+        try:
+            v = float(self.var_preview_seconds.get())
+        except (tk.TclError, ValueError, TypeError):
+            v = 5.0
+        return max(1.0, min(90.0, v))
+
     def run(self, mode='final'):
         passthrough = bool(self.vars.get('passthrough_mode')
                            and self.vars['passthrough_mode'].get())
@@ -2599,9 +2627,14 @@ class MainGUI(tk.Tk):
 
         if mode in ('draft', 'preview'):
             cfg['render_mode'] = mode
-            cfg['max_duration'] = 5.0
+            # Draft is a fixed 5s 480p sanity-check; only PREVIEW honors
+            # the user-controlled length so its role stays predictable.
+            preview_secs = (5.0 if mode == 'draft'
+                            else self._get_preview_seconds())
+            cfg['max_duration'] = preview_secs
             cfg['output_path'] = self.temp_preview_path
-            label = 'DRAFT (5 sec · 480p)' if mode == 'draft' else 'PREVIEW (5 sec)'
+            label = ('DRAFT (5 sec · 480p)' if mode == 'draft'
+                     else f'PREVIEW ({preview_secs:g} sec)')
             self.log(f'Starting {label}...')
             self.progress.configure(mode='indeterminate'); self.progress.start(10)
         else:
