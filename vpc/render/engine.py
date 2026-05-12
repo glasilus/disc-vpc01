@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import random
 import time
+from collections import deque
 from dataclasses import dataclass
 from typing import Callable, List, Optional
 
@@ -20,7 +21,12 @@ from vpc.analyzer import AudioAnalyzer, Segment, SegmentType
 from .config import RenderConfig, RENDER_DRAFT, RENDER_FINAL
 from .source import VideoPool
 from .sink import FFmpegSink, EXPORT_FORMATS, ffmpeg_bin
-from .engine_setup import extract_audio_track, prepare_datamosh_source
+from .engine_setup import (
+    extract_audio_track, prepare_datamosh_source,
+    plan_passthrough_events, apply_passthrough_stutter_audio,
+    event_seed_for_passthrough, _trigger_decision,
+    STUTTER_LOOP_SIZE,
+)
 from .encoders import (
     EncoderSpec, find_spec as find_encoder_spec,
     fallback_spec as encoder_fallback_spec,
@@ -72,6 +78,12 @@ class _RenderCtx:
     # long-GOP encode, so 1:1 frame alignment with audio is unchanged).
     # None = no datamosh prebake / not in passthrough mode.
     passthrough_dm_cap: object = None
+    # Deterministic seed for passthrough stutter/flash trigger RNG. The
+    # planner walks segments before sink.open with a Random(seed) and
+    # writes audio loops; the loop builds a fresh Random(seed) and runs
+    # the same trigger checks in the same order, producing the same
+    # events. None outside passthrough.
+    event_rng_seed: Optional[int] = None
     frames_emitted: int = 0
 
 
@@ -448,6 +460,41 @@ class BreakcoreEngine:
         flash_chance = min(1.0, rc.flash_chance_base * (0.3 + 0.7 * chaos))
         flash_fx = FlashEffect(enabled=True, chance=1.0)
 
+        # ----- passthrough stutter audio loop pre-pass -----
+        # Done BEFORE sink.open because the WAV is consumed by ffmpeg the
+        # moment the sink starts. Determinism via seed → identical events
+        # in the loop, so audio loops align to video loops sample-perfect.
+        event_rng_seed: Optional[int] = None
+        if (rc.passthrough_mode and audio_path
+                and (rc.stutter_enabled or rc.flash_enabled)):
+            try:
+                pre_target_total = int(round(target_duration * fps))
+                # Build the same seg_list the loop uses (a leading gap
+                # filler if segments[0].t_start > 0; otherwise segments
+                # as-is). Triggers are computed against this exact list
+                # so cursor walks match.
+                if segments and segments[0].t_start > 0:
+                    pre_seg_list = [Segment(
+                        t_start=0.0, t_end=segments[0].t_start,
+                        duration=segments[0].t_start,
+                        type=SegmentType.SILENCE,
+                        intensity=0.0, rms=0.0, flatness=0.0, rms_change=0.0,
+                    )] + list(segments)
+                else:
+                    pre_seg_list = list(segments)
+                event_rng_seed = event_seed_for_passthrough(
+                    audio_path, pre_target_total, chaos)
+                events = plan_passthrough_events(
+                    pre_seg_list, fps=fps, rc=rc,
+                    flash_chance=flash_chance, chaos=chaos,
+                    seed=event_rng_seed)
+                if events:
+                    apply_passthrough_stutter_audio(
+                        audio_path, events, fps, self.log)
+            except Exception as exc:
+                self.log(f'Stutter pre-pass skipped: {exc}')
+                event_rng_seed = None
+
         # ----- ffmpeg sink -----
         # Resolve the encoder spec from the user's chosen label. If the
         # label was saved on a machine with HW support and we don't have
@@ -602,6 +649,7 @@ class BreakcoreEngine:
             datamosh_cap=datamosh_cap,
             datamosh_total_frames=datamosh_total_frames,
             passthrough_dm_cap=passthrough_dm_cap,
+            event_rng_seed=event_rng_seed,
         )
 
         try:
@@ -834,17 +882,34 @@ class BreakcoreEngine:
 
         # Replace-mode state for Stutter and Flash. Both effects "fire" by
         # latching one of these counters to N>0 — for the next N frames the
-        # loop overrides the per-frame output (held copy or flash colour)
-        # while STILL stepping the source pointer via cap.grab(). This way
-        # output stays 1:1 with input frames and audio sync is preserved.
-        # Triggers fire at most once per segment so the held/flash phase
-        # spans the segment boundary cleanly instead of re-firing each
-        # frame inside the same segment.
+        # loop overrides the per-frame output while STILL advancing the
+        # source pointer (cap.grab in 1:1 mode, dm_cursor in dm_stretch).
+        # This way output stays 1:1 with input frames and audio sync is
+        # preserved. Triggers fire at most once per segment so the
+        # replace phase spans the segment boundary cleanly instead of
+        # re-firing each frame inside the same IMPACT.
+        #
+        # Stutter is a DRILL loop: it doesn't freeze a single frame, it
+        # replays the last `loop_size` decoded frames in a tight cycle.
+        # That's what gives drillcore its characteristic "br-r-r-r-rt"
+        # micro-stutter rather than a flat freeze. `frame_history` is
+        # the rolling buffer the loop is built from on trigger; maxlen
+        # caps the worst-case drill length we can produce.
+        STUTTER_HISTORY = 4
+        frame_history: deque = deque(maxlen=STUTTER_HISTORY)
         stutter_remaining = 0
-        held_frame_bytes: Optional[bytes] = None
+        stutter_loop: Optional[List[bytes]] = None
+        stutter_idx = 0
         flash_remaining = 0
         flash_frame_bytes: Optional[bytes] = None
         last_trigger_cursor = -1
+        # Trigger RNG mirrors the planner's. When seed is None (no audio
+        # / pre-pass skipped) we fall back to the global `random` module
+        # — drill still plays, but audio won't have been pre-looped.
+        if ctx.event_rng_seed is not None:
+            event_rng = random.Random(ctx.event_rng_seed)
+        else:
+            event_rng = random.Random()
 
         last_frame_bytes: Optional[bytes] = None
         for fi in range(ctx.target_total_frames):
@@ -874,8 +939,18 @@ class BreakcoreEngine:
                 if flash_remaining > 0:
                     fb = flash_frame_bytes or last_frame_bytes
                     flash_remaining -= 1
+                elif stutter_loop:
+                    # Drill-replay: cycle through the captured loop. idx
+                    # wraps via modulo so any combination of loop_size +
+                    # remaining count is safe.
+                    fb = stutter_loop[stutter_idx % len(stutter_loop)]
+                    stutter_idx += 1
+                    stutter_remaining -= 1
+                    if stutter_remaining <= 0:
+                        stutter_loop = None
+                        stutter_idx = 0
                 else:
-                    fb = held_frame_bytes or last_frame_bytes
+                    fb = last_frame_bytes
                     stutter_remaining -= 1
                 if fb is None:
                     # Defensive: very first frame somehow entered replace —
@@ -886,6 +961,7 @@ class BreakcoreEngine:
                         break
                     ctx.frames_emitted += 1
                     last_frame_bytes = fb
+                    frame_history.append(fb)
                     self._emit_progress(ctx.frames_emitted, ctx.target_total_frames)
                     continue
 
@@ -940,39 +1016,65 @@ class BreakcoreEngine:
 
             # Per-segment trigger arming. cursor advances when we cross a
             # segment boundary; we use it as a one-shot key so a long
-            # SUSTAIN/IMPACT doesn't re-fire stutter every frame.
-            if cursor != last_trigger_cursor and stutter_remaining == 0 and flash_remaining == 0:
+            # SUSTAIN/IMPACT doesn't re-fire stutter every frame. The
+            # planner's pre-pass walks the same seg_list with an
+            # identical RNG, so the events armed here match what the
+            # WAV was pre-looped for — audio drills hit the same chunks
+            # as video drills.
+            #
+            # `last_trigger_cursor = cursor` runs UNCONDITIONALLY on
+            # cursor change. If counters are still > 0 we deliberately
+            # swallow this segment's trigger — same as the planner does
+            # in its `if state_remaining > 0: continue` branch. Updating
+            # only on successful arm would let the trigger fire LATER
+            # in the same segment (after counters drain), and the
+            # planner wouldn't know to mirror that in audio.
+            if cursor != last_trigger_cursor:
                 last_trigger_cursor = cursor
-                # Flash: DROP / IMPACT, gated by flash_chance.
-                if (rc.flash_enabled
-                        and seg.type in (SegmentType.DROP, SegmentType.IMPACT)
-                        and random.random() < ctx.flash_chance):
-                    n_flash = random.randint(1, 2)
-                    dummy = np.zeros((ctx.out_h, ctx.out_w, 3), dtype=np.uint8)
-                    try:
-                        ff = ctx.flash_fx._apply(dummy, seg, ctx.is_draft)
-                        ff = cv2.resize(ff, (ctx.out_w, ctx.out_h))
-                    except (cv2.error, ValueError, MemoryError) as e:
-                        self._log_fx_fail(ctx.flash_fx, e)
-                        ff = dummy
-                    flash_frame_bytes = self._pack_frame(ff, sink.input_pix_fmt)
-                    flash_remaining = n_flash
-                # Stutter: short IMPACT, gated by chaos.
-                elif (rc.stutter_enabled
-                        and seg.type == SegmentType.IMPACT
-                        and seg.duration < 0.3
-                        and random.random() < (0.3 + ctx.chaos * 0.5)):
-                    # Stutter length: 2/4/8 frames — same buckets as cut
-                    # mode. Subtract 1 because the current frame already
-                    # carries the "first" of the held sequence.
-                    n_stut = random.choice([2, 4, 8])
-                    held_frame_bytes = fb
-                    stutter_remaining = n_stut - 1
+                decision = (_trigger_decision(seg, rc, event_rng,
+                                              ctx.flash_chance, ctx.chaos)
+                            if (stutter_remaining == 0 and flash_remaining == 0)
+                            else None)
+                if decision is not None:
+                    kind, params = decision
+                    if kind == 'flash':
+                        dummy = np.zeros((ctx.out_h, ctx.out_w, 3),
+                                         dtype=np.uint8)
+                        try:
+                            ff = ctx.flash_fx._apply(dummy, seg, ctx.is_draft)
+                            ff = cv2.resize(ff, (ctx.out_w, ctx.out_h))
+                        except (cv2.error, ValueError, MemoryError) as e:
+                            self._log_fx_fail(ctx.flash_fx, e)
+                            ff = dummy
+                        flash_frame_bytes = self._pack_frame(
+                            ff, sink.input_pix_fmt)
+                        flash_remaining = params['n_flash']
+                    elif kind == 'stutter':
+                        # Fixed loop size = STUTTER_LOOP_SIZE (planner
+                        # uses the same constant). Loop content is the
+                        # last (loop_size - 1) emitted frames + current
+                        # `fb` so motion actually plays inside the drill
+                        # cycle — that's what makes it audibly/visibly
+                        # a stutter rather than a freeze.
+                        cycles = params['cycles']
+                        loop_size = STUTTER_LOOP_SIZE
+                        history_list = list(frame_history)
+                        n_old = loop_size - 1
+                        if len(history_list) >= n_old:
+                            loop = (history_list[-n_old:] + [fb]
+                                    if n_old > 0 else [fb])
+                        else:
+                            pad = [fb] * (n_old - len(history_list))
+                            loop = pad + history_list + [fb]
+                        stutter_loop = loop
+                        stutter_idx = 0
+                        stutter_remaining = loop_size * (cycles - 1)
 
             if not sink.write(fb):
                 break
             ctx.frames_emitted += 1
             last_frame_bytes = fb
+            frame_history.append(fb)
             self._emit_progress(ctx.frames_emitted, ctx.target_total_frames)
 
         # Tail-pad if source video was shorter than target_total_frames.
