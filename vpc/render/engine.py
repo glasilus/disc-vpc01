@@ -27,6 +27,7 @@ from .engine_setup import (
     event_seed_for_passthrough, _trigger_decision,
     STUTTER_LOOP_SIZE,
 )
+from ..audio.pipeline import apply_passthrough_audio_defects
 from .encoders import (
     EncoderSpec, find_spec as find_encoder_spec,
     fallback_spec as encoder_fallback_spec,
@@ -500,6 +501,19 @@ class BreakcoreEngine:
             except Exception as exc:
                 self.log(f'Stutter pre-pass skipped: {exc}')
                 event_rng_seed = None
+
+        # Audio defects pre-pass — INDEPENDENT of the stutter/flash
+        # gate. A user can enable an audio-link without touching stutter
+        # or flash; the previous nesting silently swallowed those defects
+        # because the outer `if (... stutter or flash)` was False.
+        # Defects must always run when (passthrough mode + audio source
+        # exist); the defect pipeline itself early-returns if no
+        # coupling is enabled, so unconditionally calling here is cheap.
+        if rc.passthrough_mode and audio_path:
+            try:
+                apply_passthrough_audio_defects(audio_path, cfg, self.log)
+            except Exception as exc:
+                self.log(f'Audio defects skipped: {exc}')
 
         # ----- ffmpeg sink -----
         # Resolve the encoder spec from the user's chosen label. If the

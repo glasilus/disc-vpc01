@@ -1,6 +1,6 @@
 # Disc VPC 01 — User Manual
 
-**Version:** 0.2.1
+**Version:** 0.2.2
 **Offline editor:** Python 3.10.x · Windows 10/11 (macOS, Ubuntu 22.* best-effort)
 **Realtime (R-T):** native C++ binary · Windows 10/11 · Linux · macOS
 
@@ -25,6 +25,8 @@
     - [3.6 Effects — Glitch](#36-effects--glitch)
     - [3.7 Effects — Complex](#37-effects--complex)
     - [3.8 Effects — Degradation](#38-effects--degradation)
+    - [3.8a Effects — Broken](#38a-effects--broken)
+    - [3.8b Effects — Virus](#38b-effects--virus)
     - [3.9 Effects — Overlays and Chroma Key](#39-effects--overlays-and-chroma-key)
     - [Chroma Key (Green Screen)](#chroma-key-green-screen)
     - [3.10 Effects — Signal Domain](#310-effects--signal-domain)
@@ -320,6 +322,8 @@ This is per-effect: turning `always` on for *Scanlines* does not affect any othe
 
 **Effect-specific parameters** — sliders and combos beneath the standard controls. Their meaning is described in the per-effect sections below.
 
+**audio: ...** *(checkbox, only on some effects, only visible in Passthrough mode)* — when ticked, the source audio is also "broken" in a way that pairs with this visual effect. The checkbox text spells out what that defect does (`audio: tape wobble + bandlimit`, `audio: bitcrush bursts`, `audio: ghost reverb`, etc.) — hover the checkbox for an exact description. Hidden when Passthrough is off, since the audio defect pipeline only runs in Passthrough mode. See §3.17 for the full list.
+
 ---
 
 ### 3.5 Effects — Core
@@ -477,6 +481,7 @@ Degradation effects simulate worn or low-quality recording/playback media.
 | **Bitcrush / Posterize** | Any | Reduces colour depth by quantizing pixel values to a smaller number of levels. |
 | **JPEG Crush** | IMPACT, NOISE | Re-encodes the frame at very low JPEG quality and decodes it back, producing compression block artefacts. |
 | **Fisheye / Barrel** | BUILD | Applies barrel lens distortion, bowing the image outward from the center. |
+| **VHS Tape (composite)** | BUILD, SUSTAIN | Full VHS-tape look in one effect. Colour smears sideways while edges stay sharp (the canonical Y/C separation), the picture breathes side-to-side sub-pixel by sub-pixel (wow & flutter), brightness mottles in slow patches, the bottom carries the torn rainbow band of head-switch noise, and a contrast crush + grain layer adds N-th-generation copy feel. One slider tunes the whole pipeline. Optional **Dust scratches** checkbox sprinkles rare 1-pixel-wide scratch lines on top. |
 | **VHS Tracking** | NOISE, DROP | Simulates VHS tape tracking errors: horizontal displacement at the top and bottom of the frame with luminance noise. |
 | **Interlace** | SUSTAIN | Splits even and odd scan lines and offsets them by a few pixels, simulating interlaced video. |
 | **Bad Signal** | DROP, NOISE | Overlays digital signal breakup artefacts — horizontal stripes, colour shifts, and noise bands. |
@@ -489,6 +494,88 @@ Each effect has a **Chance** slider.
 **Zoom Glitch** has one extra parameter — **Snap-back Duration (frames)** *(2 – 24)* — controlling how many frames the eased return-to-normal takes. Short values feel like a punch; long values feel like a breath.
 
 **Sharpen** has two extras: **Amount** *(0 – 3)* — strength of the unsharp mask kernel — and **Radius** *(1 – 9)* — Gaussian blur radius for the low-pass that gets subtracted. Higher radius = halos appear around larger features.
+
+---
+
+### 3.8a Effects — Broken
+
+The **BROKEN** group is for "the picture is wrong" effects — they look like the video file or the decoder is failing, rather than like decorative glitch art. Different from the GLITCH group: those decorate, these damage.
+
+---
+
+**Self Cannibalize**
+
+*Trigger: BUILD, NOISE*
+
+Random rectangles inside the frame are filled with a downscaled copy of the *whole current frame* — so the picture appears to contain miniature copies of itself in places it shouldn't. At low intensity, one or two subtle picture-in-picture inserts. At high intensity, the recursion takes over: each rectangle contains an even smaller copy of the frame, which contains an even smaller copy, etc. Reads as memory corruption — like the GPU is reading from the same source pointer over and over.
+
+- *Density* *(0.0 – 1.0)* — how many rectangles per frame and how deeply they nest. Low = subtle inserts. High = frame fills with nested self-similar copies.
+
+---
+
+**VSync Roll**
+
+*Trigger: BUILD, DROP*
+
+Vertical-hold loss. The frame is split horizontally and the two halves are stacked in the wrong order; the cut position drifts up the picture so the seam crawls. A black tear band marks the cut, exactly the way an old CRT showed the vertical retrace pulse when it lost vsync lock.
+
+- *Roll Speed* *(0.0 – 1.0)* — how fast the seam crawls and how thick the tear band is. Low = slow gentle roll with a hairline tear. High = fast scroll with a wide black tear band.
+
+---
+
+**P-Frame Lag**
+
+*Trigger: IMPACT, BUILD, DROP*
+
+Stateful motion-delta carryover. The picture only partially "catches up" each frame, so motion smears with the past — exactly the look of a video stream where the decoder is dropping P-frames. The lag compounds across frames: the more it fires, the heavier the trail becomes. Most visible on motion-changing moments (hits, builds, drops); near-invisible on static images.
+
+- *Lag Amount* *(0.0 – 1.0)* — how much the picture trails behind the source. Low = slight motion blur. High = heavy "decoder is two frames behind" smear.
+
+---
+
+**Bit Flip (bit rot)**
+
+*Trigger: SUSTAIN, NOISE*
+
+The "bit rot" of failing flash storage. A sparse boolean mask flips one bit per affected pixel; which bit-plane is hit (LSB ... MSB) scales with the slider. Low intensity = sparse LSB jitter (subtle dithering). High intensity = dense MSB flips (catastrophic colour shifts in plateaus of solid colour). Quiet rot during steady passages, masked by the chaos during noisy ones.
+
+- *Corruption* *(0.0 – 1.0)* — density of bit-flips and which bit-plane is targeted. Low = subtle dither. High = SD-card-going-bad colour cliffs.
+
+---
+
+**Wrong Motion Vector**
+
+*Trigger: IMPACT, NOISE*
+
+Pseudo-MPEG with lost motion vectors. ~10–30 % of the frame's 16×16 macroblocks (driven by intensity) are overwritten with the contents of *another* 16×16 region of the same frame, located 32–64 px away. Reads exactly like an H.264 stream where the motion-vector field is corrupt: chunks of the image surface in places they don't belong — pieces of a face appear next to the face, a fragment of background floats over the subject.
+
+- *Block Density* *(0.0 – 1.0)* — fraction of macroblocks corrupted. Low = a few stray blocks. High = up to 30 % of the grid replaced with displaced content.
+
+---
+
+### 3.8b Effects — Virus
+
+The **VIRUS** group is the Win95-malware-aesthetic shelf — effects that look like a 90s machine under attack rather than a video glitch. Two effects so far.
+
+---
+
+**Cursor Storm**
+
+*Trigger: SILENCE, SUSTAIN*
+
+A swarm of authentic 16×22 Win95 arrow cursors crawls over every frame, each pointer following its own brownian-motion path with a short fading trail. Pointer state persists across frames so motion stays continuous. Most evocative during quiet passages (eerie silent infestation) and steady sections (background swarm). Doesn't react to hits — this is a slow-burn dread effect, not a punch.
+
+- *Swarm Size* *(0.0 – 1.0)* — number of pointers and how wildly they move. Low = a couple of pointers drifting. High = a full infestation of 12+ cursors with jittery trails.
+
+---
+
+**BSOD Shred**
+
+*Trigger: IMPACT, DROP*
+
+Random horizontal bands of the frame are replaced with fragments of bluescreen text: the canonical NT-bluescreen palette (RGB 0, 0, 168) and a vocabulary of real STOP codes, hex addresses, and dump-prose lines. Stateless per frame — every frame picks fresh bands so the effect strobes / shreds. Pure "the system crashed at this exact moment" punctuation.
+
+- *Shred Density* *(0.0 – 1.0)* — how many bluescreen bands per fire and how tall each band is. Low = a single thin band per hit. High = 5+ thick bands of bluescreen text crowding the picture.
 
 ---
 
@@ -645,9 +732,22 @@ The **EFFECTS** tab has a top-bar checkbox: **Hide color-altering effects**. Whe
 
 When you uncheck it, the previous state of every affected effect — including the `Dim` choice if it was active — is restored from a snapshot taken at the moment you ticked it. So you can flip back and forth without losing your settings.
 
-Effects classified as "color-altering" (the ones the toggle hides):
+Effects classified as "color-altering" — every effect whose **primary action is to change the palette** and that has no built-in mode to preserve source colours. The list is grouped by *how* the colour is changed:
 
-`Flash Frame`, `RGB Shift`, `Color Bleed / VHS Smear`, `Negative`, `Bitcrush / Posterize`, `Glitch Cascade`, `Temporal RGB Shift`, `FFT Phase Corrupt`, `Waveshaper / Tube Sat`, `Dtype Reinterpret`, `ELA`, `Spatial Reverb`.
+- **Direct overwrites / inversions / quantisations:** `Flash Frame`, `Negative`, `Bitcrush / Posterize`, `Dithering`, `BSOD Shred`.
+- **Hue / chroma transforms:** `RGB Shift`, `Color Bleed / VHS Smear`, `Temporal RGB Shift`, `Echo Compound (hue shift)`, `Kali Mirror`, `Wrong Chroma Sub (4:1:N)`.
+- **Aggressive numerical corruptions whose visible signature is colour shifts:** `Waveshaper / Tube Sat`, `FFT Phase Corrupt`, `Dtype Reinterpret`, `Bad Signal`.
+- **Forensic / acoustic mappings that replace the source palette:** `ELA`, `Spatial Reverb`.
+- **Compound chain that rolls any of the above:** `Glitch Cascade`.
+
+Effects intentionally **NOT** in the list — either their primary action isn't colour, or they have a mode that preserves it:
+
+- **Has a palette-preserving mode** (you decide via the effect's own controls): `ASCII Filter` (`original` colour mode samples source pixels).
+- **Primary action is texture / noise / motion, not colour** — even though minor colour drift can occur: `VHS Tape (composite)` (chroma blur + grain), `Histogram Lag` (palette borrowing is subtle at low values), `Bit Flip` (data corruption first, colour shifts are an artefact), `JPEG Crush` (block artefacts first, hue drift is incidental).
+- **Pure geometric** — palette is preserved: `Pixel Sort`, `Pixel Drift`, `Phase Shift`, `Mosaic Pulse`, `Zoom Glitch`, `Fisheye / Barrel`, all `Warp` effects, `VSync Roll`, `Wrong Motion Vector`.
+- **Frame-blending** — averages source colours, doesn't introduce new ones: `Ghost Trails`, `Datamosh`, `Freeze + Corrupt`, `P-Frame Lag`, `Self Cannibalize`, `Interlace`, `Feedback Loop`.
+- **Subtle modulation / small area**: `Scan Lines`, `Sharpen`, `Resonant Rows`, `Game of Life Mask`, `VHS Tracking`, `Block Glitch`, `Cursor Storm`, `Stutter`.
+- **User-controlled content**: `Overlays`, `Formula`.
 
 Use this when the source video's original colour grading matters (footage from a particular DP, a finished colour-corrected clip, archival material) and you want to layer cuts/glitches on top without the engine pushing the palette around. The default state is **off**.
 
@@ -861,9 +961,11 @@ Renders the first 5 seconds of the audio track at 480p resolution. Effects that 
 
 ---
 
-**PREVIEW (5 sec)**
+**PREVIEW (configurable length)**
 
-Renders the first 5 seconds at full configured resolution and quality. All effects run at full fidelity. Use this to validate the visual result before committing to a full render.
+Renders the first N seconds at full configured resolution and quality. All effects run at full fidelity. Use this to validate the visual result before committing to a full render.
+
+A **Preview length (s)** spinbox sits directly above the PREVIEW button (range `1 – 90`, default `5`). The button label updates to reflect the current length on each click (`PREVIEW (12 sec)`). Garbage typed into the spinbox falls back to the default safely — you can never break the render with a bad value. Draft is fixed at 5 seconds and is *not* affected by this control; only PREVIEW honours it.
 
 ---
 
@@ -908,6 +1010,14 @@ The sliders are not independent. What you give to one changes what another is ca
 Move them. Render. Observe what changed. Then move them again.
 
 No combination is wrong. Some combinations are irreversible within the session.
+
+Below each slider is a name. The names are not the same as the slider above. They are not labels. They are switches.
+
+When a switch is closed — **PERPETUAL** under VESSEL, **UNCHAINED** under ENTROPY\_7, **BREACH//** under DELTA\_OMEGA, **awake.always** under STATIC\_MIND, **\_\_SUSTAIN** under RESONANCE, **INEVITABLE//** under COLLAPSE, **NULL.LOCK** under ZERO, **BLEED** under FLESH\_K, **\[ \* \]** under DOT — the slider above is no longer asked. It is told. The system does not pause to read whether the moment is right. It simply applies.
+
+The switches are not louder versions of the sliders. They are not amplifiers. They are decisions about whether the system is allowed to wait. With them closed, the system is not allowed.
+
+A slider at zero, with its switch closed, is still zero. The switch only matters when the slider has something to say.
 
 ### 3.15 Multiple Video Sources
 
@@ -966,6 +1076,27 @@ Use it when you want every effect in this program (warps, glitches, mystery, for
 4. Pick effects, click DRAFT or PREVIEW to dial them in, then RENDER FULL VIDEO.
 
 The output file is a 1:1 re-encode of the source's runtime with effects applied per-frame and the original audio re-muxed.
+
+**Audio coupling — when "the picture breaks, the sound breaks too":**
+
+In Passthrough mode, certain visual effects gain a small `audio: ...` checkbox inside their block (right under the parameters). Tick it and the program also "breaks" the source audio in a way that pairs with that visual effect — applied to the entire track once before rendering. The checkbox is hidden when Passthrough is off.
+
+What each pairing actually does to the audio:
+
+| Visual effect | Audio defect | What you'll hear |
+|---|---|---|
+| **VHS Tape** | tape wobble + bandlimit | Highs cut at 6 kHz (VHS HiFi bandwidth) + a metallic phase-smear comb resonance + a slow ~0.4 % wow & flutter pitch detune. Sounds like an old tape player. |
+| **VSync Roll** | pitch wobble | A slow ~0.4 Hz LFO bends pitch up and down by ~1.2 % — three times deeper than the VHS wow above. Sounds like an unstable motor — pitch never sits still. |
+| **P-Frame Lag** | ghost reverb | Three short echoes at 35 / 90 / 170 ms with fading volume (0.40 / 0.25 / 0.15) — a poor man's early-reflection reverb. Audio "lags behind itself" the same way the picture lags behind. |
+| **Bit Flip** | bitcrush bursts | Random ~60 ms windows (~4 per second) drop into harsh 4-bit (16-level) quantisation, then snap back to clean. Outside the bursts the sound is untouched — percussive, not a wash. |
+| **Wrong Motion Vector** | sample swap | Random ~35 ms windows (~6 per second) are *replaced* with audio copied from a different position in the track. Right kind of audio appears in the wrong place — the audio analogue of wrong macroblocks. |
+| **Self Cannibalize** | feedback echo | A 220 ms delay with 0.45 feedback. The audio repeats itself at fading amplitude, and those repeats feed back into themselves — recursive echo that "eats itself" the same way the visual rectangles do. |
+| **Cursor Storm** | click crackle | ~12 short bipolar clicks per second sprinkled at random positions and amplitudes. Sounds like contact crackle / pointer-click rain. |
+| **BSOD Shred** | static bursts | Random ~90 ms windows (~1.5 per second) are *replaced* with harsh white noise — audio is shredded the same way the bluescreen bands shred the picture. |
+
+You can tick more than one — the defects layer on top of each other (Bit Flip's bitcrush bursts will themselves get echoed if Self Cannibalize's audio link is also on). All of them are completely free of cost: the WAV is mangled once before rendering starts, then ffmpeg muxes the mangled WAV back as the output audio.
+
+If you don't tick any audio link, the source audio plays back unchanged — Passthrough's default behaviour. Audio coupling is opt-in per effect.
 
 ---
 

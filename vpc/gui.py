@@ -114,18 +114,29 @@ PASSTHROUGH_HIDDEN_KEYS = ()
 
 
 COLOR_EFFECT_KEYS = (
-    'fx_flash',          # Flash Frame
-    'fx_rgb',            # RGB Shift
-    'fx_colorbleed',     # Color Bleed / VHS Smear
-    'fx_negative',       # Negative
-    'fx_bitcrush',       # Bitcrush / Posterize
-    'fx_cascade',        # Glitch Cascade
-    'fx_temporal_rgb',   # Temporal RGB Shift
-    'fx_fft_phase',      # FFT Phase Corrupt
-    'fx_waveshaper',     # Waveshaper / Tube Sat
-    'fx_dtype_corrupt',  # Dtype Reinterpret
-    'fx_ela',            # ELA
-    'fx_spatial_reverb', # Spatial Reverb
+    # Direct colour overwrites / inversions / quantisations.
+    'fx_flash',           # Flash Frame — replaces frame with white/black
+    'fx_negative',        # Negative — 255 - pixel for every channel
+    'fx_bitcrush',        # Bitcrush / Posterize — quantises to 1-7 levels
+    'fx_dither',          # Dithering — Bayer 4x4 quantises palette to 2-16 levels
+    'fx_bsod_shred',      # BSOD Shred — replaces bands with NT-blue + white text
+    # Hue / chroma transforms (palette is recoloured, not preserved).
+    'fx_rgb',             # RGB Shift — chromatic-aberration fringes
+    'fx_colorbleed',      # Color Bleed / VHS Smear — channel blur
+    'fx_temporal_rgb',    # Temporal RGB Shift — R/G/B from different frames
+    'fx_echo',            # Echo Compound — explicit +30 deg hue-shifted echoes
+    'fx_kali',            # Kali Mirror — composite includes 255-pixel inversion
+    'fx_wrong_sub',       # Wrong Chroma Sub — chroma blocks bleed past edges
+    # Aggressive numerical corruptions whose visible signature is colour shifts.
+    'fx_waveshaper',      # Waveshaper — tanh saturation / hue distortion
+    'fx_fft_phase',       # FFT Phase Corrupt — colour interference patterns
+    'fx_dtype_corrupt',   # Dtype Reinterpret — float16 byte view = colour cliffs
+    'fx_bad_signal',      # Bad Signal — randomly coloured vertical noise bars
+    # Forensic / acoustic mappings whose output replaces the source palette.
+    'fx_ela',             # ELA — error-level heat map replaces colours
+    'fx_spatial_reverb',  # Spatial Reverb — convolves rows, palette mixes laterally
+    # Compound effect chain: any of its random sub-effects above.
+    'fx_cascade',         # Glitch Cascade — chains random palette-altering effects
 )
 
 
@@ -284,7 +295,16 @@ class MainGUI(tk.Tk):
         # Registry defaults
         reg = default_cfg()
 
-        defaults = {**cut_defaults, **reg, **export_defaults, **mystery_defaults}
+        # Per-effect audio-link toggles for passthrough mode. One BooleanVar
+        # per coupled effect; default False so the existing audio path is
+        # bit-identical until the user opts in. The `audio_link_<key>` keys
+        # flow through self.vars and therefore through preset save/load.
+        from vpc.audio.pipeline import EFFECT_AUDIO_COUPLING
+        audio_link_defaults = {f'audio_link_{k}': False
+                               for k in EFFECT_AUDIO_COUPLING.keys()}
+
+        defaults = {**cut_defaults, **reg, **export_defaults,
+                    **mystery_defaults, **audio_link_defaults}
         # Composite RGB lists handled via *_r/_g/_b ints below — drop the list keys
         for compkey in ('fx_ascii_fg', 'fx_ascii_bg', 'fx_overlay_ck_color'):
             defaults.pop(compkey, None)
@@ -306,6 +326,12 @@ class MainGUI(tk.Tk):
         # Passthrough snapshot mirrors `_color_fx_snapshot`: stores user's
         # original choices for keys we force off while passthrough is on.
         self._passthrough_snapshot: dict = {}
+        # Registry of audio-link Checkbutton holders, populated by
+        # `_build_effect_block` for every spec whose enable_key is in
+        # `EFFECT_AUDIO_COUPLING`. The passthrough_mode trace iterates
+        # this list to pack/unpack all holders in one go when the user
+        # flips passthrough on or off. Each entry: (enable_key, holder_frame).
+        self._audio_link_holders: list = []
         self.var_resolution_mode = tk.StringVar(value='preset')
         self.var_formula_expr = tk.StringVar(value='frame')
         # Preview length (seconds) — UI-only, intentionally NOT in self.vars
@@ -1545,6 +1571,26 @@ class MainGUI(tk.Tk):
                 self._row_with_help(inner, p.label, p.tooltip)
                 self._slider(inner, p.key, p.lo, p.hi, indent=True)
 
+        # Audio-link checkbox (only for effects that have a paired audio
+        # defect registered in vpc.audio.pipeline.EFFECT_AUDIO_COUPLING).
+        # Lives at the bottom of `inner` so it inherits the effect-off
+        # auto-hide; visibility within `inner` is further gated on
+        # passthrough_mode via `_sync_audio_link` below.
+        from vpc.audio.pipeline import EFFECT_AUDIO_COUPLING
+        audio_link_holder = None
+        coupling_entry = EFFECT_AUDIO_COUPLING.get(spec.enable_key)
+        if coupling_entry is not None:
+            link_label, _link_fn, link_tip = coupling_entry
+            audio_link_var_key = 'audio_link_' + spec.enable_key
+            audio_link_holder = tk.Frame(inner, bg=C_WHITE)
+            ttk.Checkbutton(
+                audio_link_holder, text=link_label,
+                variable=self.vars[audio_link_var_key],
+                style='W95.TCheckbutton',
+            ).pack(side='left', padx=22, pady=(2, 0))
+            for child in audio_link_holder.winfo_children():
+                Tooltip(child, link_tip)
+
         # Bottom separator — sits in `block`, not `inner`, so it remains
         # visible while the effect is off and keeps marking boundaries.
         sep = tk.Frame(block, bg=C_DARK_GRAY, height=1)
@@ -1613,6 +1659,29 @@ class MainGUI(tk.Tk):
                                lambda av=always_var: not av.get(),
                                [always_var])
             _sync_always()
+
+        if audio_link_holder is not None:
+            passthrough_var = self.vars.get('passthrough_mode')
+
+            def _sync_audio_link(*_a, holder=audio_link_holder,
+                                 pt_var=passthrough_var):
+                # Visible iff (a) passthrough mode is on. The effect-off
+                # auto-hide is handled by `inner` collapsing — we don't
+                # need to re-check `enable_var` here.
+                want = bool(pt_var.get()) if pt_var is not None else False
+                if want:
+                    if not _is_packed(holder):
+                        holder.pack(fill='x')
+                else:
+                    if _is_packed(holder):
+                        holder.pack_forget()
+                _refresh_scroll()
+
+            if passthrough_var is not None:
+                passthrough_var.trace_add('write', _sync_audio_link)
+            self._audio_link_holders.append(
+                (spec.enable_key, audio_link_holder))
+            _sync_audio_link()
 
         _sync_inner()
         return block

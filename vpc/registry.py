@@ -23,7 +23,10 @@ from typing import Any, Callable, Iterable, List, Optional, Tuple
 
 from vpc.analyzer import SegmentType
 from .effects.base import BaseEffect
-from .effects import core, glitch, degradation, complex_fx, signal, warp, overlay, formula
+from .effects import (
+    core, glitch, degradation, complex_fx, signal, warp, overlay, formula,
+    vhs as vhs_fx, broken as broken_fx, virus as virus_fx,
+)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -127,6 +130,8 @@ GROUP_ORDER: List[str] = [
     'COMPLEX',
     'SIGNAL DOMAIN',
     'WARP',
+    'BROKEN',            # decoder/memory-corruption family
+    'VIRUS',             # Win95-virus aesthetic
     'OVERLAYS',
     'FORMULA',           # rendered as its own dedicated tab, not in the accordion
 ]
@@ -494,6 +499,46 @@ EFFECTS: List[EffectSpec] = [
         tooltip=bi(
             'Bulges the image outward from the centre. Keep CHANCE low — visually heavy.',
             'Выпучивает изображение от центра. Держите CHANCE низким — эффект тяжёлый визуально.',
+        ),
+    ),
+    EffectSpec(
+        id='vhstape', label='VHS Tape (composite)', group='DEGRADATION',
+        trigger_types=[SegmentType.BUILD, SegmentType.SUSTAIN],
+        cls=vhs_fx.VHSTapeEffect,
+        enable_key='fx_vhstape', enabled_default=False,
+        chance_key='fx_vhstape_chance', default_chance=0.7,
+        params=[
+            ParamSpec('fx_vhstape_int', 'Wear', 0.5, 0.0, 1.0,
+                      kwarg='intensity_max',
+                      tooltip=bi(
+                          'Master VHS-wear knob. 0 = pristine, 1 = heavy generation loss '
+                          '(blurred chroma, tape grain, contrast crush, head-switch noise '
+                          'at the bottom).',
+                          'Главный ползунок «изношенности VHS». 0 — чистый источник, 1 — '
+                          'тяжёлая потеря качества (размытая цветность, плёночный шум, '
+                          'сжатие контраста, head-switch шум по низу кадра).',
+                      )),
+            ParamSpec('fx_vhstape_dust', 'Dust scratches', False, kind='choice',
+                      choices=['off', 'on'], kwarg=None,
+                      tooltip=bi(
+                          'Adds rare 1-px vertical scratches to imitate physical tape dust.',
+                          'Добавляет редкие вертикальные царапины 1-px — имитация пыли на плёнке.',
+                      )),
+        ],
+        intensity_max_kwarg='intensity_max',
+        extra_factory=lambda cfg: dict(dust=(cfg.get('fx_vhstape_dust', 'off') == 'on')),
+        note='BUILD / SUSTAIN — slow tape wear that accumulates over time.',
+        tooltip=bi(
+            'A full VHS-look pipeline in a single effect: Y/C separation with chroma blur '
+            '(the canonical "luma sharp, colour smeared" tape signature), low-frequency '
+            'tape grain that modulates brightness in patches, sub-pixel horizontal '
+            'wow & flutter, generation-loss contrast crush + additive noise, and '
+            'head-switch noise on the bottom rows. One slider tunes everything.',
+            'Полный VHS-look в одном эффекте: Y/C-разделение с размытием цветности '
+            '(канонический VHS-признак — резкая яркость и расплывшийся цвет), '
+            'низкочастотный плёночный шум с пятнами, субпиксельный wow & flutter, '
+            'compression-loss + аддитивный шум, head-switch шум по нижним строкам. '
+            'Один слайдер на всё.',
         ),
     ),
     EffectSpec(
@@ -1030,6 +1075,231 @@ EFFECTS: List[EffectSpec] = [
             'numpy + safe builtins are exposed.',
             'Введите любое NumPy-выражение, возвращающее кадр HxWx3 uint8. Песочница: '
             'доступны только numpy и безопасные встроенные функции.',
+        ),
+    ),
+
+    # ── BROKEN (decoder / memory corruption) ───────────────────────────
+    EffectSpec(
+        id='vsync_roll', label='VSync Roll', group='BROKEN',
+        trigger_types=[SegmentType.BUILD, SegmentType.DROP],
+        cls=broken_fx.VSyncRollEffect,
+        enable_key='fx_vsync_roll', enabled_default=False,
+        chance_key='fx_vsync_roll_chance', default_chance=0.4,
+        params=[
+            ParamSpec('fx_vsync_roll_int', 'Roll Speed', 0.5, 0.0, 1.0,
+                      kwarg='intensity_max',
+                      tooltip=bi(
+                          'How fast the seam crawls and how thick it is. '
+                          'Low = slow gentle roll with a hairline tear. '
+                          'High = fast scroll with a wide black tear band.',
+                          'Скорость движения шва и его толщина. Низко — медленная мягкая '
+                          'прокрутка с тонким разрывом. Высоко — быстрый скролл с широкой '
+                          'чёрной разрывной полосой.',
+                      )),
+        ],
+        intensity_max_kwarg='intensity_max',
+        note='BUILD / DROP — sync loss as a metaphor for "system gives way at peaks".',
+        tooltip=bi(
+            'The frame is split horizontally and the two halves are stacked in the wrong '
+            'order; the cut position drifts up the frame so the seam crawls. A black tear '
+            'band (width grows with intensity) marks the cut, the way an old CRT showed '
+            'the vertical retrace pulse when it lost vsync lock.',
+            'Кадр разрезается по горизонтали и две половины ставятся в обратном порядке; '
+            'место разреза дрейфует вверх по кадру, шов «ползёт». Чёрная разрывная полоса '
+            '(толщина растёт с интенсивностью) отмечает разрез — как на старом CRT, '
+            'когда тот терял vsync-синхронизацию.',
+        ),
+    ),
+    EffectSpec(
+        id='pframe_lag', label='P-Frame Lag', group='BROKEN',
+        trigger_types=[SegmentType.IMPACT, SegmentType.BUILD, SegmentType.DROP],
+        cls=broken_fx.PFrameLagEffect,
+        enable_key='fx_pframe_lag', enabled_default=False,
+        chance_key='fx_pframe_lag_chance', default_chance=0.5,
+        params=[
+            ParamSpec('fx_pframe_lag_int', 'Lag Amount', 0.5, 0.0, 1.0,
+                      kwarg='intensity_max',
+                      tooltip=bi(
+                          'How much the picture trails behind the live source. Low = slight '
+                          'motion blur. High = heavy "decoder is two frames behind" smear, '
+                          'compounding across frames.',
+                          'Насколько изображение отстаёт от источника. Низко — лёгкий motion '
+                          'blur. Высоко — тяжёлый смаз «декодер отстаёт на два кадра», '
+                          'накапливающийся между кадрами.',
+                      )),
+        ],
+        intensity_max_kwarg='intensity_max',
+        note='IMPACT / BUILD / DROP — lag is visible only when motion changes.',
+        tooltip=bi(
+            'Stateful: outputs `prev + alpha*(current - prev)` and feeds that blended '
+            'output back as the next prev. Motion only partially resolves each frame, like '
+            'a video stream where the decoder is dropping P-frames and the picture lags '
+            'behind. State is kept fresh on chance-failed frames so the lag does not snap.',
+            'Stateful-эффект: выводит `prev + alpha*(current - prev)` и подаёт этот '
+            'смешанный кадр как следующий prev. Движение лишь частично разрешается за кадр '
+            '— как в видеопотоке, где декодер теряет P-кадры. Буфер обновляется и на '
+            'кадрах, где chance не сработал, чтобы лаг не сбрасывался скачком.',
+        ),
+    ),
+    EffectSpec(
+        id='bit_flip', label='Bit Flip (bit rot)', group='BROKEN',
+        trigger_types=[SegmentType.SUSTAIN, SegmentType.NOISE],
+        cls=broken_fx.BitFlipEffect,
+        enable_key='fx_bit_flip', enabled_default=False,
+        chance_key='fx_bit_flip_chance', default_chance=0.4,
+        params=[
+            ParamSpec('fx_bit_flip_int', 'Corruption', 0.4, 0.0, 1.0,
+                      kwarg='intensity_max',
+                      tooltip=bi(
+                          'Density of bit-flips and which bit-plane is hit. Low = sparse '
+                          'LSB jitter (subtle dithering). High = dense MSB flips '
+                          '(catastrophic colour shifts in plateaus of solid colour).',
+                          'Плотность бит-флипов и в какой бит-плоскости они идут. Низко — '
+                          'редкие LSB-флипы (мягкое дрожание). Высоко — частые MSB-флипы '
+                          '(катастрофические цветовые сдвиги по плоским цветовым областям).',
+                      )),
+        ],
+        intensity_max_kwarg='intensity_max',
+        note='SUSTAIN / NOISE — quiet bit rot during steady passages, masked by noise.',
+        tooltip=bi(
+            'Sparse boolean mask of density `intensity * 0.05` is generated; an '
+            'intensity-driven bit-plane (LSB ... MSB) is selected, and every byte where '
+            'the mask is True has that bit toggled. The result has the exact "bit rot" '
+            'signature of failing flash storage: solid-colour plateaus picking up '
+            'quantised XOR shifts.',
+            'Генерируется разреженная булева маска плотностью `интенсивность * 0.05`; '
+            'выбирается бит-плоскость (LSB ... MSB) в зависимости от интенсивности, и '
+            'каждый байт, где маска True, имеет этот бит инвертированным. Результат точно '
+            'воспроизводит «bit rot» отказывающей флэш-памяти: плоские цветовые области '
+            'покрываются квантованными XOR-сдвигами.',
+        ),
+    ),
+    EffectSpec(
+        id='wrong_mvec', label='Wrong Motion Vector', group='BROKEN',
+        trigger_types=[SegmentType.IMPACT, SegmentType.NOISE],
+        cls=broken_fx.WrongMotionVectorEffect,
+        enable_key='fx_wrong_mvec', enabled_default=False,
+        chance_key='fx_wrong_mvec_chance', default_chance=0.4,
+        params=[
+            ParamSpec('fx_wrong_mvec_int', 'Block Density', 0.5, 0.0, 1.0,
+                      kwarg='intensity_max',
+                      tooltip=bi(
+                          'Fraction of 16x16 macroblocks corrupted. Low = a few stray '
+                          'blocks at random. High = up to 30 percent of the grid replaced '
+                          'with displaced content from elsewhere in the frame.',
+                          'Доля 16x16 макроблоков, попадающих под порчу. Низко — пара '
+                          'случайных блоков. Высоко — до 30 процентов решётки замещены '
+                          'смещённым содержимым из других мест кадра.',
+                      )),
+        ],
+        intensity_max_kwarg='intensity_max',
+        note='IMPACT / NOISE — codec confusion is purely about motion.',
+        tooltip=bi(
+            'A random fraction of 16x16 macroblocks is overwritten with the contents of '
+            'another 16x16 region of the same frame, located 32-64 px away with random '
+            'sign per axis. Reads exactly like an H.264 stream where the motion-vector '
+            'field is corrupt: chunks of the image surface in places they do not belong.',
+            'Случайная доля 16x16 макроблоков перезаписывается содержимым другой 16x16 '
+            'области того же кадра со смещением 32-64 px и случайным знаком по каждой '
+            'оси. Выглядит точно как H.264-поток с повреждённым motion-vector полем: '
+            'куски изображения «всплывают» не на своих местах.',
+        ),
+    ),
+    EffectSpec(
+        id='self_cannibalize', label='Self Cannibalize', group='BROKEN',
+        trigger_types=[SegmentType.BUILD, SegmentType.NOISE],
+        cls=broken_fx.SelfCannibalizeEffect,
+        enable_key='fx_self_cannibalize', enabled_default=False,
+        chance_key='fx_self_cannibalize_chance', default_chance=0.4,
+        params=[
+            ParamSpec('fx_self_cannibalize_int', 'Density', 0.5, 0.0, 1.0,
+                      kwarg='intensity_max',
+                      tooltip=bi(
+                          'How many cannibal rectangles per frame and how recursive. '
+                          'Low values: subtle 1-2 picture-in-picture inserts. High values: '
+                          'frame fills with nested self-similar copies.',
+                          'Сколько прямоугольников-каннибалов на кадр и насколько рекурсивно. '
+                          'Малые значения — едва заметные 1-2 «картинки-в-картинке». Высокие '
+                          '— кадр забит вложенными самоподобными копиями.',
+                      )),
+        ],
+        intensity_max_kwarg='intensity_max',
+        note='BUILD / NOISE — recursion grows with energy; nothing on quiet/steady.',
+        tooltip=bi(
+            'The decoder appears to keep reading from the same source pointer. Random '
+            'rectangles in the frame are painted with a downscaled copy of the *whole '
+            'current frame*; at high intensity those copies recurse so each rectangle '
+            'contains a smaller copy that contains an even smaller copy. Memory-corruption '
+            'aesthetic, distinct from feedback loop or block-glitch.',
+            'Декодер словно читает данные по одному указателю. Случайные прямоугольники '
+            'в кадре заполняются уменьшенной копией ВСЕГО текущего кадра; на высокой '
+            'интенсивности копии рекурсивно вкладываются — каждый прямоугольник содержит '
+            'меньшую копию, та — ещё меньшую. Эстетика повреждения памяти, не путать с '
+            'feedback loop или block-glitch.',
+        ),
+    ),
+
+    # ── VIRUS (Win95 malware aesthetic) ────────────────────────────────
+    EffectSpec(
+        id='cursor_storm', label='Cursor Storm', group='VIRUS',
+        trigger_types=[SegmentType.SILENCE, SegmentType.SUSTAIN],
+        cls=virus_fx.CursorStormEffect,
+        enable_key='fx_cursor_storm', enabled_default=False,
+        chance_key='fx_cursor_storm_chance', default_chance=0.6,
+        params=[
+            ParamSpec('fx_cursor_storm_int', 'Swarm Size', 0.5, 0.0, 1.0,
+                      kwarg='intensity_max',
+                      tooltip=bi(
+                          'Number of fake Win95 mouse cursors crawling over the frame and '
+                          'how wildly they move. Low: a couple of pointers drifting. '
+                          'High: a full infestation of 12+ cursors with jittery trails.',
+                          'Сколько fake Win95-курсоров ползает по кадру и насколько резко '
+                          'они двигаются. Низко — пара курсоров плывёт. Высоко — рой из '
+                          '12+ курсоров со рваными следами.',
+                      )),
+        ],
+        intensity_max_kwarg='intensity_max',
+        note='SILENCE / SUSTAIN — eerie infestation; loudest in quiet passages.',
+        tooltip=bi(
+            'A swarm of authentic 16x22 Win95 arrow cursors is overlaid on every frame, '
+            'each pointer following its own brownian-motion path with a short fading '
+            'trail. Pointer state is stateful across frames so motion is continuous. '
+            'Reads as a 90s machine under malware infestation.',
+            'Поверх каждого кадра — рой подлинных Win95-курсоров (16x22), каждый идёт '
+            'своей броуновской траекторией с коротким затухающим следом. Состояние '
+            'курсоров хранится между кадрами — движение непрерывное. Похоже на '
+            'заражённую вирусом машину 90-х.',
+        ),
+    ),
+    EffectSpec(
+        id='bsod_shred', label='BSOD Shred', group='VIRUS',
+        trigger_types=[SegmentType.IMPACT, SegmentType.DROP],
+        cls=virus_fx.BSODShredEffect,
+        enable_key='fx_bsod_shred', enabled_default=False,
+        chance_key='fx_bsod_shred_chance', default_chance=0.4,
+        params=[
+            ParamSpec('fx_bsod_shred_int', 'Shred Density', 0.5, 0.0, 1.0,
+                      kwarg='intensity_max',
+                      tooltip=bi(
+                          'How many bluescreen bands to slice into the frame per fire and '
+                          'how tall each band is. Low: a single thin band per hit. High: '
+                          '5+ thick bands of bluescreen text crowding the picture.',
+                          'Сколько синеэкранных полос врезается в кадр за срабатывание и '
+                          'насколько они толстые. Низко — одна тонкая полоса на удар. '
+                          'Высоко — 5+ толстых полос BSOD-текста забивают картинку.',
+                      )),
+        ],
+        intensity_max_kwarg='intensity_max',
+        note='IMPACT / DROP — pure system-crash punctuation on hits.',
+        tooltip=bi(
+            'Authentic NT-bluescreen palette (RGB 0,0,168) and a vocabulary of real STOP '
+            'codes, hex addresses and dump-prose lines are painted into random horizontal '
+            'bands of the frame. Stateless per-frame — every frame picks fresh bands so '
+            'the effect strobes / shreds.',
+            'Канонический фон NT-синего экрана (RGB 0,0,168) и набор реальных STOP-кодов, '
+            'hex-адресов и фраз dump-вывода врезаются в случайные горизонтальные полосы '
+            'кадра. Без состояния между кадрами — каждый кадр выбирает новые полосы, '
+            'поэтому эффект стробит и «шинкует».',
         ),
     ),
 
