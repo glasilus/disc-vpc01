@@ -1532,6 +1532,16 @@ class MainGUI(tk.Tk):
         sep.pack(fill='x', padx=4)
 
         # Visibility wiring.
+        # `pack_info()` (returns dict; empty when the widget isn't being
+        # managed by `pack`) is the AUTHORITATIVE check here, NOT
+        # `winfo_ismapped()`. The latter reflects actual on-screen
+        # visibility — which requires every ancestor to be mapped too.
+        # During build `_sync_always` runs BEFORE `_sync_inner` packs
+        # the `inner` frame, so `ai_holder.winfo_ismapped()` is False
+        # even when `ai_holder.pack()` was just called: that left the
+        # else-branch's pack_forget unreached, and a moment later when
+        # `_sync_inner` mapped `inner` the still-managed `ai_holder`
+        # surfaced — visible always-int slider despite `always` OFF.
         enable_var = self.vars[spec.enable_key]
 
         def _refresh_scroll():
@@ -1539,12 +1549,18 @@ class MainGUI(tk.Tk):
             if fn is not None:
                 self.after_idle(fn)
 
+        def _is_packed(w):
+            try:
+                return bool(w.pack_info())
+            except tk.TclError:
+                return False
+
         def _sync_inner(*_a):
             if enable_var.get():
-                if not inner.winfo_ismapped():
+                if not _is_packed(inner):
                     inner.pack(fill='x', before=sep)
             else:
-                if inner.winfo_ismapped():
+                if _is_packed(inner):
                     inner.pack_forget()
             _refresh_scroll()
 
@@ -1555,17 +1571,17 @@ class MainGUI(tk.Tk):
 
             def _sync_always(*_a):
                 if always_var.get():
-                    if not ai_holder.winfo_ismapped():
+                    if not _is_packed(ai_holder):
                         # `before=params_anchor` keeps ai_holder slotted
                         # between chance and params instead of bouncing
                         # to the bottom of `inner` on each toggle.
                         if (params_anchor is not None
-                                and params_anchor.winfo_ismapped()):
+                                and _is_packed(params_anchor)):
                             ai_holder.pack(fill='x', before=params_anchor)
                         else:
                             ai_holder.pack(fill='x')
                 else:
-                    if ai_holder.winfo_ismapped():
+                    if _is_packed(ai_holder):
                         ai_holder.pack_forget()
                 _refresh_scroll()
 
