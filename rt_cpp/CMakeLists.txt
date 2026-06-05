@@ -21,8 +21,8 @@ find_package(glad    CONFIG REQUIRED)
 if(WIN32)
     # vcpkg's spout2 CMake config is broken for static builds (it looks for Spout.dll).
     # We bypass find_package and resolve the library and headers manually.
-    find_library(SPOUT_LIB NAMES Spout spout2 SpoutLibrary PATHS "${CMAKE_PREFIX_PATH}/lib" REQUIRED)
-    find_path(SPOUT_INC NAMES SpoutLibrary.h PATHS "${CMAKE_PREFIX_PATH}/include" REQUIRED)
+    find_library(SPOUT_LIB NAMES Spout spout2 SpoutLibrary REQUIRED)
+    find_path(SPOUT_INC NAMES SpoutLibrary.h Spout.h PATH_SUFFIXES spout spout2 REQUIRED)
 endif()
 
 # FFmpeg: vcpkg exposes FFMPEG_INCLUDE_DIRS / FFMPEG_LIBRARY_DIRS / FFMPEG_LIBRARIES
