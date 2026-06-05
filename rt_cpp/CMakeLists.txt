@@ -19,7 +19,10 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(glad    CONFIG REQUIRED)
 
 if(WIN32)
-    find_package(spout2 CONFIG REQUIRED)
+    # vcpkg's spout2 CMake config is broken for static builds (it looks for Spout.dll).
+    # We bypass find_package and resolve the library and headers manually.
+    find_library(SPOUT_LIB NAMES Spout spout2 SpoutLibrary PATHS "${CMAKE_PREFIX_PATH}/lib" REQUIRED)
+    find_path(SPOUT_INC NAMES SpoutLibrary.h PATHS "${CMAKE_PREFIX_PATH}/include" REQUIRED)
 endif()
 
 # FFmpeg: vcpkg exposes FFMPEG_INCLUDE_DIRS / FFMPEG_LIBRARY_DIRS / FFMPEG_LIBRARIES
@@ -137,6 +140,9 @@ target_include_directories(DiscVPC01-RT PRIVATE
     "${STB_INCLUDE_DIR}"
     ${FFMPEG_INCLUDE_DIRS}
 )
+if(WIN32)
+    target_include_directories(DiscVPC01-RT PRIVATE "${SPOUT_INC}")
+endif()
 
 target_link_directories(DiscVPC01-RT PRIVATE ${FFMPEG_LIBRARY_DIRS})
 
@@ -155,7 +161,7 @@ target_link_libraries(DiscVPC01-RT PRIVATE
 )
 
 if(WIN32)
-    target_link_libraries(DiscVPC01-RT PRIVATE ole32 uuid comdlg32 shell32 spout2::SpoutLibrary)
+    target_link_libraries(DiscVPC01-RT PRIVATE ole32 uuid comdlg32 shell32 ${SPOUT_LIB})
     if(MSVC)
         # WIN32 subsystem hides the console, but our entry point is int main().
         # Without /ENTRY the linker expects WinMain and fails with LNK2019.
