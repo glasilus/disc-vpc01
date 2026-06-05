@@ -27,6 +27,7 @@ from .effects import (
     core, glitch, degradation, complex_fx, signal, warp, overlay, formula,
     vhs as vhs_fx, broken as broken_fx, virus as virus_fx,
 )
+from .effects.paint import PaintCanvasEffect
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -132,6 +133,7 @@ GROUP_ORDER: List[str] = [
     'WARP',
     'BROKEN',            # decoder/memory-corruption family
     'VIRUS',             # Win95-virus aesthetic
+    'PAINT',
     'OVERLAYS',
     'FORMULA',           # rendered as its own dedicated tab, not in the accordion
 ]
@@ -217,6 +219,19 @@ def _formula_extras(cfg: dict) -> dict:
         b=float(cfg.get('fx_formula_b', 0.5)),
         c=float(cfg.get('fx_formula_c', 0.5)),
         d=float(cfg.get('fx_formula_d', 0.5)),
+    )
+
+
+def _paint_extras(cfg: dict) -> dict:
+    from .effects.paint import decode_paint_canvas
+    canvas_data = cfg.get('fx_paint_canvas_data', '')
+    mask = decode_paint_canvas(canvas_data)
+    return dict(
+        canvas_mask=mask,
+        mode=cfg.get('fx_paint_mode', 'lag'),
+        color_r=int(cfg.get('fx_paint_color_r', 0)),
+        color_g=int(cfg.get('fx_paint_color_g', 255)),
+        color_b=int(cfg.get('fx_paint_color_b', 0)),
     )
 
 
@@ -1377,6 +1392,46 @@ EFFECTS: List[EffectSpec] = [
             'Загружает все PNG/JPG/MP4 из выбранной папки и берёт по одному на активный '
             'сегмент. Размер/позиция/хрома-ключ выбираются один раз на сегмент и держатся '
             'до его конца.',
+        ),
+    ),
+
+    # ── PAINT ──────────────────────────────────────────────────────────
+    EffectSpec(
+        id='paint', label='Paint Canvas FX', group='PAINT',
+        cls=PaintCanvasEffect,
+        enable_key='fx_paint', enabled_default=False,
+        chance_key='fx_paint_chance', default_chance=1.0,
+        params=[
+            ParamSpec('fx_paint_mode', 'Mode', 'lag', kind='choice',
+                      choices=['overlay', 'lag', 'warp_video', 'lag_warp'], indent=False,
+                      tooltip=bi(
+                          'overlay = draw the strokes; lag = frame delay in strokes; '
+                          'warp_video = distort video along outlines; lag_warp = lag + warped strokes',
+                          'overlay — рисовать линии; lag — задержка кадра в линиях; '
+                          'warp_video — искажение видео по контурам; lag_warp — задержка + искажение линий'
+                      )),
+            ParamSpec('fx_paint_delay', 'Lag Frames', 10, 2, 30, kind='int',
+                      kwarg='delay_frames',
+                      tooltip=bi(
+                          'Number of frames to delay the video inside the strokes.',
+                          'Количество кадров задержки видео внутри нарисованных линий.'
+                      )),
+            ParamSpec('fx_paint_warp_int', 'Warp Intensity', 0.3, 0.0, 1.0,
+                      kwarg='warp_intensity',
+                      tooltip=bi(
+                          'Strength of the distortion applied to the strokes.',
+                          'Сила искажения, применяемого к нарисованным линиям.'
+                      )),
+            ParamSpec('fx_paint_color_r', 'Color R', 0, 0, 255, kind='int', indent=True, tooltip=''),
+            ParamSpec('fx_paint_color_g', 'Color G', 255, 0, 255, kind='int', indent=True, tooltip=''),
+            ParamSpec('fx_paint_color_b', 'Color B', 0, 0, 255, kind='int', indent=True, tooltip=''),
+            ParamSpec('fx_paint_canvas_data', 'Canvas Data', '', kind='string', kwarg='canvas_data', indent=False),
+        ],
+        extra_factory=_paint_extras,
+        note='Open the editor window to draw paint strokes or load outline images.',
+        tooltip=bi(
+            'Applies drawing strokes as a mask for color overlays, frame delay (lag), or warp distortion.',
+            'Применяет рисунок как маску для наложения цвета, задержки кадров (lag) или искажения.'
         ),
     ),
 ]

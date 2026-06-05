@@ -28,7 +28,9 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import cv2
 import numpy as np
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw
+import io
+import base64
 
 from vpc.render import BreakcoreEngine
 from vpc.render.quality import (
@@ -227,6 +229,7 @@ class MainGUI(tk.Tk):
         self._setup_vars()
         self._build_ui()
         self._load_presets_file()
+        self._setup_paint_canvas_trace()
 
     # ─── styles ───
     def _setup_styles(self):
@@ -1011,8 +1014,11 @@ class MainGUI(tk.Tk):
             specs = by_group.get(group_name)
             if not specs:
                 continue
-            opened = group_name in ('CORE FX',)
-            body = self._acc_group(cf, group_name, open=opened)
+            opened = group_name in ('CORE FX', 'PAINT')
+            if group_name == 'PAINT':
+                body = self._acc_group(cf, 'PAINT CANVAS FX', open=opened, bg_color='#008080', fg_color='#FFFFFF')
+            else:
+                body = self._acc_group(cf, group_name, open=opened)
             for s in specs:
                 blk = self._build_effect_block(body, s)
                 self._effect_block_frames[s.enable_key] = blk
@@ -1032,18 +1038,21 @@ class MainGUI(tk.Tk):
         if self.vars.get('passthrough_mode') and self.vars['passthrough_mode'].get():
             self._apply_passthrough_hide(active=True, take_snapshot=False)
 
-    def _acc_group(self, parent, title, open=False):
+    def _acc_group(self, parent, title, open=False, bg_color=None, fg_color=None):
         g = tk.Frame(parent, bg=C_SILVER, bd=1, relief='solid')
         g.pack(fill='x', padx=4, pady=2)
-        hdr = tk.Frame(g, bg=C_TITLE_BAR if open else C_SILVER, cursor='hand2')
+        default_bg = bg_color if bg_color else (C_TITLE_BAR if open else C_SILVER)
+        default_fg = fg_color if fg_color else (C_WHITE if open else C_TEXT)
+        
+        hdr = tk.Frame(g, bg=default_bg, cursor='hand2')
         hdr.pack(fill='x')
         arrow = tk.StringVar(value='▼' if open else '▶')
         ar_l = tk.Label(hdr, textvariable=arrow,
-                        bg=hdr['bg'], fg=C_WHITE if open else C_TEXT,
+                        bg=hdr['bg'], fg=default_fg,
                         font=('MS Sans Serif', 9))
         ar_l.pack(side='left', padx=4)
         t_l = tk.Label(hdr, text=title, bg=hdr['bg'],
-                       fg=C_WHITE if open else C_TEXT,
+                       fg=default_fg,
                        font=('MS Sans Serif', 10, 'bold'))
         t_l.pack(side='left', pady=4)
         body = tk.Frame(g, bg=C_WHITE, bd=1, relief='sunken')
@@ -1053,15 +1062,18 @@ class MainGUI(tk.Tk):
         def _toggle(_e=None):
             if body.winfo_ismapped():
                 body.pack_forget()
-                hdr.configure(bg=C_SILVER); ar_l.configure(bg=C_SILVER, fg=C_TEXT); t_l.configure(bg=C_SILVER, fg=C_TEXT)
+                hdr.configure(bg=C_SILVER)
+                ar_l.configure(bg=C_SILVER, fg=C_TEXT)
+                t_l.configure(bg=C_SILVER, fg=C_TEXT)
                 arrow.set('▶')
             else:
                 body.pack(fill='x')
-                hdr.configure(bg=C_TITLE_BAR); ar_l.configure(bg=C_TITLE_BAR, fg=C_WHITE); t_l.configure(bg=C_TITLE_BAR, fg=C_WHITE)
+                active_bg = bg_color if bg_color else C_TITLE_BAR
+                active_fg = fg_color if fg_color else C_WHITE
+                hdr.configure(bg=active_bg)
+                ar_l.configure(bg=active_bg, fg=active_fg)
+                t_l.configure(bg=active_bg, fg=active_fg)
                 arrow.set('▼')
-            # Rebound scrollregion: collapsing/expanding the body changes
-            # the inner frame height but Tk doesn't emit <Configure> on the
-            # outer cf reliably for pack_forget calls.
             refresh = getattr(self, '_effects_refresh_scroll', None)
             if refresh is not None:
                 self.after_idle(refresh)
@@ -1558,6 +1570,8 @@ class MainGUI(tk.Tk):
 
         # Per-effect parameter controls.
         for p in spec.params:
+            if p.key in ('fx_paint_canvas_data', 'fx_paint_color_r', 'fx_paint_color_g', 'fx_paint_color_b'):
+                continue
             if p.kind == 'choice':
                 self._row_with_help(inner, p.label, p.tooltip)
                 self._combo(inner, p.key, p.choices, indent=True)
@@ -1683,8 +1697,486 @@ class MainGUI(tk.Tk):
                 (spec.enable_key, audio_link_holder))
             _sync_audio_link()
 
-        _sync_inner()
+        if spec.id == 'paint':
+            btn = ttk.Button(inner, text='Open Paint Editor / Открыть холст', style='W95.TButton',
+                             command=self._open_paint_window)
+            btn.pack(fill='x', padx=20, pady=4)
+
         return block
+
+    def _open_paint_window(self):
+        old_win = getattr(self, '_paint_win', None)
+        if old_win and old_win.winfo_exists():
+            old_win.lift()
+            old_win.focus_set()
+            return
+
+        win = tk.Toplevel(self)
+        win.title("Paint Canvas Editor / Редактор холста")
+        win.resizable(True, True)
+        win.transient(self)
+        win.grab_set()
+        win.configure(bg=C_SILVER)
+        self._paint_win = win
+
+        # Dynamically set canvas dimensions based on video source aspect ratio
+        ratio = self._get_source_aspect_ratio()
+        if ratio >= 1.0:
+            canvas_w = 640
+            canvas_h = int(640 / ratio)
+        else:
+            canvas_h = 360
+            canvas_w = int(360 * ratio)
+            
+        win.canvas_w = canvas_w
+        win.canvas_h = canvas_h
+
+        # Set default geometry with safe minimum height to prevent toolbar clipping
+        win.geometry(f"{canvas_w + 180}x{max(canvas_h + 30, 480)}")
+        win.minsize(400, 450)
+
+        main_frame = tk.Frame(win, bg=C_SILVER, padx=5, pady=5)
+        main_frame.pack(fill='both', expand=True)
+
+        # Toolbar sidebar
+        toolbar = tk.Frame(main_frame, bg=C_SILVER, bd=2, relief='raised', padx=4, pady=4)
+        toolbar.pack(side='left', fill='y', padx=(0, 5))
+
+        drawing_frame = tk.Frame(main_frame, bg=C_DARK_GRAY, bd=2, relief='sunken')
+        drawing_frame.pack(side='left', fill='both', expand=True)
+
+        canvas = tk.Canvas(drawing_frame, width=canvas_w, height=canvas_h, bg=C_WHITE, highlightthickness=0)
+        canvas.pack(padx=10, pady=10, expand=True)
+        win.canvas = canvas
+
+        raw_data = self.vars['fx_paint_canvas_data'].get()
+        if raw_data:
+            from vpc.effects.paint import decode_paint_canvas
+            mask = decode_paint_canvas(raw_data)
+            if mask is not None:
+                if mask.shape[1] != canvas_w or mask.shape[0] != canvas_h:
+                    mask = cv2.resize(mask, (canvas_w, canvas_h), interpolation=cv2.INTER_NEAREST)
+                win.paint_image = Image.fromarray(mask).convert('L')
+            else:
+                win.paint_image = Image.new('L', (canvas_w, canvas_h), 255)
+        else:
+            win.paint_image = Image.new('L', (canvas_w, canvas_h), 255)
+
+        win.paint_draw = ImageDraw.Draw(win.paint_image)
+
+        def refresh_canvas():
+            win.tk_photo = ImageTk.PhotoImage(win.paint_image)
+            canvas.delete("all")
+            canvas.create_image(0, 0, image=win.tk_photo, anchor='nw')
+
+        win.refresh_canvas = refresh_canvas
+        refresh_canvas()
+
+        win.current_tool = 'brush'
+        win.brush_size = 8
+        win.last_x = None
+        win.last_y = None
+
+        def save_canvas_to_var():
+            self._updating_canvas_var = True
+            try:
+                buffered = io.BytesIO()
+                win.paint_image.save(buffered, format="PNG")
+                img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                self.vars['fx_paint_canvas_data'].set(img_str)
+            finally:
+                self._updating_canvas_var = False
+
+        def draw_stroke(x1, y1, x2, y2):
+            color_val = 0 if win.current_tool == 'brush' else 255
+            win.paint_draw.line([x1, y1, x2, y2], fill=color_val, width=win.brush_size, joint='round')
+            color_hex = C_BLACK if win.current_tool == 'brush' else C_WHITE
+            canvas.create_line(x1, y1, x2, y2, fill=color_hex, width=win.brush_size, capstyle='round', joinstyle='round')
+
+        from PIL import ImageFont
+
+        def get_system_fonts():
+            import winreg
+            import platform
+            fonts = {}
+            if platform.system() == 'Windows':
+                for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+                    try:
+                        key = winreg.OpenKey(hive, r'SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts')
+                        windir = os.environ.get('WINDIR', 'C:\\Windows')
+                        local_fonts_dir = os.path.expandvars(r'%LOCALAPPDATA%\Microsoft\Windows\Fonts')
+                        num_values = winreg.QueryInfoKey(key)[1]
+                        for i in range(num_values):
+                            try:
+                                name, data, _ = winreg.EnumValue(key, i)
+                                clean_name = name.split('(')[0].strip()
+                                if not (data.lower().endswith('.ttf') or data.lower().endswith('.otf')):
+                                    continue
+                                if os.path.isabs(data):
+                                    fonts[clean_name] = data
+                                else:
+                                    sys_path = os.path.join(windir, 'Fonts', data)
+                                    if os.path.exists(sys_path):
+                                        fonts[clean_name] = sys_path
+                                    else:
+                                        user_path = os.path.join(local_fonts_dir, data)
+                                        if os.path.exists(user_path):
+                                            fonts[clean_name] = user_path
+                                        else:
+                                            fonts[clean_name] = data
+                            except OSError:
+                                continue
+                        winreg.CloseKey(key)
+                    except Exception:
+                        pass
+            # standard fallback list
+            fallback = {
+                'Arial': 'arial.ttf',
+                'Courier New': 'cour.ttf',
+                'Times New Roman': 'times.ttf',
+                'Tahoma': 'tahoma.ttf',
+                'Verdana': 'verdana.ttf',
+                'MS Sans Serif': 'micross.ttf'
+            }
+            for name, path in fallback.items():
+                if name not in fonts:
+                    fonts[name] = path
+            return fonts
+
+        system_fonts = get_system_fonts()
+        font_names = sorted(list(system_fonts.keys()))
+        default_font = 'Arial' if 'Arial' in system_fonts else (font_names[0] if font_names else '')
+
+        def get_pil_font(name: str, size: int):
+            font_path = system_fonts.get(name, 'arial.ttf')
+            try:
+                return ImageFont.truetype(font_path, size)
+            except Exception:
+                try:
+                    return ImageFont.truetype("arial.ttf", size)
+                except Exception:
+                    return ImageFont.load_default()
+
+        # Text input references
+        text_entry = None
+        font_combo = None
+
+        def on_click(event):
+            if win.current_tool == 'text':
+                text_str = text_entry.get() if text_entry else ""
+                if not text_str:
+                    return
+                font_name = font_combo.get() if font_combo else "Arial"
+                size = max(8, int(win.brush_size * 2))
+                
+                pil_font = get_pil_font(font_name, size)
+                win.paint_draw.text((event.x, event.y), text_str, fill=0, font=pil_font, anchor='mm')
+                canvas.create_text(event.x, event.y, text=text_str, font=(font_name, size), fill=C_BLACK, anchor='center')
+                save_canvas_to_var()
+            else:
+                win.last_x = event.x
+                win.last_y = event.y
+                draw_stroke(event.x, event.y, event.x, event.y)
+
+        def on_drag(event):
+            if win.current_tool == 'text':
+                return
+            if win.last_x is not None and win.last_y is not None:
+                draw_stroke(win.last_x, win.last_y, event.x, event.y)
+            win.last_x = event.x
+            win.last_y = event.y
+
+        def on_release(event):
+            if win.current_tool == 'text':
+                return
+            win.last_x = None
+            win.last_y = None
+            save_canvas_to_var()
+
+        canvas.bind('<Button-1>', on_click)
+        canvas.bind('<B1-Motion>', on_drag)
+        canvas.bind('<ButtonRelease-1>', on_release)
+
+        def on_right_click(event):
+            if win.current_tool == 'text':
+                return
+            win.last_x = event.x
+            win.last_y = event.y
+            old_tool = win.current_tool
+            win.current_tool = 'eraser'
+            draw_stroke(event.x, event.y, event.x, event.y)
+            win.current_tool = old_tool
+
+        def on_right_drag(event):
+            if win.current_tool == 'text':
+                return
+            if win.last_x is not None and win.last_y is not None:
+                old_tool = win.current_tool
+                win.current_tool = 'eraser'
+                draw_stroke(win.last_x, win.last_y, event.x, event.y)
+                win.current_tool = old_tool
+            win.last_x = event.x
+            win.last_y = event.y
+
+        canvas.bind('<Button-3>', on_right_click)
+        canvas.bind('<B3-Motion>', on_right_drag)
+        canvas.bind('<ButtonRelease-3>', on_release)
+
+        # 1. Tools Section
+        tk.Label(toolbar, text="Tools / Инстр.", font=('MS Sans Serif', 8, 'bold'), bg=C_SILVER).pack(anchor='w', padx=2, pady=2)
+        
+        tools_frame = tk.Frame(toolbar, bg=C_SILVER)
+        tools_frame.pack(fill='x', pady=2)
+
+        btn_brush = tk.Button(tools_frame, text="Brush", relief='sunken', bg='#D0D0D0', bd=2)
+        btn_eraser = tk.Button(tools_frame, text="Eraser", relief='raised', bg=C_SILVER, bd=2)
+        btn_text = tk.Button(tools_frame, text="Text", relief='raised', bg=C_SILVER, bd=2)
+        
+        btn_brush.pack(side='left', fill='x', expand=True, padx=1)
+        btn_eraser.pack(side='left', fill='x', expand=True, padx=1)
+        btn_text.pack(side='left', fill='x', expand=True, padx=1)
+        
+        def set_brush_tool():
+            win.current_tool = 'brush'
+            btn_brush.configure(relief='sunken', bg='#D0D0D0')
+            btn_eraser.configure(relief='raised', bg=C_SILVER)
+            btn_text.configure(relief='raised', bg=C_SILVER)
+            
+        def set_eraser_tool():
+            win.current_tool = 'eraser'
+            btn_brush.configure(relief='raised', bg=C_SILVER)
+            btn_eraser.configure(relief='sunken', bg='#D0D0D0')
+            btn_text.configure(relief='raised', bg=C_SILVER)
+            
+        def set_text_tool():
+            win.current_tool = 'text'
+            btn_brush.configure(relief='raised', bg=C_SILVER)
+            btn_eraser.configure(relief='raised', bg=C_SILVER)
+            btn_text.configure(relief='sunken', bg='#D0D0D0')
+            
+        btn_brush.configure(command=set_brush_tool)
+        btn_eraser.configure(command=set_eraser_tool)
+        btn_text.configure(command=set_text_tool)
+
+        Tooltip(btn_brush, bi("Draw black strokes (LMB draw, RMB erase)", "Рисовать черным цветом (ЛКМ - кисть, ПКМ - стерка)"))
+        Tooltip(btn_eraser, bi("Erase strokes (turns area white)", "Стереть нарисованное (стирает белым цветом)"))
+        Tooltip(btn_text, bi("Type text on canvas (click to place)", "Написать текст на холсте (кликните для размещения)"))
+
+        # 1b. Text Options (packed below tools)
+        tk.Label(toolbar, text="Text / Текст", font=('MS Sans Serif', 8), bg=C_SILVER).pack(anchor='w', padx=2, pady=(4, 0))
+        text_entry = ttk.Entry(toolbar, width=12)
+        text_entry.insert(0, "VPC")
+        text_entry.pack(fill='x', padx=4, pady=1)
+        Tooltip(text_entry, bi("Type text to place on click", "Введите текст для вставки по клику"))
+
+        font_combo = ttk.Combobox(toolbar, values=font_names, style='W95.TCombobox', width=10)
+        font_combo.set(default_font)
+        font_combo.pack(fill='x', padx=4, pady=1)
+        Tooltip(font_combo, bi("Select text font", "Выберите шрифт текста"))
+
+        # 2. Size Section
+        tk.Label(toolbar, text="Size / Размер", font=('MS Sans Serif', 8), bg=C_SILVER).pack(anchor='w', padx=2, pady=(6, 0))
+        size_label = tk.Label(toolbar, text=f"{win.brush_size} px", font=('MS Sans Serif', 8), bg=C_SILVER)
+        
+        def on_size_change(val):
+            win.brush_size = int(float(val))
+            size_label.configure(text=f"{win.brush_size} px")
+            
+        size_scale = ttk.Scale(toolbar, from_=1, to=50, value=win.brush_size, command=on_size_change, orient='horizontal')
+        size_scale.pack(fill='x', padx=4)
+        size_label.pack(anchor='w', padx=2)
+        Tooltip(size_scale, bi("Adjust brush size or font size", "Настроить размер кисти/ластика или шрифта"))
+
+        tk.Frame(toolbar, bg=C_DARK_GRAY, height=2).pack(fill='x', pady=6)
+
+        # 3. Canvas Actions Section (Packed horizontally side-by-side to prevent vertical clipping)
+        tk.Label(toolbar, text="Canvas / Холст", font=('MS Sans Serif', 8, 'bold'), bg=C_SILVER).pack(anchor='w', padx=2, pady=2)
+
+        def clear_canvas():
+            if messagebox.askyesno("Clear? / Очистить?", "Clear the whole canvas?\nОчистить весь холст?", parent=win):
+                win.paint_draw.rectangle([0, 0, canvas_w, canvas_h], fill=255)
+                refresh_canvas()
+                save_canvas_to_var()
+
+        def invert_canvas():
+            img_arr = np.array(win.paint_image)
+            inverted_arr = 255 - img_arr
+            win.paint_image = Image.fromarray(inverted_arr).convert('L')
+            win.paint_draw = ImageDraw.Draw(win.paint_image)
+            refresh_canvas()
+            save_canvas_to_var()
+
+        def ask_import_mode(parent):
+            dialog = tk.Toplevel(parent)
+            dialog.title("Import Mode / Режим импорта")
+            dialog.transient(parent)
+            dialog.grab_set()
+            dialog.resizable(False, False)
+            dialog.configure(bg=C_SILVER)
+
+            # Center relative to parent
+            dialog.geometry("+%d+%d" % (parent.winfo_rootx() + 100, parent.winfo_rooty() + 100))
+
+            choice = [None]  # Mutable box to store selection
+
+            tk.Label(
+                dialog,
+                text="Choose image import mode / Выберите режим импорта:",
+                font=('MS Sans Serif', 9, 'bold'),
+                bg=C_SILVER,
+                padx=15,
+                pady=10
+            ).pack()
+
+            btn_frame = tk.Frame(dialog, bg=C_SILVER, pady=10)
+            btn_frame.pack()
+
+            def choose(mode):
+                choice[0] = mode
+                dialog.destroy()
+
+            b_contours = tk.Button(btn_frame, text="Contours / Контуры", font=('MS Sans Serif', 9), bg=C_SILVER, bd=2, relief='raised', command=lambda: choose('contours'))
+            b_contours.pack(side='left', padx=5)
+            Tooltip(b_contours, bi("Extract thin outlines of the image", "Извлечь тонкие контуры изображения (линии)"))
+
+            b_silhouette = tk.Button(btn_frame, text="Silhouette / Силуэт", font=('MS Sans Serif', 9), bg=C_SILVER, bd=2, relief='raised', command=lambda: choose('silhouette'))
+            b_silhouette.pack(side='left', padx=5)
+            Tooltip(b_silhouette, bi("Binarize image into black and white regions", "Бинаризовать изображение на черные и белые области (заливка)"))
+
+            b_cancel = tk.Button(btn_frame, text="Cancel / Отмена", font=('MS Sans Serif', 9), bg=C_SILVER, bd=2, relief='raised', command=dialog.destroy)
+            b_cancel.pack(side='left', padx=5)
+
+            parent.wait_window(dialog)
+            return choice[0]
+
+        def load_image_outline():
+            path = filedialog.askopenfilename(
+                title="Select Photo / Выберите фото",
+                filetypes=[("Image files", "*.jpg *.jpeg *.png *.bmp *.webp")],
+                parent=win
+            )
+            if not path:
+                return
+            
+            mode = ask_import_mode(win)
+            if mode is None:
+                return
+
+            try:
+                # Read file bytes first to correctly support Unicode paths on Windows (e.g. Cyrillic characters)
+                with open(path, "rb") as f:
+                    file_bytes = np.frombuffer(f.read(), dtype=np.uint8)
+                img_bgr = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+                
+                if img_bgr is None:
+                    messagebox.showerror("Error", "Could not read image.\nНе удалось загрузить изображение.", parent=win)
+                    return
+                img_resized = cv2.resize(img_bgr, (canvas_w, canvas_h))
+                gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
+
+                if mode == 'contours':
+                    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+                    edges = cv2.Canny(blurred, 40, 120)
+                    outline = 255 - edges
+                else:  # silhouette
+                    # Apply Otsu's thresholding to get a clean black-and-white mask
+                    _, binarized = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                    outline = binarized
+                
+                win.paint_image = Image.fromarray(outline).convert('L')
+                win.paint_draw = ImageDraw.Draw(win.paint_image)
+                refresh_canvas()
+                save_canvas_to_var()
+            except Exception as ex:
+                messagebox.showerror("Error", f"Failed to load image:\n{ex}", parent=win)
+
+        actions_frame = tk.Frame(toolbar, bg=C_SILVER)
+        actions_frame.pack(fill='x', pady=2)
+
+        btn_clear = tk.Button(actions_frame, text="Clear", bg=C_SILVER, bd=2, relief='raised', command=clear_canvas)
+        btn_invert = tk.Button(actions_frame, text="Invert", bg=C_SILVER, bd=2, relief='raised', command=invert_canvas)
+        btn_load = tk.Button(actions_frame, text="Load", bg=C_SILVER, bd=2, relief='raised', command=load_image_outline)
+
+        btn_clear.pack(side='left', fill='x', expand=True, padx=1)
+        btn_invert.pack(side='left', fill='x', expand=True, padx=1)
+        btn_load.pack(side='left', fill='x', expand=True, padx=1)
+
+        Tooltip(btn_clear, bi("Clear the entire canvas to white", "Полностью очистить холст в белый цвет"))
+        Tooltip(btn_invert, bi("Invert colors (black <-> white)", "Инвертировать цвета (черный <-> белый)"))
+        Tooltip(btn_load, bi("Load a photo and extract its contours/outlines", "Загрузить фото и извлечь его контуры (рисунок)"))
+
+        tk.Frame(toolbar, bg=C_DARK_GRAY, height=2).pack(fill='x', pady=6)
+
+        # 4. Color Selection Section
+        tk.Label(toolbar, text="Overlay Color / Цвет", font=('MS Sans Serif', 8, 'bold'), bg=C_SILVER).pack(anchor='w', padx=2, pady=2)
+
+        color_top_frame = tk.Frame(toolbar, bg=C_SILVER)
+        color_top_frame.pack(fill='x', pady=2)
+
+        color_preview = tk.Frame(color_top_frame, width=24, height=24, bd=2, relief='sunken')
+        color_preview.pack(side='left', padx=4)
+        color_preview.pack_propagate(False)
+
+        color_box = tk.Frame(color_preview, bg='#00ff00')
+        color_box.pack(fill='both', expand=True)
+
+        def update_color_preview():
+            r = int(self.vars['fx_paint_color_r'].get())
+            g = int(self.vars['fx_paint_color_g'].get())
+            b = int(self.vars['fx_paint_color_b'].get())
+            hex_color = f"#{r:02x}{g:02x}{b:02x}"
+            color_box.configure(bg=hex_color)
+
+        update_color_preview()
+
+        # Swatches grid (2 rows of 5 classic Paint colors)
+        swatches_frame = tk.Frame(toolbar, bg=C_SILVER)
+        swatches_frame.pack(pady=4)
+
+        classic_colors = [
+            (0, 0, 0),        # Black
+            (128, 128, 128),  # Dark Gray
+            (255, 0, 0),      # Red
+            (0, 255, 0),      # Green
+            (0, 0, 255),      # Blue
+            
+            (255, 255, 255),  # White
+            (192, 192, 192),  # Light Gray
+            (255, 255, 0),    # Yellow
+            (255, 0, 255),    # Magenta
+            (0, 255, 255),    # Cyan
+        ]
+
+        def select_color(r, g, b):
+            self.vars['fx_paint_color_r'].set(r)
+            self.vars['fx_paint_color_g'].set(g)
+            self.vars['fx_paint_color_b'].set(b)
+            update_color_preview()
+
+        for idx, (r, g, b) in enumerate(classic_colors):
+            row_idx = idx // 5
+            col_idx = idx % 5
+            hex_c = f"#{r:02x}{g:02x}{b:02x}"
+            btn = tk.Button(swatches_frame, bg=hex_c, width=2, height=0, bd=1, relief='raised',
+                            command=lambda r=r, g=g, b=b: select_color(r, g, b))
+            btn.grid(row=row_idx, column=col_idx, padx=1, pady=1)
+            Tooltip(btn, bi(f"Set color to {hex_c}", f"Выбрать цвет {hex_c}"))
+
+        from tkinter import colorchooser
+
+        def choose_custom_color():
+            r = int(self.vars['fx_paint_color_r'].get())
+            g = int(self.vars['fx_paint_color_g'].get())
+            b = int(self.vars['fx_paint_color_b'].get())
+            initial = f"#{r:02x}{g:02x}{b:02x}"
+            color_choice = colorchooser.askcolor(initialcolor=initial, parent=win)
+            if color_choice and color_choice[0]:
+                rc, gc, bc = color_choice[0]
+                select_color(int(rc), int(gc), int(bc))
+
+        btn_palette = tk.Button(color_top_frame, text="Palette...", font=('MS Sans Serif', 8), bg=C_SILVER, bd=2, relief='raised', command=choose_custom_color)
+        btn_palette.pack(side='left', fill='x', expand=True, padx=4)
+        Tooltip(btn_palette, bi("Open system color picker to select custom color", "Открыть системную палитру для выбора цвета"))
 
     def _build_overlay_dir_picker(self, body):
         bf = tk.Frame(body, bg=C_WHITE)
@@ -1695,6 +2187,45 @@ class MainGUI(tk.Tk):
                                         bg=C_WHITE, fg=C_DARK_GRAY,
                                         font=('Courier New', 9))
         self.lbl_overlay_dir.pack(anchor='w', pady=(2, 0))
+
+    def _get_source_aspect_ratio(self):
+        if self.video_paths:
+            path = self.video_paths[0]
+            cap = cv2.VideoCapture(path)
+            if cap.isOpened():
+                w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+                h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+                cap.release()
+                if w > 0 and h > 0:
+                    return w / h
+        return 16.0 / 9.0
+
+    def _setup_paint_canvas_trace(self):
+        self.vars['fx_paint_canvas_data'].trace_add('write', self._on_paint_canvas_data_changed)
+
+    def _on_paint_canvas_data_changed(self, *args):
+        if getattr(self, '_updating_canvas_var', False):
+            return
+        win = getattr(self, '_paint_win', None)
+        if win and win.winfo_exists():
+            raw_data = self.vars['fx_paint_canvas_data'].get()
+            canvas_w = win.canvas_w
+            canvas_h = win.canvas_h
+            if raw_data:
+                from vpc.effects.paint import decode_paint_canvas
+                mask = decode_paint_canvas(raw_data)
+                if mask is not None:
+                    if mask.shape[1] != canvas_w or mask.shape[0] != canvas_h:
+                        mask = cv2.resize(mask, (canvas_w, canvas_h), interpolation=cv2.INTER_NEAREST)
+                    win.paint_image = Image.fromarray(mask).convert('L')
+                else:
+                    win.paint_image = Image.new('L', (canvas_w, canvas_h), 255)
+            else:
+                win.paint_image = Image.new('L', (canvas_w, canvas_h), 255)
+            win.paint_draw = ImageDraw.Draw(win.paint_image)
+            if hasattr(win, 'refresh_canvas'):
+                win.refresh_canvas()
+
 
     # ─── export panel ───
     def _build_export_panel(self, parent):

@@ -27,6 +27,7 @@
     - [3.8 Effects — Degradation](#38-effects--degradation)
     - [3.8a Effects — Broken](#38a-effects--broken)
     - [3.8b Effects — Virus](#38b-effects--virus)
+    - [3.8c Effects — Paint Canvas](#38c-effects--paint-canvas)
     - [3.9 Effects — Overlays and Chroma Key](#39-effects--overlays-and-chroma-key)
     - [Chroma Key (Green Screen)](#chroma-key-green-screen)
     - [3.10 Effects — Signal Domain](#310-effects--signal-domain)
@@ -576,6 +577,39 @@ A swarm of authentic 16×22 Win95 arrow cursors crawls over every frame, each po
 Random horizontal bands of the frame are replaced with fragments of bluescreen text: the canonical NT-bluescreen palette (RGB 0, 0, 168) and a vocabulary of real STOP codes, hex addresses, and dump-prose lines. Stateless per frame — every frame picks fresh bands so the effect strobes / shreds. Pure "the system crashed at this exact moment" punctuation.
 
 - *Shred Density* *(0.0 – 1.0)* — how many bluescreen bands per fire and how tall each band is. Low = a single thin band per hit. High = 5+ thick bands of bluescreen text crowding the picture.
+
+### 3.8c Effects — Paint Canvas
+
+The **PAINT** group allows drawing custom masks directly inside the application, loading reference images, or writing text overlays using system fonts. The drawn mask can then be used to apply color overlays, delayed frame trails (lag), coordinate distortion (warp), or a combination of both.
+
+To edit the canvas, click the **Open Paint Editor / Открыть холст** button inside the PAINT accordion block. The editor window will open, offering drawing tools, brushes, a font selector, canvas operations, and color palette swatches.
+
+---
+
+**Paint Canvas FX**
+
+*Trigger: any segment type*
+
+Applies drawing strokes as a mask for color overlays, frame delay (lag), or warp distortion.
+
+- **Mode** — determines how the mask is applied:
+  - `overlay` — draws a solid color overlay over the mask area.
+  - `lag` — displays delayed video frames (a history trail) inside the mask.
+  - `warp_video` — warps the current video coordinates inside the mask using a fluid sine wave.
+  - `lag_warp` — displays the delayed video frame inside wave-warped mask regions.
+- **Lag Frames** *(2 – 30)* — number of frames to delay the video inside the strokes (only applies in `lag` and `lag_warp` modes).
+- **Warp Intensity** *(0.0 – 1.0)* — strength of the distortion applied to the video coordinates inside the strokes (only applies in `warp_video` and `lag_warp` modes).
+- **Overlay Color (R, G, B)** — custom colors used for the `overlay` mode (configured via the swatches grid or palette selector in the paint editor window).
+
+**Paint Editor Toolbar:**
+- **Tools**: Brush (LMB draw black strokes, RMB erase), Eraser (erase strokes to white), and Text (write text).
+- **Text / Текст**: Enter custom text, choose any system font family (dynamically queried from Windows `HKEY_LOCAL_MACHINE` and `HKEY_CURRENT_USER` hives, with safe fallbacks), and left-click on the canvas to stamp the text in the selected font.
+- **Size / Размер**: Adjust brush width or text font size.
+- **Canvas / Холст**: 
+  - `Clear` — resets the canvas to white.
+  - `Invert` — swaps black and white colors.
+  - `Load` — imports any photo and opens a popup asking whether to extract thin **Contours** (Canny edges, ideal for photos) or binarize the image into a solid **Silhouette** (Otsu threshold, ideal for logos or text graphics).
+- **Overlay Color / Цвет**: A 10-color swatch grid and a custom palette selector to define the overlay RGB values.
 
 ---
 

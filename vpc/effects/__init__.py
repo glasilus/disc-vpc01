@@ -35,8 +35,8 @@ from .signal import (
 from .warp import (
     DerivWarpEffect, VortexWarpEffect, FractalNoiseWarpEffect, SelfDisplaceEffect,
 )
-
 from .formula import FormulaEffect
+from .paint import PaintCanvasEffect
 
 from .overlay import OverlayEffect, ChromaKeyEffect, load_overlay_frames
 
@@ -54,6 +54,6 @@ __all__ = [
     'WaveshaperEffect', 'HistoLagEffect', 'WrongSubsamplingEffect',
     'GameOfLifeEffect', 'ELAEffect', 'DtypeReinterpretEffect', 'SpatialReverbEffect',
     'DerivWarpEffect', 'VortexWarpEffect', 'FractalNoiseWarpEffect', 'SelfDisplaceEffect',
-    'FormulaEffect',
+    'FormulaEffect', 'PaintCanvasEffect',
     'OverlayEffect', 'ChromaKeyEffect', 'load_overlay_frames',
 ]
