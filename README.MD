@@ -1,6 +1,6 @@
 # Disc VPC 01 — User Manual
 
-**Version:** 0.3.0
+**Version:** 0.3.1
 **Offline editor:** Python 3.10.x · Windows 10/11 (macOS, Ubuntu 22.* best-effort)
 **Realtime (R-T):** native C++ binary · Windows 10/11 · Linux · macOS
 
@@ -1482,6 +1482,7 @@ controls how often a random overlay image is composited on top of the canvas.
 manual` with **Tolerance** and **Softness** sliders. In `manual` mode, an
 RGB picker chooses the keyed colour. See §3.9 for the full chroma-key
 parameter reference.
+**Chroma Key Gated FX** — checkbox to restrict rendering of all visual effects to either the foreground (non-keyed area, keeping the backdrop clean) or the background (keyed-out area, keeping the subject clean).
 
 ---
 
