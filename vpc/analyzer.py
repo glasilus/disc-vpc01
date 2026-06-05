@@ -204,11 +204,8 @@ class AudioAnalyzer:
 
         # First attempt failed — transcode to 16-bit mono WAV via ffmpeg
         print('[ANALYZER] Direct load failed; transcoding via ffmpeg...')
-        try:
-            import imageio_ffmpeg as _iio_ffmpeg
-            _ffmpeg = _iio_ffmpeg.get_ffmpeg_exe()
-        except Exception:
-            _ffmpeg = 'ffmpeg'
+        from vpc.render.sink import ffmpeg_bin
+        _ffmpeg = ffmpeg_bin()
         tmp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
         tmp.close()
         try:

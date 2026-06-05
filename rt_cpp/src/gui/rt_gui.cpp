@@ -181,7 +181,7 @@ void RtGui::render(EngineSettings& settings, float fps, GLuint display_tex) {
     ImGui::NewFrame();
 
     int win_w, win_h;
-    glfwGetFramebufferSize(window_, &win_w, &win_h);
+    glfwGetWindowSize(window_, &win_w, &win_h);
 
     // Full-window dockspace-style layout
     ImGui::SetNextWindowPos({0, 0});

@@ -4,16 +4,53 @@ from __future__ import annotations
 import os
 import subprocess
 import threading
+import shutil
+import sys
+import stat
 from typing import Optional
 
 
 def ffmpeg_bin() -> str:
-    """Path to ffmpeg — bundled via imageio-ffmpeg when available."""
+    """Path to ffmpeg — prioritizes native macOS Homebrew/MacPorts builds,
+    then falls back to imageio-ffmpeg bundled binary, then system PATH."""
+    if sys.platform == 'darwin':
+        # macOS .app bundles do not inherit the user's PATH. Prioritize
+        # native global installs (avoiding Rosetta 2 overhead and gaining
+        # hardware acceleration) before falling back to the bundled wheel.
+        for p in ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/opt/local/bin/ffmpeg']:
+            resolved = shutil.which(p)
+            if resolved:
+                return resolved
+
     try:
         import imageio_ffmpeg
-        return imageio_ffmpeg.get_ffmpeg_exe()
+        
+        # PyInstaller --collect-all often strips +x from datas (which is how
+        # imageio_ffmpeg binaries are packaged). get_ffmpeg_exe() checks os.X_OK
+        # and raises an exception if false. We must proactively restore +x.
+        bin_dir = os.path.join(os.path.dirname(imageio_ffmpeg.__file__), 'binaries')
+        if os.path.isdir(bin_dir):
+            for f in os.listdir(bin_dir):
+                if 'ffmpeg' in f:
+                    bin_path = os.path.join(bin_dir, f)
+                    try:
+                        st = os.stat(bin_path)
+                        if not (st.st_mode & stat.S_IXUSR):
+                            os.chmod(bin_path, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                    except Exception:
+                        pass
+
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe:
+            return exe
     except Exception:
-        return 'ffmpeg'
+        pass
+
+    resolved = shutil.which('ffmpeg')
+    if resolved:
+        return resolved
+
+    return 'ffmpeg'
 
 
 # Container/codec presets. Each entry maps a user-facing codec label to:
