@@ -126,7 +126,7 @@ jobs:
             -G "Visual Studio 17 2022" -A x64 || exit /b 1
           cmake --build rt_cpp\build --config Release || exit /b 1
           copy /Y rt_cpp\build\Release\DiscVPC01-RT.exe dist\DiscVPC01-RT.exe || exit /b 1
-          if exist "%VCPKG_ROOT%\installed\x64-windows-static-release\bin\Spout.dll" copy /Y "%VCPKG_ROOT%\installed\x64-windows-static-release\bin\Spout.dll" dist\Spout.dll || exit /b 1
+          for /r "%VCPKG_ROOT%\installed\x64-windows-static-release\bin" %%f in (*Spout*.dll) do copy /Y "%%f" dist\
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
@@ -136,7 +136,7 @@ jobs:
           path: |
             dist/DiscVPC01.exe
             dist/DiscVPC01-RT.exe
-            dist/Spout.dll
+            dist/*.dll
             README.MD
             README_RU.MD
             presets/rt_blank.json
