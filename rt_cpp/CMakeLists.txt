@@ -23,31 +23,35 @@ if(WIN32)
     # We bypass find_package and resolve the library manually.
     find_library(SPOUT_LIB NAMES Spout spout2 SpoutLibrary REQUIRED)
     
-    # Try finding the header path natively using CMake find_path
-    find_path(SPOUT_INC NAMES Spout.h PATH_SUFFIXES spout2 spout)
+    # Resolve the root vcpkg installed directory
+    if(DEFINED VCPKG_INSTALLED_DIR)
+        set(VCPKG_INST_ROOT "${VCPKG_INSTALLED_DIR}")
+    elseif(DEFINED _VCPKG_INSTALLED_DIR)
+        set(VCPKG_INST_ROOT "${_VCPKG_INSTALLED_DIR}")
+    elseif(DEFINED ENV{VCPKG_ROOT})
+        set(VCPKG_INST_ROOT "$ENV{VCPKG_ROOT}/installed")
+    else()
+        # If all else fails, assume standard location relative to toolchain file
+        get_filename_component(VCPKG_ROOT_DIR "${CMAKE_TOOLCHAIN_FILE}" DIRECTORY)
+        get_filename_component(VCPKG_ROOT_DIR "${VCPKG_ROOT_DIR}" DIRECTORY)
+        get_filename_component(VCPKG_ROOT_DIR "${VCPKG_ROOT_DIR}" DIRECTORY)
+        set(VCPKG_INST_ROOT "${VCPKG_ROOT_DIR}/installed")
+    endif()
+
+    # Search recursively for the directory containing Spout.h
+    file(GLOB_RECURSE FOUND_SPOUT_H 
+        "${VCPKG_INST_ROOT}/${VCPKG_TARGET_TRIPLET}/include/Spout.h"
+        "${VCPKG_INST_ROOT}/${VCPKG_TARGET_TRIPLET}/include/*/Spout.h"
+        "${VCPKG_INST_ROOT}/${VCPKG_TARGET_TRIPLET}/include/*Spout.h"
+    )
     
-    # Fallback to manual path construction if find_path fails
-    if(NOT SPOUT_INC)
-        if(DEFINED VCPKG_INSTALLED_DIR)
-            set(VCPKG_INST_ROOT "${VCPKG_INSTALLED_DIR}")
-        elseif(DEFINED _VCPKG_INSTALLED_DIR)
-            set(VCPKG_INST_ROOT "${_VCPKG_INSTALLED_DIR}")
-        elseif(DEFINED ENV{VCPKG_ROOT})
-            set(VCPKG_INST_ROOT "$ENV{VCPKG_ROOT}/installed")
-        else()
-            # If all else fails, assume standard location relative to toolchain file
-            get_filename_component(VCPKG_ROOT_DIR "${CMAKE_TOOLCHAIN_FILE}" DIRECTORY)
-            get_filename_component(VCPKG_ROOT_DIR "${VCPKG_ROOT_DIR}" DIRECTORY)
-            get_filename_component(VCPKG_ROOT_DIR "${VCPKG_ROOT_DIR}" DIRECTORY)
-            set(VCPKG_INST_ROOT "${VCPKG_ROOT_DIR}/installed")
-        endif()
-        
-        # Build the final include path using the target triplet
-        set(SPOUT_INC "${VCPKG_INST_ROOT}/${VCPKG_TARGET_TRIPLET}/include/spout2")
-        if (NOT EXISTS "${SPOUT_INC}")
-            set(SPOUT_INC "${VCPKG_INST_ROOT}/${VCPKG_TARGET_TRIPLET}/include/spout")
-        endif()
-        if (NOT EXISTS "${SPOUT_INC}")
+    if(FOUND_SPOUT_H)
+        list(GET FOUND_SPOUT_H 0 FIRST_SPOUT_H)
+        get_filename_component(SPOUT_INC "${FIRST_SPOUT_H}" DIRECTORY)
+    else()
+        # Fallback to standard find_path
+        find_path(SPOUT_INC NAMES Spout.h PATH_SUFFIXES spout2 spout SpoutSDK SpoutGL)
+        if(NOT SPOUT_INC)
             set(SPOUT_INC "${VCPKG_INST_ROOT}/${VCPKG_TARGET_TRIPLET}/include")
         endif()
     endif()
