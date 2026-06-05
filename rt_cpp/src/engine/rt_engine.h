@@ -83,4 +83,11 @@ private:
     Segment    last_segment_ = {};
 
     int width_ = 0, height_ = 0;
+
+    // Active overlay state (beat-snapped persistent values)
+    GLuint current_overlay_tex_ = 0;
+    float  current_overlay_x_   = 0.f;
+    float  current_overlay_y_   = 0.f;
+    float  current_overlay_w_   = 0.3f;
+    float  current_overlay_h_   = 0.3f;
 };

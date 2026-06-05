@@ -52,6 +52,8 @@ GLuint RtEngine::process_frame(float dt, EngineSettings& settings) {
 
     GLuint frame_tex = 0;
     int    frame_w = 0, frame_h = 0;
+    bool   trigger_cut = false;
+
     if (freeze) {
         frame_tex = last_frame_tex_ ? last_frame_tex_ : black_tex_;
         frame_w   = last_frame_w_;
@@ -71,7 +73,6 @@ GLuint RtEngine::process_frame(float dt, EngineSettings& settings) {
         bool soft_trigger = (t == SegmentType::BUILD ||
                              (t == SegmentType::SUSTAIN && last_stats_.beat));
 
-        bool trigger_cut = false;
         if (hard_trigger && time_since_cut_ >= kMinCutMs) {
             time_since_cut_ = 0.f;
             trigger_cut = true;
@@ -96,19 +97,32 @@ GLuint RtEngine::process_frame(float dt, EngineSettings& settings) {
     }
 
     // ── Overlay ───────────────────────────────────────────────────────────────
-    GLuint ov_tex = 0;
-    float  ov_x = 0.f, ov_y = 0.f, ov_w = 0.3f, ov_h = 0.3f;
-    if (!overlays_.empty() && settings.overlay_intensity > 0.01f) {
-        if ((float)rand() / RAND_MAX < settings.overlay_intensity) {
-            const OverlayEntry* ov = overlays_.random_entry();
-            if (ov) {
-                ov_tex = ov->tex;
-                float scale = 0.3f + (float)rand() / RAND_MAX * 0.5f;
-                ov_w = scale;
-                ov_h = scale * ((float)ov->height / (float)ov->width)
-                             * ((float)width_  / (float)height_);
-                ov_x = (float)rand() / RAND_MAX * std::max(0.f, 1.f - ov_w);
-                ov_y = (float)rand() / RAND_MAX * std::max(0.f, 1.f - ov_h);
+    if (settings.overlay_intensity <= 0.01f || overlays_.empty()) {
+        current_overlay_tex_ = 0;
+    } else {
+        bool overlay_beat = false;
+        if (settings.cut_mode == 0) {
+            // In Continuous Mode: trigger a potential overlay change on beats / impacts
+            overlay_beat = (last_stats_.beat || last_segment_.type == SegmentType::IMPACT);
+        } else {
+            // In Cut Mode: sync overlay changes precisely with video cuts
+            overlay_beat = trigger_cut;
+        }
+
+        if (overlay_beat) {
+            if ((float)rand() / RAND_MAX < settings.overlay_intensity) {
+                const OverlayEntry* ov = overlays_.random_entry();
+                if (ov) {
+                    current_overlay_tex_ = ov->tex;
+                    float scale = 0.3f + (float)rand() / RAND_MAX * 0.5f;
+                    current_overlay_w_ = scale;
+                    current_overlay_h_ = scale * ((float)ov->height / (float)ov->width)
+                                                 * ((float)width_  / (float)height_);
+                    current_overlay_x_ = (float)rand() / RAND_MAX * std::max(0.f, 1.f - current_overlay_w_);
+                    current_overlay_y_ = (float)rand() / RAND_MAX * std::max(0.f, 1.f - current_overlay_h_);
+                }
+            } else {
+                current_overlay_tex_ = 0;
             }
         }
     }
@@ -124,7 +138,8 @@ GLuint RtEngine::process_frame(float dt, EngineSettings& settings) {
     AspectMode am = (AspectMode)settings.aspect_mode;
     return fx_.apply(
         frame_tex, frame_w, frame_h, am,
-        ov_tex, ov_x, ov_y, ov_w, ov_h, ck,
+        current_overlay_tex_, current_overlay_x_, current_overlay_y_,
+        current_overlay_w_, current_overlay_h_, ck,
         settings.overlay_intensity,
         last_segment_,
         settings.chaos,
