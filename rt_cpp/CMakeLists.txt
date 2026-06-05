@@ -20,6 +20,7 @@ find_package(glad    CONFIG REQUIRED)
 
 if(WIN32)
     # vcpkg's spout2 CMake config is broken for static builds (it looks for Spout.dll).
+    # vcpkg's spout2 CMake config is broken for static builds (it looks for Spout.dll).
     # We bypass find_package and resolve the library manually.
     find_library(SPOUT_LIB NAMES Spout spout2 SpoutLibrary REQUIRED)
     
@@ -169,7 +170,7 @@ target_link_libraries(DiscVPC01-RT PRIVATE
 )
 
 if(WIN32)
-    target_link_libraries(DiscVPC01-RT PRIVATE ole32 uuid comdlg32 shell32 ${SPOUT_LIB})
+    target_link_libraries(DiscVPC01-RT PRIVATE ole32 uuid comdlg32 shell32 d3d11 dxgi shlwapi winmm version ${SPOUT_LIB})
     if(MSVC)
         # WIN32 subsystem hides the console, but our entry point is int main().
         # Without /ENTRY the linker expects WinMain and fails with LNK2019.

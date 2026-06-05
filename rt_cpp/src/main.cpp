@@ -15,7 +15,7 @@
 #include <stb_image.h>
 
 #ifdef _WIN32
-#include <SpoutLibrary.h>
+#include <Spout.h>
 #endif
 
 #include "engine/rt_engine.h"
@@ -274,10 +274,8 @@ int main() {
 
     // ── Spout Integration (Windows Only) ──────────────────────────────────────
 #ifdef _WIN32
-    SPOUTHANDLE spout = GetSpout();
-    if (spout) {
-        spout->SetSenderName("DiscVPC01-RT");
-    }
+    spoutSender spout;
+    spout.SetSenderName("DiscVPC01-RT");
 #endif
 
     // ── Main loop ─────────────────────────────────────────────────────────────
@@ -330,8 +328,8 @@ int main() {
 
         // Send texture to Spout (zero-latency sharing with Resolume/OBS)
 #ifdef _WIN32
-        if (spout && display_tex != 0) {
-            spout->SendTexture(display_tex, GL_TEXTURE_2D, engine.canvas_width(), engine.canvas_height(), true, 0);
+        if (display_tex != 0) {
+            spout.SendTexture(display_tex, GL_TEXTURE_2D, engine.canvas_width(), engine.canvas_height(), true, 0);
         }
 #endif
 
@@ -361,10 +359,7 @@ int main() {
     }
 
 #ifdef _WIN32
-    if (spout) {
-        spout->ReleaseSender();
-        spout->Release();
-    }
+    spout.ReleaseSender();
 #endif
 
     output.destroy();
