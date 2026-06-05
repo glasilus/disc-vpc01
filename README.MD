@@ -1,6 +1,6 @@
 # Disc VPC 01 — User Manual
 
-**Version:** 0.2.2
+**Version:** 0.3.0
 **Offline editor:** Python 3.10.x · Windows 10/11 (macOS, Ubuntu 22.* best-effort)
 **Realtime (R-T):** native C++ binary · Windows 10/11 · Linux · macOS
 
@@ -220,6 +220,14 @@ Under the hood, this uses `librosa` and runs the following steps:
 5. **Segment classification** — assigns each segment one of six types (see §5)
 
 This analysis runs once per session per audio file. Results are cached in memory for repeated renders.
+
+> [!NOTE]
+> **Advanced Drum-Reactive Pipeline & Resolution:**
+> - **Percussive-Harmonic Separation (HPSS):** The engine uses `librosa.effects.hpss` to separate vocal/melodic layers from drum hits. Onset (cut) and transient (stutter/flash) detection are performed strictly on the percussive signal to lock cuts perfectly onto the drums.
+> - **Ambient & Harmonic Fallback:** If a track contains little to no percussion (percussive energy ratio < 15%, e.g., ambient, orchestral, acoustic solo), the engine automatically falls back to raw mix analysis. This ensures that melodic note changes and vocal sweeps still trigger cuts naturally.
+> - **High-Precision Resolution:** The analysis uses a fine-grained temporal resolution of ~23ms per frame. This matches the target video frame rate with frame-accurate precision, eliminating late or sloppy edits.
+> - **Physical Transient Window:** Loudness change (`rms_change`) is calculated using a physical sliding window of 100ms (rather than static frames), guaranteeing consistent onset spikes regardless of file size, sample rate, or track length.
+> - **Fast Beat Roll Capture:** The onset detector is optimized with a micro-spacing window of 40ms, allowing it to capture hyper-fast drum rolls, triplets, and breakcore fills.
 
 ### 3.4 Cut Logic
 

@@ -56,7 +56,8 @@ class SegmentClassifier:
 
     def __init__(self, rms_mean: float, flat_mean: float,
                  loud_thresh: float = 1.2,
-                 transient_thresh: float = 0.5):
+                 transient_thresh: float = 0.5,
+                 transient_rms_mean: float = None):
         self.rms_mean = rms_mean
         self.flat_mean = flat_mean
         # loud_thresh: how many × rms_mean a segment must be to count as "loud"
@@ -68,6 +69,7 @@ class SegmentClassifier:
         # transient_thresh: rms_change / rms_mean above which = sharp attack → IMPACT
         # mirrors old  is_transient = rms_change > rms_mean * 0.5  used for flash
         self.transient_thresh = transient_thresh
+        self.transient_rms_mean = transient_rms_mean if transient_rms_mean is not None else rms_mean
 
     def classify(self, t_start: float, t_end: float, rms: float,
                  flatness: float, rms_change: float,
@@ -77,7 +79,7 @@ class SegmentClassifier:
         is_silent    = rms < self.rms_mean * self.silence_thresh
         is_noisy     = flatness > self.flat_mean * self.noise_thresh
         is_short     = duration < self.impact_max_dur
-        is_transient = rms_change > self.rms_mean * self.transient_thresh
+        is_transient = rms_change > self.transient_rms_mean * self.transient_thresh
 
         seg_type = self._determine_type(
             is_loud, is_silent, is_noisy, is_short, is_transient, rms_change, rms_history)
@@ -275,40 +277,73 @@ class AudioAnalyzer:
 
         duration = len(y) / sr
 
-        # Long-track guard: bigger hop + smaller n_fft cuts STFT scratch
-        # roughly 4× without measurable impact on onset/RMS/flatness for
-        # music-rate analysis. Without this, a 30-min track at sr=22050
-        # produces a (1025, ~77k) complex64 STFT (~620 MB) that frequently
-        # OOM-killed the render thread before any frame was encoded.
-        if duration > 600.0:
-            hop = 2048
+        # Temporal Resolution Tuning:
+        # Instead of jumping to a giant hop of 2048 (which degrades frame accuracy to 186ms),
+        # we target a constant frame rate of ~40-50 FPS (~20-25ms step) where possible.
+        # At sr=22050: hop=512 gives 23.2ms.
+        # At sr=11025: hop=256 gives 23.2ms.
+        # Only use hop=1024 (46.4ms/92.9ms resolution) for extremely long mixes to keep STFT size optimal.
+        if duration > 1200.0:  # > 20 minutes
+            hop = 1024
             n_fft = 1024
         else:
-            hop = 512
+            hop = 512 if sr == 22050 else 256
             n_fft = 2048
 
+        # --- Harmonic-Percussive Source Separation (HPSS) & Fallback ---
+        print('[ANALYZER] Computing Harmonic-Percussive Source Separation (HPSS)...')
+        try:
+            y_harmonic, y_percussive = librosa.effects.hpss(y)
+            # Estimate percussive energy ratio
+            rms_raw_total = float(np.sqrt(np.mean(y**2)))
+            rms_perc_total = float(np.sqrt(np.mean(y_percussive**2)))
+            percussive_ratio = (rms_perc_total / rms_raw_total) if rms_raw_total > 1e-5 else 0.0
+            print(f'[ANALYZER] Percussive energy ratio: {percussive_ratio:.3f}')
+        except Exception as e:
+            print(f'[ANALYZER] HPSS error: {e}. Falling back to raw audio.')
+            y_percussive = y
+            y_harmonic = y
+            percussive_ratio = 0.0
+
+        # Dynamic fallback: if the track is predominantly harmonic (ambient, acoustic, solo vocals),
+        # analyze the raw mix. Otherwise, use isolated percussive components for grid/onset detection.
+        use_raw_fallback = percussive_ratio < 0.15
+        if use_raw_fallback:
+            print('[ANALYZER] Track has low percussive energy. Using raw signal for onset & transient analysis.')
+            y_onsets = y
+            y_transients = y
+        else:
+            print('[ANALYZER] Percussive track detected. Focusing on drum transients.')
+            y_onsets = y_percussive
+            y_transients = y_percussive
+
+        # Onset feature extraction with custom settings tailored for fast breakcore drum rolls
+        # wait=max(1, 40ms in frames) to capture fast hits without double-trigger debounces.
+        wait_frames = max(1, int(round(0.040 * sr / hop)))
         onset_env = librosa.onset.onset_strength(
-            y=y, sr=sr, hop_length=hop, n_fft=n_fft)
+            y=y_onsets, sr=sr, hop_length=hop, n_fft=n_fft)
         onsets = librosa.onset.onset_detect(
             onset_envelope=onset_env, sr=sr, hop_length=hop,
-            units='time', backtrack=True,
+            units='time', backtrack=True, wait=wait_frames
         )
-        rms_frames = librosa.feature.rms(y=y, hop_length=hop)[0]
+
+        # RMS and Flatness arrays:
+        # 1. rms_raw_frames: Overall volume of the mix (used for loudness/silence classification)
+        # 2. rms_transient_frames: Target signal volume (used to calculate rms_change for transient spikes)
+        rms_raw_frames = librosa.feature.rms(y=y, hop_length=hop)[0]
+        if use_raw_fallback:
+            rms_transient_frames = rms_raw_frames
+        else:
+            rms_transient_frames = librosa.feature.rms(y=y_transients, hop_length=hop)[0]
+
         flat_frames = librosa.feature.spectral_flatness(
             y=y, hop_length=hop, n_fft=n_fft)[0]
 
         onsets = list(onsets)
 
         # ---- Snap-to-beat -----------------------------------------------
-        # Detect the global tempo and beat grid, then pull each onset to the
-        # nearest beat if it falls within snap_tolerance seconds.  This makes
-        # cuts land precisely on the rhythmic grid instead of slightly
-        # ahead/behind the beat due to spectral onset imprecision.
         if self.snap_to_beat:
             if self.use_manual_bpm and self.manual_bpm > 0:
-                # Manual override — generate a uniform beat grid from the
-                # user-supplied tempo, anchored at t=0. No librosa tempo
-                # estimation is done in this branch.
                 period = 60.0 / self.manual_bpm
                 beat_times = np.arange(0.0, duration + period, period,
                                        dtype=np.float64)
@@ -329,24 +364,31 @@ class AudioAnalyzer:
         if not onsets or onsets[-1] < duration - 0.1:
             onsets.append(duration)
 
-        # Use median of active (non-silent) frames instead of global mean.
-        # A track with a long silent intro would otherwise drag rms_mean near
-        # zero, classifying nearly everything as LOUD and killing contrast.
-        noise_floor = float(np.percentile(rms_frames, 15))
-        active_rms = rms_frames[rms_frames > noise_floor]
+        # Median calculation for raw audio features
+        noise_floor = float(np.percentile(rms_raw_frames, 15))
+        active_rms = rms_raw_frames[rms_raw_frames > noise_floor]
         rms_mean = float(np.median(active_rms)) if len(active_rms) > 0 \
-                   else float(np.mean(rms_frames))
-        # Median flatness is more robust than mean (outlier frames skew mean badly)
+                   else float(np.mean(rms_raw_frames))
         flat_mean = float(np.median(flat_frames))
+
+        # Separate transient mean to ensure relative peaks are detected properly in HPSS mode
+        active_transient = rms_transient_frames[rms_transient_frames > float(np.percentile(rms_transient_frames, 15))]
+        transient_rms_mean = float(np.median(active_transient)) if len(active_transient) > 0 \
+                             else float(np.mean(rms_transient_frames))
 
         classifier = SegmentClassifier(
             rms_mean=rms_mean, flat_mean=flat_mean,
             loud_thresh=self.loud_thresh,
             transient_thresh=self.transient_thresh,
+            transient_rms_mean=transient_rms_mean
         )
 
         segments = []
         rms_history = []
+
+        # Convert physical 100ms lookback window to frames
+        lookback_sec = 0.100
+        lookback_frames = max(1, int(round(lookback_sec * sr / hop)))
 
         for i in range(len(onsets) - 1):
             t_start = onsets[i]
@@ -358,12 +400,13 @@ class AudioAnalyzer:
 
             frame_idx = min(
                 int(librosa.time_to_frames(t_start, sr=sr, hop_length=hop)),
-                len(rms_frames) - 1
+                len(rms_raw_frames) - 1
             )
-            rms = float(rms_frames[frame_idx])
+            rms = float(rms_raw_frames[frame_idx])
             flatness = float(flat_frames[frame_idx])
-            prev_idx = max(0, frame_idx - 5)
-            rms_change = rms - float(rms_frames[prev_idx])
+
+            prev_idx = max(0, frame_idx - lookback_frames)
+            rms_change = float(rms_transient_frames[frame_idx]) - float(rms_transient_frames[prev_idx])
 
             seg = classifier.classify(
                 t_start=t_start, t_end=t_end,
