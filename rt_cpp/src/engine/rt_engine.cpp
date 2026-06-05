@@ -71,15 +71,16 @@ GLuint RtEngine::process_frame(float dt, EngineSettings& settings) {
         bool soft_trigger = (t == SegmentType::BUILD ||
                              (t == SegmentType::SUSTAIN && last_stats_.beat));
 
+        bool trigger_cut = false;
         if (hard_trigger && time_since_cut_ >= kMinCutMs) {
             time_since_cut_ = 0.f;
-            frame_tex = pool_.get_random_frame(width_, height_, &frame_w, &frame_h);
+            trigger_cut = true;
         } else if (soft_trigger && time_since_cut_ >= settings.cut_interval) {
             time_since_cut_ = 0.f;
-            frame_tex = pool_.get_random_frame(width_, height_, &frame_w, &frame_h);
-        } else {
-            frame_tex = pool_.get_sequential_frame(width_, height_, &frame_w, &frame_h);
+            trigger_cut = true;
         }
+
+        frame_tex = pool_.get_cut_frame(trigger_cut, width_, height_, &frame_w, &frame_h);
     }
 
     if (!freeze) {

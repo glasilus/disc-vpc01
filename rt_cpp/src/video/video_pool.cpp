@@ -1,6 +1,7 @@
 #include "video_pool.h"
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 
 void VideoPool::add_source(const std::string& path) {
     // Avoid duplicates
@@ -71,4 +72,39 @@ GLuint VideoPool::get_sequential_frame(int w, int h, int* out_w, int* out_h) {
         }
     }
     return sources_[idx]->get_sequential_frame(w, h, out_w, out_h);
+}
+
+GLuint VideoPool::get_cut_frame(bool trigger_cut, int w, int h, int* out_w, int* out_h) {
+    if (sources_.empty()) return 0;
+
+    int idx;
+    if (active_idx_ >= 0 && active_idx_ < (int)sources_.size()) {
+        idx = active_idx_;
+    } else {
+        if (cut_source_idx_ < 0 || cut_source_idx_ >= (int)sources_.size()) {
+            cut_source_idx_ = 0;
+        }
+        idx = cut_source_idx_;
+    }
+
+    if (trigger_cut) {
+        if (active_idx_ < 0) {
+            int pool_size = (int)sources_.size();
+            if (pool_size > 1) {
+                int next_idx = cut_source_idx_;
+                while (next_idx == cut_source_idx_) {
+                    next_idx = rand() % pool_size;
+                }
+                cut_source_idx_ = next_idx;
+                idx = cut_source_idx_;
+            } else {
+                cut_source_idx_ = 0;
+                idx = 0;
+            }
+        }
+        sources_[idx]->request_seek_random();
+        return sources_[idx]->get_random_frame(w, h, out_w, out_h);
+    } else {
+        return sources_[idx]->get_sequential_frame(w, h, out_w, out_h);
+    }
 }

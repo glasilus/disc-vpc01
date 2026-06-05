@@ -17,6 +17,7 @@ public:
 
     GLuint get_random_frame(int w, int h, int* out_w = nullptr, int* out_h = nullptr);
     GLuint get_sequential_frame(int w, int h, int* out_w = nullptr, int* out_h = nullptr);
+    GLuint get_cut_frame(bool trigger_cut, int w, int h, int* out_w = nullptr, int* out_h = nullptr);
 
     // VJ-style "active clip" focus. When active_idx_ is in [0, size()-1],
     // every frame request — random or sequential, in cut or continuous
@@ -32,6 +33,7 @@ private:
     std::vector<std::string>                  paths_;
     int                                       round_robin_ = 0;
     int                                       active_idx_  = -1;
+    int                                       cut_source_idx_ = 0;
     // Loop-count snapshot of the current round-robin source. When the live
     // counter exceeds this, the source has played through once and we hop to
     // the next entry in the pool — giving "play A fully, then B, then C"
