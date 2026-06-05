@@ -373,18 +373,29 @@ Blends the current frame with the previous frame, creating a motion trail or gho
 
 **Pixel Sort**
 
-*Trigger: NOISE, IMPACT*
+*Trigger: NOISE, IMPACT, DROP*
 
-Sorts columns of pixels within horizontal strips by their luminance, hue, or saturation value. Produces a characteristic glitch aesthetic that resembles codec failure or data corruption.
+Sorts pixels within selected horizontal or vertical strips by their luminance, hue, or saturation values. Produces a classic glitch art aesthetic with multiple algorithms ranging from organic block-melting to After Effects-style liquid bleeding.
 
 **Chance** *(0.0 – 1.0)* — probability per eligible segment.
 
-**Pixel Sort Intensity** *(0.0 – 1.0)* — controls the height of the strips being sorted. At low values only thin bands are affected; at high values nearly the entire frame is sorted.
+**Pixel Sort Intensity** *(0.0 – 1.0)* — controls the size (height/width) of the strips being sorted. At low values, only thin bands are affected; at high values, nearly the entire frame is sorted.
 
 **Sort Axis** — the pixel property used as the sort key:
 - `luminance` — sorts by perceived brightness (default, most legible)
 - `hue` — sorts by colour angle in HSV space (more colourful result)
 - `saturation` — sorts by colour purity
+
+**Sort Mode** — the sorting algorithm to apply:
+- `block` — *(Default / original commit behavior)* flattens the entire strip and sorts all pixels globally. Reorganizes the image into crystalline, melting blocks.
+- `streaks` — *(After Effects / threshold-based)* sorts only contiguous segments of pixels exceeding the **Streaks Threshold**, leaving other pixels as barriers. Creates beautiful flowing tails that outline shapes.
+- `columns` — *(Legacy 0.1.0 behavior)* shifts entire columns/rows intact based on their average value. Gives a TV rewind/tape-slip aesthetic.
+
+**Sort Direction** — the axis of sorting:
+- `horizontal` — sorts along the horizontal rows.
+- `vertical` — sorts along the vertical columns.
+
+**Streaks Threshold** *(0.0 – 1.0)* — the minimum luminance required to include a pixel in sorting (used only in `streaks` mode). Higher values limit the effect only to the brightest highlights, leaving dark shapes intact.
 
 ---
 

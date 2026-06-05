@@ -39,38 +39,157 @@ class GhostTrailsEffect(BaseEffect):
 class PixelSortEffect(BaseEffect):
     trigger_types = [SegmentType.NOISE, SegmentType.IMPACT, SegmentType.DROP]
 
-    def __init__(self, sort_axis='luminance', **kw):
+    def __init__(self, sort_axis='luminance', sort_mode='block',
+                 sort_direction='horizontal', sort_threshold=0.3, **kw):
         super().__init__(**kw)
         self.sort_axis = sort_axis
+        self.sort_mode = sort_mode
+        self.sort_direction = sort_direction
+        self.sort_threshold = sort_threshold
 
     def _apply(self, frame, seg, draft):
         result = frame.copy()
         h, w = result.shape[:2]
         intensity = self.scaled_intensity(seg)
-        strip_h = max(1, int(h * (0.05 + intensity * 0.4)))
+
+        # Determine strip/band size based on direction
+        if self.sort_direction == 'vertical':
+            strip_size = max(1, int(w * (0.05 + intensity * 0.4)))
+        else:
+            strip_size = max(1, int(h * (0.05 + intensity * 0.4)))
+
         n_strips = 1 if draft else max(1, int(intensity * 8))
 
-        if self.sort_axis == 'hue':
-            hsv = cv2.cvtColor(result, cv2.COLOR_RGB2HSV)
-            key_idx = 0
-        elif self.sort_axis == 'saturation':
-            hsv = cv2.cvtColor(result, cv2.COLOR_RGB2HSV)
-            key_idx = 1
-        else:
-            hsv = None
-            key_idx = None
+        if self.sort_mode == 'block':
+            # --- 1. BLOCK MODE: The Original Global Flattening (1st Commit) ---
+            for _ in range(n_strips):
+                if self.sort_direction == 'vertical':
+                    x = random.randint(0, max(0, w - strip_size))
+                    crop = result[:, x:x + strip_size]
+                    ch, cw = crop.shape[:2]
+                    pixels = crop.reshape(-1, 3)
+                    
+                    if self.sort_axis == 'hue':
+                        key_pixels = cv2.cvtColor(crop, cv2.COLOR_RGB2HSV)[..., 0].flatten()
+                    elif self.sort_axis == 'saturation':
+                        key_pixels = cv2.cvtColor(crop, cv2.COLOR_RGB2HSV)[..., 1].flatten()
+                    else:  # luminance
+                        key_pixels = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY).flatten()
+                    
+                    order = np.argsort(key_pixels)
+                    result[:, x:x + strip_size] = pixels[order].reshape(ch, cw, 3)
+                else:
+                    y = random.randint(0, max(0, h - strip_size))
+                    crop = result[y:y + strip_size]
+                    ch, cw = crop.shape[:2]
+                    pixels = crop.reshape(-1, 3)
+                    
+                    if self.sort_axis == 'hue':
+                        key_pixels = cv2.cvtColor(crop, cv2.COLOR_RGB2HSV)[..., 0].flatten()
+                    elif self.sort_axis == 'saturation':
+                        key_pixels = cv2.cvtColor(crop, cv2.COLOR_RGB2HSV)[..., 1].flatten()
+                    else:  # luminance
+                        key_pixels = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY).flatten()
+                    
+                    order = np.argsort(key_pixels)
+                    result[y:y + strip_size] = pixels[order].reshape(ch, cw, 3)
 
-        for _ in range(n_strips):
-            y = random.randint(0, max(0, h - strip_h))
-            strip = result[y:y + strip_h]
-            if key_idx is not None:
-                key_strip = hsv[y:y + strip_h, :, key_idx]
-                col_means = key_strip.mean(axis=0)
-            else:
-                gray = cv2.cvtColor(strip, cv2.COLOR_RGB2GRAY)
-                col_means = gray.mean(axis=0)
-            order = np.argsort(col_means)
-            result[y:y + strip_h] = strip[:, order]
+        elif self.sort_mode == 'streaks':
+            # --- 2. STREAKS MODE: After Effects / Threshold sorting ---
+            threshold_val = self.sort_threshold * 255.0
+            for _ in range(n_strips):
+                if self.sort_direction == 'vertical':
+                    x_start = random.randint(0, max(0, w - strip_size))
+                    for col_idx in range(x_start, min(w, x_start + strip_size)):
+                        col_pixels = result[:, col_idx]
+                        
+                        if self.sort_axis == 'hue':
+                            col_keys = cv2.cvtColor(col_pixels[:, np.newaxis, :], cv2.COLOR_RGB2HSV)[:, 0, 0]
+                        elif self.sort_axis == 'saturation':
+                            col_keys = cv2.cvtColor(col_pixels[:, np.newaxis, :], cv2.COLOR_RGB2HSV)[:, 0, 1]
+                        else:  # luminance
+                            col_keys = cv2.cvtColor(col_pixels[:, np.newaxis, :], cv2.COLOR_RGB2GRAY)[:, 0]
+                        
+                        mask = col_keys >= threshold_val
+                        in_segment = False
+                        start_idx = 0
+                        for y_idx in range(h):
+                            if mask[y_idx]:
+                                if not in_segment:
+                                    start_idx = y_idx
+                                    in_segment = True
+                            else:
+                                if in_segment:
+                                    seg_keys = col_keys[start_idx:y_idx]
+                                    sort_order = np.argsort(seg_keys)
+                                    result[start_idx:y_idx, col_idx] = col_pixels[start_idx:y_idx][sort_order]
+                                    in_segment = False
+                        if in_segment:
+                            seg_keys = col_keys[start_idx:h]
+                            sort_order = np.argsort(seg_keys)
+                            result[start_idx:h, col_idx] = col_pixels[start_idx:h][sort_order]
+                else:
+                    y_start = random.randint(0, max(0, h - strip_size))
+                    for row_idx in range(y_start, min(h, y_start + strip_size)):
+                        row_pixels = result[row_idx, :]
+                        
+                        if self.sort_axis == 'hue':
+                            row_keys = cv2.cvtColor(row_pixels[np.newaxis, :, :], cv2.COLOR_RGB2HSV)[0, :, 0]
+                        elif self.sort_axis == 'saturation':
+                            row_keys = cv2.cvtColor(row_pixels[np.newaxis, :, :], cv2.COLOR_RGB2HSV)[0, :, 1]
+                        else:  # luminance
+                            row_keys = cv2.cvtColor(row_pixels[np.newaxis, :, :], cv2.COLOR_RGB2GRAY)[0]
+                        
+                        mask = row_keys >= threshold_val
+                        in_segment = False
+                        start_idx = 0
+                        for x_idx in range(w):
+                            if mask[x_idx]:
+                                if not in_segment:
+                                    start_idx = x_idx
+                                    in_segment = True
+                            else:
+                                if in_segment:
+                                    seg_keys = row_keys[start_idx:x_idx]
+                                    sort_order = np.argsort(seg_keys)
+                                    result[row_idx, start_idx:x_idx] = row_pixels[start_idx:x_idx][sort_order]
+                                    in_segment = False
+                        if in_segment:
+                            seg_keys = row_keys[start_idx:w]
+                            sort_order = np.argsort(seg_keys)
+                            result[row_idx, start_idx:w] = row_pixels[start_idx:w][sort_order]
+
+        else:
+            # --- 3. COLUMNS MODE: The 0.1.0 column-shifting ("rewind") look ---
+            for _ in range(n_strips):
+                if self.sort_direction == 'vertical':
+                    x = random.randint(0, max(0, w - strip_size))
+                    strip = result[:, x:x + strip_size]
+                    if self.sort_axis == 'hue':
+                        key_strip = cv2.cvtColor(strip, cv2.COLOR_RGB2HSV)[..., 0]
+                        row_means = key_strip.mean(axis=1)
+                    elif self.sort_axis == 'saturation':
+                        key_strip = cv2.cvtColor(strip, cv2.COLOR_RGB2HSV)[..., 1]
+                        row_means = key_strip.mean(axis=1)
+                    else:  # luminance
+                        gray = cv2.cvtColor(strip, cv2.COLOR_RGB2GRAY)
+                        row_means = gray.mean(axis=1)
+                    order = np.argsort(row_means)
+                    result[:, x:x + strip_size] = strip[order, :]
+                else:
+                    y = random.randint(0, max(0, h - strip_size))
+                    strip = result[y:y + strip_size]
+                    if self.sort_axis == 'hue':
+                        key_strip = cv2.cvtColor(strip, cv2.COLOR_RGB2HSV)[..., 0]
+                        col_means = key_strip.mean(axis=0)
+                    elif self.sort_axis == 'saturation':
+                        key_strip = cv2.cvtColor(strip, cv2.COLOR_RGB2HSV)[..., 1]
+                        col_means = key_strip.mean(axis=0)
+                    else:  # luminance
+                        gray = cv2.cvtColor(strip, cv2.COLOR_RGB2GRAY)
+                        col_means = gray.mean(axis=0)
+                    order = np.argsort(col_means)
+                    result[y:y + strip_size] = strip[:, order]
 
         return _ensure_uint8(result)
 

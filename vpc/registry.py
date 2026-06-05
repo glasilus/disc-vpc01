@@ -209,7 +209,12 @@ def _ascii_extras(cfg: dict) -> dict:
 
 
 def _psort_extras(cfg: dict) -> dict:
-    return dict(sort_axis=cfg.get('fx_psort_axis', 'luminance'))
+    return dict(
+        sort_axis=cfg.get('fx_psort_axis', 'luminance'),
+        sort_mode=cfg.get('fx_psort_mode', 'block'),
+        sort_direction=cfg.get('fx_psort_direction', 'horizontal'),
+        sort_threshold=float(cfg.get('fx_psort_threshold', 0.3)),
+    )
 
 
 def _formula_extras(cfg: dict) -> dict:
@@ -316,14 +321,35 @@ EFFECTS: List[EffectSpec] = [
                           'По чему сортировать столбцы: luminance (от светлого к тёмному), '
                           'hue (радуга), saturation (от насыщенного к серому).',
                       )),
+            ParamSpec('fx_psort_mode', 'Sort Mode', 'block', kind='choice',
+                       choices=['block', 'streaks', 'columns'], indent=True,
+                       tooltip=bi(
+                           'Sorting algorithm: block (original crystalline melting), '
+                           'streaks (After Effects / threshold-based bleeding), '
+                           'columns (legacy shifting).',
+                           'Алгоритм сортировки: block (оригинальное кристаллическое плавление), '
+                           'streaks (стиль After Effects / построчные шлейфы), '
+                           'columns (старый сдвиг колонок).',
+                       )),
+            ParamSpec('fx_psort_direction', 'Sort Direction', 'horizontal', kind='choice',
+                       choices=['horizontal', 'vertical'], indent=True,
+                       tooltip=bi(
+                           'Sorting direction: horizontal (along rows) or vertical (along columns).',
+                           'Направление сортировки: horizontal (вдоль строк) или vertical (вдоль столбцов).',
+                       )),
+            ParamSpec('fx_psort_threshold', 'Streaks Threshold', 0.3, 0.0, 1.0, indent=True,
+                       tooltip=bi(
+                           'Luminance threshold for streaks mode. Higher = only brighter pixels are sorted.',
+                           'Порог яркости для режима streaks. Выше — сортируются только самые яркие пиксели.',
+                       )),
         ],
         extra_factory=_psort_extras,
-        note='NOISE / IMPACT / DROP — sorts horizontal strips of pixels.',
+        note='NOISE / IMPACT / DROP — sorts horizontal/vertical strips of pixels.',
         tooltip=bi(
-            'Picks N horizontal strips per frame and re-orders columns by the selected axis. '
-            'Classic pixel-sort glitch art.',
-            'Выбирает N горизонтальных полос и переупорядочивает столбцы по выбранному каналу. '
-            'Классический pixel-sort.',
+            'Picks N horizontal/vertical strips per frame and sorts pixels inside them. '
+            'Supports original global block melting, AE threshold streaks, and legacy columns shifting.',
+            'Выбирает N горизонтальных/вертикальных полос и сортирует пиксели внутри них. '
+            'Поддерживает оригинальное плавление блоков, AE-подобные пороговые шлейфы и старый сдвиг колонок.',
         ),
     ),
 
