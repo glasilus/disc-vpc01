@@ -18,6 +18,8 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#define SPOUT_EXPORTS          // Force dllexport instead of dllimport to link statically
+#define SPOUTLIBRARY_EXPORTS   // Force dllexport instead of dllimport to link statically
 #include <Spout.h>
 #endif
 
