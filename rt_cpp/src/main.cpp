@@ -15,6 +15,9 @@
 #include <stb_image.h>
 
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <Spout.h>
 #endif
 
@@ -274,7 +277,7 @@ int main() {
 
     // ── Spout Integration (Windows Only) ──────────────────────────────────────
 #ifdef _WIN32
-    spoutSender spout;
+    Spout spout;
     spout.SetSenderName("DiscVPC01-RT");
 #endif
 
