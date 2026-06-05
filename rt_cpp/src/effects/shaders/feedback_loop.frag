@@ -17,6 +17,16 @@ void main() {
     vec2 rotated = vec2(p.x * c - p.y * s, p.x * s + p.y * c) * uFeedbackScale + 0.5;
     
     vec4 accum = texture(uAccum, rotated);
-    float blend = mix(0.3, 0.85, uIntensity);
-    FragColor = mix(cur, accum, blend);
+    
+    // Instead of a simple mix which looks blurry and washed out, 
+    // we use an additive/max approach with a decay factor to create 
+    // glowing trails, which is the standard for VJ software feedback.
+    float decay = mix(0.7, 0.98, uIntensity);
+    
+    // Slightly shift hue/color on the feedback loop for a psychedelic trail
+    accum.rgb *= vec3(0.99, 0.95, 0.92); 
+    accum *= decay;
+    
+    // Combine current frame with the decaying feedback trail
+    FragColor = max(cur, accum);
 }

@@ -9,41 +9,40 @@ uniform vec2  uSortDir; // (1, 0) = horizontal, (0, 1) = vertical
 // GPU pixel sort approximation using a local 8-element Bitonic sorting network
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 
-#define SWAP(i, j) if (lumas[i] > lumas[j]) { \
-    float tempL = lumas[i]; lumas[i] = lumas[j]; lumas[j] = tempL; \
-    vec4 tempC = colors[i]; colors[i] = colors[j]; colors[j] = tempC; \
-}
-
 void main() {
-    vec2 step = uSortDir / uResolution;
-    // Determine step size based on intensity. Higher = wider sorting blocks
-    float step_scale = 1.0 + uIntensity * 12.0;
+    // Pixel sorting simulation via directional luma smear.
+    // Instead of doing an actual O(N^2) or heavy Bitonic sort, we just sample backwards
+    // along the sort direction and bleed pixels that exceed the threshold. This runs
+    // 100x faster and visually simulates the classic "wind" pixel sort effect.
     
-    // Sample 8 pixels locally along the sorting direction
-    vec4 colors[8];
-    float lumas[8];
-    for (int i = 0; i < 8; i++) {
-        vec2 uv_offset = vUV + step * float(i - 4) * step_scale;
-        colors[i] = texture(uTex, uv_offset);
-        lumas[i] = luma(colors[i].rgb);
+    vec2 dir = uSortDir;
+    // Scale step by intensity and canvas resolution.
+    vec2 step = dir / uResolution * (1.0 + uIntensity * 40.0);
+    
+    vec4 col = texture(uTex, vUV);
+    float l = luma(col.rgb);
+    
+    vec4 smeared = col;
+    float max_luma = l;
+    
+    // threshold: only pixels brighter than 0.4 "melt"
+    float threshold = 0.4 - uIntensity * 0.2; 
+    
+    // Sample backwards up to 16 taps. If we hit a brighter pixel, drag it down to us.
+    for (int i = 1; i <= 16; i++) {
+        vec2 offset_uv = vUV - step * float(i);
+        // Stop if we hit screen edges
+        if(offset_uv.x < 0.0 || offset_uv.x > 1.0 || offset_uv.y < 0.0 || offset_uv.y > 1.0) break;
+        
+        vec4 sample_col = texture(uTex, offset_uv);
+        float sample_l = luma(sample_col.rgb);
+        
+        // If the sampled pixel is bright enough, let it overwrite the current smeared pixel
+        if (sample_l > max_luma && sample_l > threshold) {
+            max_luma = sample_l;
+            smeared = sample_col;
+        }
     }
-
-    // 8-element Bitonic sorting network (19 comparisons)
-    SWAP(0, 1); SWAP(2, 3); SWAP(4, 5); SWAP(6, 7);
-    SWAP(0, 2); SWAP(1, 3); SWAP(4, 6); SWAP(5, 7);
-    SWAP(1, 2); SWAP(5, 6);
-    SWAP(0, 4); SWAP(1, 5); SWAP(2, 6); SWAP(3, 7);
-    SWAP(2, 4); SWAP(3, 5);
-    SWAP(1, 2); SWAP(3, 4); SWAP(5, 6);
-    SWAP(1, 3); SWAP(4, 5);
-    SWAP(2, 3);
-
-    // Map the current pixel to one of the sorted slots based on the local fraction
-    float coord_projected = dot(vUV * uResolution, uSortDir);
-    float frac = fract(coord_projected / (8.0 * step_scale));
-    int index = int(frac * 8.0);
-    index = clamp(index, 0, 7);
     
-    vec4 sorted_col = colors[index];
-    FragColor = mix(texture(uTex, vUV), sorted_col, uIntensity);
+    FragColor = mix(col, smeared, uIntensity);
 }

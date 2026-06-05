@@ -368,7 +368,24 @@ void RtGui::draw_master_panel(EngineSettings& s) {
 
     // Aspect fit mode
     static const char* kAspectLabels[] = {"Contain", "Cover", "Stretch", "Native 1:1"};
-    ImGui::Combo("Aspect", &s.aspect_mode, kAspectLabels, 4);
+    ImGui::Combo("Scale Mode", &s.aspect_mode, kAspectLabels, 4);
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("CHROMA KEY / FX GATING");
+    static const char* ck_modes[] = {"None","Dominant","Secondary","Manual"};
+    ImGui::Combo("Chroma Key", &s.ck_mode, ck_modes, 4);
+    if (s.ck_mode != 0) {
+        ImGui::SliderFloat("Tolerance",  &s.ck_tolerance, 0.f, 90.f, "%.1f");
+        ImGui::SliderFloat("Softness##ck",&s.ck_softness,  0.f, 30.f, "%.1f");
+        if (s.ck_mode == 3) {
+            ImGui::ColorEdit3("Key Color", &s.ck_r);
+        }
+        ImGui::Checkbox("Chroma Key Gated FX", &s.ck_gate_fx);
+        if (s.ck_gate_fx) {
+            static const char* gate_modes[] = {"Foreground (Keep BG clean)", "Background (Keep FG clean)"};
+            ImGui::Combo("Gating Mode", &s.ck_gate_mode, gate_modes, 2);
+        }
+    }
 }
 
 void RtGui::draw_effects_panel(EngineSettings& s) {
@@ -489,21 +506,6 @@ void RtGui::draw_overlay_panel(EngineSettings& s) {
         // earlier sessions.
         if (s.overlay_intensity > 0.01f)
             s.fx[(int)FxId::OVERLAYS].enabled = true;
-    }
-
-    static const char* ck_modes[] = {"None","Dominant","Secondary","Manual"};
-    ImGui::Combo("Chroma Key", &s.ck_mode, ck_modes, 4);
-    if (s.ck_mode != 0) {
-        ImGui::SliderFloat("Tolerance",  &s.ck_tolerance, 0.f, 90.f, "%.1f");
-        ImGui::SliderFloat("Softness##ck",&s.ck_softness,  0.f, 30.f, "%.1f");
-        if (s.ck_mode == 3) {
-            ImGui::ColorEdit3("Key Color", &s.ck_r);
-        }
-        ImGui::Checkbox("Chroma Key Gated FX", &s.ck_gate_fx);
-        if (s.ck_gate_fx) {
-            static const char* gate_modes[] = {"Foreground (Keep BG clean)", "Background (Keep FG clean)"};
-            ImGui::Combo("Gating Mode", &s.ck_gate_mode, gate_modes, 2);
-        }
     }
 }
 

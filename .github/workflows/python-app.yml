@@ -21,6 +21,7 @@ env:
     nlohmann-json
     glad
     stb
+    spout2
 
 jobs:
 

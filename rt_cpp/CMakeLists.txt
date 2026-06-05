@@ -18,6 +18,10 @@ find_package(FFTW3f  CONFIG REQUIRED)   # single-precision (libfftw3f)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(glad    CONFIG REQUIRED)
 
+if(WIN32)
+    find_package(spout2 CONFIG REQUIRED)
+endif()
+
 # FFmpeg: vcpkg exposes FFMPEG_INCLUDE_DIRS / FFMPEG_LIBRARY_DIRS / FFMPEG_LIBRARIES
 find_package(FFMPEG REQUIRED)
 
@@ -151,7 +155,7 @@ target_link_libraries(DiscVPC01-RT PRIVATE
 )
 
 if(WIN32)
-    target_link_libraries(DiscVPC01-RT PRIVATE ole32 uuid comdlg32 shell32)
+    target_link_libraries(DiscVPC01-RT PRIVATE ole32 uuid comdlg32 shell32 spout2::SpoutLibrary)
     if(MSVC)
         # WIN32 subsystem hides the console, but our entry point is int main().
         # Without /ENTRY the linker expects WinMain and fails with LNK2019.
