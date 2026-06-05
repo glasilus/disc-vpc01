@@ -15,10 +15,6 @@
     },
     "nlohmann-json",
     "glad",
-    "stb",
-    {
-      "name": "spout2",
-      "platform": "windows"
-    }
+    "stb"
   ]
 }

@@ -18,47 +18,6 @@ find_package(FFTW3f  CONFIG REQUIRED)   # single-precision (libfftw3f)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(glad    CONFIG REQUIRED)
 
-if(WIN32)
-    # vcpkg's spout2 CMake config is broken for static builds (it looks for Spout.dll).
-    # We bypass find_package and resolve the library manually.
-    find_library(SPOUT_LIB NAMES Spout spout2 SpoutLibrary REQUIRED)
-    
-    # Resolve the root vcpkg installed directory
-    if(DEFINED VCPKG_INSTALLED_DIR)
-        set(VCPKG_INST_ROOT "${VCPKG_INSTALLED_DIR}")
-    elseif(DEFINED _VCPKG_INSTALLED_DIR)
-        set(VCPKG_INST_ROOT "${_VCPKG_INSTALLED_DIR}")
-    elseif(DEFINED ENV{VCPKG_ROOT})
-        set(VCPKG_INST_ROOT "$ENV{VCPKG_ROOT}/installed")
-    else()
-        # If all else fails, assume standard location relative to toolchain file
-        get_filename_component(VCPKG_ROOT_DIR "${CMAKE_TOOLCHAIN_FILE}" DIRECTORY)
-        get_filename_component(VCPKG_ROOT_DIR "${VCPKG_ROOT_DIR}" DIRECTORY)
-        get_filename_component(VCPKG_ROOT_DIR "${VCPKG_ROOT_DIR}" DIRECTORY)
-        set(VCPKG_INST_ROOT "${VCPKG_ROOT_DIR}/installed")
-    endif()
-
-    # Search recursively for the directory containing Spout.h
-    file(GLOB_RECURSE FOUND_SPOUT_H 
-        "${VCPKG_INST_ROOT}/${VCPKG_TARGET_TRIPLET}/include/Spout.h"
-        "${VCPKG_INST_ROOT}/${VCPKG_TARGET_TRIPLET}/include/*/Spout.h"
-        "${VCPKG_INST_ROOT}/${VCPKG_TARGET_TRIPLET}/include/*Spout.h"
-    )
-    
-    if(FOUND_SPOUT_H)
-        list(GET FOUND_SPOUT_H 0 FIRST_SPOUT_H)
-        get_filename_component(SPOUT_INC "${FIRST_SPOUT_H}" DIRECTORY)
-    else()
-        # Fallback to standard find_path
-        find_path(SPOUT_INC NAMES Spout.h PATH_SUFFIXES spout2 spout SpoutSDK SpoutGL)
-        if(NOT SPOUT_INC)
-            set(SPOUT_INC "${VCPKG_INST_ROOT}/${VCPKG_TARGET_TRIPLET}/include")
-        endif()
-    endif()
-    
-    message(STATUS "Found Spout include path: ${SPOUT_INC}")
-    message(STATUS "Found Spout library: ${SPOUT_LIB}")
-endif()
 
 # FFmpeg: vcpkg exposes FFMPEG_INCLUDE_DIRS / FFMPEG_LIBRARY_DIRS / FFMPEG_LIBRARIES
 find_package(FFMPEG REQUIRED)
@@ -175,9 +134,7 @@ target_include_directories(DiscVPC01-RT PRIVATE
     "${STB_INCLUDE_DIR}"
     ${FFMPEG_INCLUDE_DIRS}
 )
-if(WIN32)
-    target_include_directories(DiscVPC01-RT PRIVATE "${SPOUT_INC}")
-endif()
+
 
 target_link_directories(DiscVPC01-RT PRIVATE ${FFMPEG_LIBRARY_DIRS})
 
@@ -196,7 +153,7 @@ target_link_libraries(DiscVPC01-RT PRIVATE
 )
 
 if(WIN32)
-    target_link_libraries(DiscVPC01-RT PRIVATE ole32 uuid comdlg32 shell32 d3d11 dxgi shlwapi winmm version ${SPOUT_LIB})
+    target_link_libraries(DiscVPC01-RT PRIVATE ole32 uuid comdlg32 shell32 d3d11 dxgi shlwapi winmm version)
     if(MSVC)
         # WIN32 subsystem hides the console, but our entry point is int main().
         # Without /ENTRY the linker expects WinMain and fails with LNK2019.

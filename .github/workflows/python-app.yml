@@ -111,7 +111,7 @@ jobs:
           "%VCPKG_ROOT%\vcpkg.exe" install ^
             --triplet x64-windows-static-release ^
             --overlay-triplets=rt_cpp/triplets ^
-            ${{ env.VCPKG_DEPS }} spout2 || exit /b 1
+            ${{ env.VCPKG_DEPS }} || exit /b 1
 
       - name: Build DiscVPC01-RT.exe (C++)
         shell: cmd
@@ -126,7 +126,6 @@ jobs:
             -G "Visual Studio 17 2022" -A x64 || exit /b 1
           cmake --build rt_cpp\build --config Release || exit /b 1
           copy /Y rt_cpp\build\Release\DiscVPC01-RT.exe dist\DiscVPC01-RT.exe || exit /b 1
-          for /r "%VCPKG_ROOT%\installed\x64-windows-static-release\bin" %%f in (*Spout*.dll) do copy /Y "%%f" dist\
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
@@ -136,7 +135,6 @@ jobs:
           path: |
             dist/DiscVPC01.exe
             dist/DiscVPC01-RT.exe
-            dist/*.dll
             README.MD
             README_RU.MD
             presets/rt_blank.json

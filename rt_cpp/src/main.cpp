@@ -14,14 +14,7 @@
 // AUDIO.png bytes into raw RGBA for glfwSetWindowIcon().
 #include <stb_image.h>
 
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#define SPOUT_EXPORTS          // Force dllexport instead of dllimport to link statically
-#define SPOUTLIBRARY_EXPORTS   // Force dllexport instead of dllimport to link statically
-#include <Spout.h>
-#endif
+
 
 #include "engine/rt_engine.h"
 #include "gui/rt_gui.h"
@@ -277,11 +270,7 @@ int main() {
         fprintf(stderr, "GUI init failed\n"); return 1;
     }
 
-    // ── Spout Integration (Windows Only) ──────────────────────────────────────
-#ifdef _WIN32
-    Spout spout;
-    spout.SetSenderName("DiscVPC01-RT");
-#endif
+
 
     // ── Main loop ─────────────────────────────────────────────────────────────
     double prev_time = glfwGetTime();
@@ -331,12 +320,7 @@ int main() {
         // Process effect chain → canvas texture.
         display_tex = engine.process_frame(dt, settings);
 
-        // Send texture to Spout (zero-latency sharing with Resolume/OBS)
-#ifdef _WIN32
-        if (display_tex != 0) {
-            spout.SendTexture(display_tex, GL_TEXTURE_2D, engine.canvas_width(), engine.canvas_height(), true, 0);
-        }
-#endif
+
 
         // Control window render.
         int fb_w, fb_h;
@@ -363,9 +347,7 @@ int main() {
         }
     }
 
-#ifdef _WIN32
-    spout.ReleaseSender();
-#endif
+
 
     output.destroy();
     gui.shutdown();
