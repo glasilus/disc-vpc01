@@ -20,18 +20,40 @@ find_package(glad    CONFIG REQUIRED)
 
 if(WIN32)
     # vcpkg's spout2 CMake config is broken for static builds (it looks for Spout.dll).
-    # vcpkg's spout2 CMake config is broken for static builds (it looks for Spout.dll).
     # We bypass find_package and resolve the library manually.
     find_library(SPOUT_LIB NAMES Spout spout2 SpoutLibrary REQUIRED)
     
-    # Brute-force include path from vcpkg internals to bypass find_path failures
-    set(SPOUT_INC "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include/spout2")
-    if (NOT EXISTS "${SPOUT_INC}")
-        set(SPOUT_INC "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include/spout")
+    # Try finding the header path natively using CMake find_path
+    find_path(SPOUT_INC NAMES Spout.h PATH_SUFFIXES spout2 spout)
+    
+    # Fallback to manual path construction if find_path fails
+    if(NOT SPOUT_INC)
+        if(DEFINED VCPKG_INSTALLED_DIR)
+            set(VCPKG_INST_ROOT "${VCPKG_INSTALLED_DIR}")
+        elseif(DEFINED _VCPKG_INSTALLED_DIR)
+            set(VCPKG_INST_ROOT "${_VCPKG_INSTALLED_DIR}")
+        elseif(DEFINED ENV{VCPKG_ROOT})
+            set(VCPKG_INST_ROOT "$ENV{VCPKG_ROOT}/installed")
+        else()
+            # If all else fails, assume standard location relative to toolchain file
+            get_filename_component(VCPKG_ROOT_DIR "${CMAKE_TOOLCHAIN_FILE}" DIRECTORY)
+            get_filename_component(VCPKG_ROOT_DIR "${VCPKG_ROOT_DIR}" DIRECTORY)
+            get_filename_component(VCPKG_ROOT_DIR "${VCPKG_ROOT_DIR}" DIRECTORY)
+            set(VCPKG_INST_ROOT "${VCPKG_ROOT_DIR}/installed")
+        endif()
+        
+        # Build the final include path using the target triplet
+        set(SPOUT_INC "${VCPKG_INST_ROOT}/${VCPKG_TARGET_TRIPLET}/include/spout2")
+        if (NOT EXISTS "${SPOUT_INC}")
+            set(SPOUT_INC "${VCPKG_INST_ROOT}/${VCPKG_TARGET_TRIPLET}/include/spout")
+        endif()
+        if (NOT EXISTS "${SPOUT_INC}")
+            set(SPOUT_INC "${VCPKG_INST_ROOT}/${VCPKG_TARGET_TRIPLET}/include")
+        endif()
     endif()
-    if (NOT EXISTS "${SPOUT_INC}")
-        set(SPOUT_INC "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include")
-    endif()
+    
+    message(STATUS "Found Spout include path: ${SPOUT_INC}")
+    message(STATUS "Found Spout library: ${SPOUT_LIB}")
 endif()
 
 # FFmpeg: vcpkg exposes FFMPEG_INCLUDE_DIRS / FFMPEG_LIBRARY_DIRS / FFMPEG_LIBRARIES
