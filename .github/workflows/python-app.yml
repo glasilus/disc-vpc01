@@ -21,7 +21,6 @@ env:
     nlohmann-json
     glad
     stb
-    spout2
 
 jobs:
 
@@ -112,7 +111,7 @@ jobs:
           "%VCPKG_ROOT%\vcpkg.exe" install ^
             --triplet x64-windows-static-release ^
             --overlay-triplets=rt_cpp/triplets ^
-            ${{ env.VCPKG_DEPS }} || exit /b 1
+            ${{ env.VCPKG_DEPS }} spout2 || exit /b 1
 
       - name: Build DiscVPC01-RT.exe (C++)
         shell: cmd

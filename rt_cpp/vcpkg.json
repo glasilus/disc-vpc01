@@ -16,6 +16,9 @@
     "nlohmann-json",
     "glad",
     "stb",
-    "spout2"
+    {
+      "name": "spout2",
+      "platform": "windows"
+    }
   ]
 }
