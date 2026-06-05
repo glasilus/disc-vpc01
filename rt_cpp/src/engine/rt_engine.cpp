@@ -133,6 +133,8 @@ GLuint RtEngine::process_frame(float dt, EngineSettings& settings) {
     ck.tolerance = settings.ck_tolerance;
     ck.softness  = settings.ck_softness;
     ck.r = settings.ck_r; ck.g = settings.ck_g; ck.b = settings.ck_b;
+    ck.gate_fx   = settings.ck_gate_fx;
+    ck.gate_mode = settings.ck_gate_mode;
 
     // ── Apply effects ─────────────────────────────────────────────────────────
     AspectMode am = (AspectMode)settings.aspect_mode;
@@ -142,6 +144,7 @@ GLuint RtEngine::process_frame(float dt, EngineSettings& settings) {
         current_overlay_w_, current_overlay_h_, ck,
         settings.overlay_intensity,
         last_segment_,
+        last_stats_,
         settings.chaos,
         settings.master_intensity,
         elapsed_time_,

@@ -282,16 +282,44 @@ bool EffectChain::init(int w, int h) {
     prog_place_       = compile_program(k_vert, k_canvas_place_frag);
 
     // Inline dry/wet mix shader: lerp between two textures by uMix.
+    // Gated by chroma key on uDry if uGatingMode != 0.
     static const char* k_mix_frag =
         "#version 330 core\n"
         "in vec2 vUV; out vec4 fragColor;\n"
         "uniform sampler2D uWet;\n"
         "uniform sampler2D uDry;\n"
         "uniform float uMix;\n"
+        "uniform int uGatingMode;\n" // 0=none, 1=Foreground, 2=Background
+        "uniform vec3 uKeyColor;\n"
+        "uniform float uTolerance;\n"
+        "uniform float uSoftness;\n"
+        "\n"
+        "vec3 rgb2hsv(vec3 c) {\n"
+        "    vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);\n"
+        "    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));\n"
+        "    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));\n"
+        "    float d = q.x - min(q.w, q.y);\n"
+        "    float e = 1.0e-10;\n"
+        "    return vec3(abs(q.z + (q.w - q.y)/(6.0*d + e)), d/(q.x + e), q.x);\n"
+        "}\n"
+        "\n"
         "void main(){\n"
         "  vec3 w = texture(uWet, vUV).rgb;\n"
         "  vec3 d = texture(uDry, vUV).rgb;\n"
-        "  fragColor = vec4(mix(d, w, clamp(uMix,0.0,1.0)), 1.0);\n"
+        "  float blend = clamp(uMix, 0.0, 1.0);\n"
+        "  if (uGatingMode != 0) {\n"
+        "    vec3 key_hsv = rgb2hsv(uKeyColor);\n"
+        "    vec3 dry_hsv = rgb2hsv(d);\n"
+        "    float hue_diff = abs(dry_hsv.x - key_hsv.x);\n"
+        "    hue_diff = min(hue_diff, 1.0 - hue_diff);\n"
+        "    float alpha = smoothstep(uTolerance - uSoftness, uTolerance, hue_diff);\n"
+        "    if (uGatingMode == 1) {\n"
+        "      blend *= alpha;\n"
+        "    } else {\n"
+        "      blend *= (1.0 - alpha);\n"
+        "    }\n"
+        "  }\n"
+        "  fragColor = vec4(mix(d, w, blend), 1.0);\n"
         "}\n";
     prog_mix_ = compile_program(k_vert, k_mix_frag);
     prog_derivwarp_   = compile_program(k_vert, k_deriv_warp_frag);
@@ -440,6 +468,7 @@ GLuint EffectChain::apply(
     const ChromaKeyParams& chroma,
     float               overlay_alpha,
     const Segment&      seg,
+    const AudioStats&   stats,
     float               chaos,
     float               master_intensity,
     float               time_sec,
@@ -508,6 +537,7 @@ GLuint EffectChain::apply(
     GLuint h0 = history_tex(0);  // 1 frame ago
     GLuint h1 = history_tex(1);  // 2 frames ago
     GLuint h2 = history_tex(2);  // 3 frames ago
+    GLuint h3 = history_tex(3);  // 4 frames ago
 
     // ── Temporal / smear effects ──────────────────────────────────────────────
 
@@ -534,10 +564,22 @@ GLuint EffectChain::apply(
     }
 
     if (fire(FxId::TEMPORALRGB)) {
+        // Beat-reactive temporal split decay
+        static float delay_decay = 0.0f;
+        if (stats.beat) {
+            delay_decay = 1.0f;
+        } else {
+            delay_decay = std::max(0.0f, delay_decay - 0.04f); // decay over ~25 frames
+        }
+
+        // Bind older history frames on beats (h2/h3 instead of h0/h1) for stronger split
+        GLuint tex_g = (delay_decay > 0.4f) ? h2 : h0;
+        GLuint tex_r = (delay_decay > 0.4f) ? h3 : h1;
+
         pass(prog_temporalrgb_, main_fbo_.read_tex(), [&](GLuint p){
-            bind_tex(p, 1, h0, "uPrev1");
-            bind_tex(p, 2, h1, "uPrev2");
-            u1f(p,"uIntensity", fi_base);
+            bind_tex(p, 1, tex_g, "uPrev1");
+            bind_tex(p, 2, tex_r, "uPrev2");
+            u1f(p,"uIntensity", fi_base * (0.3f + delay_decay * 0.7f));
         });
     }
 
@@ -564,6 +606,7 @@ GLuint EffectChain::apply(
         pass(prog_vortex_, main_fbo_.read_tex(), [&](GLuint p){
             u1f(p,"uIntensity", fi_base);
             u1f(p,"uTime",      time_sec);
+            u1f(p,"uBass",      stats.bass);
         });
     }
 
@@ -571,6 +614,7 @@ GLuint EffectChain::apply(
         pass(prog_fractalnoise_, main_fbo_.read_tex(), [&](GLuint p){
             u1f(p,"uIntensity", fi_base);
             u1f(p,"uTime",      time_sec);
+            u1f(p,"uTreble",    stats.treble);
         });
     }
 
@@ -587,6 +631,13 @@ GLuint EffectChain::apply(
         glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, cur);        glUniform1i(glGetUniformLocation(prog_feedback_,"uTex"),  0);
         glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, prev_accum); glUniform1i(glGetUniformLocation(prog_feedback_,"uAccum"),1);
         u1f(prog_feedback_,"uIntensity", fi_base);
+        
+        // Modulate scale and rotation by bass/mid frequencies for analog video feedback
+        float scale = 0.98f + stats.bass * 0.04f;   // pulsating zoom around 1.0
+        float rot = 0.005f + stats.mid * 0.03f;     // dynamic swirl based on mid hits
+        u1f(prog_feedback_,"uFeedbackScale", scale);
+        u1f(prog_feedback_,"uFeedbackRotation", rot);
+
         glBindVertexArray(quad_vao_); glDrawArrays(GL_TRIANGLES,0,6); glBindVertexArray(0);
         accum_fbo_.swap();
 
@@ -628,6 +679,13 @@ GLuint EffectChain::apply(
         pass(prog_pixsort_, main_fbo_.read_tex(), [&](GLuint p){
             u1f(p,"uIntensity", fi_base);
             u2f(p,"uResolution",(float)W,(float)H);
+            // Dynamic sort direction based on segment type:
+            // Noise -> Horizontal, Impact/Drop -> Vertical
+            if (seg.type == SegmentType::NOISE) {
+                u2f(p,"uSortDir", 1.0f, 0.0f);
+            } else {
+                u2f(p,"uSortDir", 0.0f, 1.0f);
+            }
         });
     }
 
@@ -713,16 +771,30 @@ GLuint EffectChain::apply(
 
     // ── Master intensity blend (dry/wet) ──────────────────────────────────────
     // master_intensity = 1 → fully effected; 0 → original placed input.
-    if (master_intensity < 0.999f && prog_mix_ != 0 && dry_tex_ != 0) {
+    bool run_mix = (master_intensity < 0.999f) || (chroma.gate_fx && chroma.mode != ChromaMode::None);
+    if (run_mix && prog_mix_ != 0 && dry_tex_ != 0) {
         GLuint wet = main_fbo_.read_tex();
         glBindFramebuffer(GL_FRAMEBUFFER, main_fbo_.write_fbo());
         glViewport(0, 0, W, H);
         glUseProgram(prog_mix_);
         glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, wet);
         glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, dry_tex_);
-        glUniform1i(glGetUniformLocation(prog_mix_, "uWet"), 0);
-        glUniform1i(glGetUniformLocation(prog_mix_, "uDry"), 1);
-        glUniform1f(glGetUniformLocation(prog_mix_, "uMix"), master_intensity);
+        u1i(prog_mix_, "uWet", 0);
+        u1i(prog_mix_, "uDry", 1);
+        u1f(prog_mix_, "uMix", master_intensity);
+
+        int gating_mode = 0;
+        if (chroma.gate_fx && chroma.mode != ChromaMode::None) {
+            gating_mode = chroma.gate_mode + 1; // 1 = Foreground, 2 = Background
+        }
+        u1i(prog_mix_, "uGatingMode", gating_mode);
+
+        if (gating_mode != 0) {
+            u1f(prog_mix_, "uTolerance", chroma.tolerance / 180.f);
+            u1f(prog_mix_, "uSoftness",  chroma.softness / 180.f);
+            u3f(prog_mix_, "uKeyColor",  chroma.r / 255.f, chroma.g / 255.f, chroma.b / 255.f);
+        }
+
         glBindVertexArray(quad_vao_);
         glDrawArrays(GL_TRIANGLES, 0, 6);
         glBindVertexArray(0);

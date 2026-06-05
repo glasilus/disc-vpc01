@@ -2,8 +2,10 @@
 #include <glad/glad.h>
 #include <string>
 #include <functional>
+#include "../audio/audio_stats.h"
 #include "../audio/segment.h"
 #include "../video/overlay_manager.h"
+
 
 // Maps exactly to rt_blank.json fx_state keys (minus fx_datamosh, plus new effects)
 enum class FxId {
@@ -82,6 +84,7 @@ public:
         const ChromaKeyParams& chroma,
         float               overlay_alpha,
         const Segment&      seg,
+        const AudioStats&   stats,
         float               chaos,
         float               master_intensity,
         float               time_sec,

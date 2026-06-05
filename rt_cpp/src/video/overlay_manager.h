@@ -18,6 +18,8 @@ struct ChromaKeyParams {
     float      tolerance = 30.f;   // hue tolerance in degrees
     float      softness  = 5.f;
     float      r = 0.f, g = 255.f, b = 0.f;  // manual color
+    bool       gate_fx   = false;
+    int        gate_mode = 0;
 };
 
 class OverlayManager {

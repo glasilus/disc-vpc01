@@ -20,6 +20,8 @@ struct EngineSettings {
     float ck_softness       = 5.f;
     float ck_r = 0.f, ck_g = 255.f, ck_b = 0.f;
     int   ck_mode           = 0;   // 0=none 1=dominant 2=secondary 3=manual
+    bool  ck_gate_fx        = false;
+    int   ck_gate_mode      = 0;   // 0=foreground, 1=background
     int   aspect_mode       = 1;   // AspectMode: 0=Contain 1=Cover 2=Stretch 3=Native
     EffectParams fx[(int)FxId::COUNT];
 };

@@ -7,6 +7,7 @@ out vec4 FragColor;
 uniform sampler2D uTex;
 uniform float uIntensity;
 uniform float uTime;
+uniform float uTreble;
 
 // Value noise hash
 vec2 hash2(vec2 p) {
@@ -49,7 +50,7 @@ void main() {
     // boost so even moderate intensity produces a clearly visible warp.
     // Pure r is in roughly [-1, 1]; 0.40 means up to 40 % of the canvas
     // is displaced when fully driven.
-    float strength = uIntensity * uIntensity * 0.30 + uIntensity * 0.15;
+    float strength = (uIntensity * uIntensity * 0.30 + uIntensity * 0.15) * (1.0 + uTreble * 1.5);
     vec2  disp     = r * strength;
 
     // Slight chromatic split on the warp amplifies the "melting" feel

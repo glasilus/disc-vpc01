@@ -7,12 +7,13 @@ out vec4 FragColor;
 uniform sampler2D uTex;
 uniform float uIntensity;
 uniform float uTime;
+uniform float uBass;
 
 void main() {
     vec2  p    = vUV - 0.5;
     float r    = length(p);
     float falloff = exp(-r * r * (4.0 - uIntensity * 3.5)); // gaussian falloff from center
-    float angle   = uIntensity * 8.0 * falloff;
+    float angle   = (uIntensity + uBass * 0.8) * 8.0 * falloff;
 
     // Add time-based oscillation for pulsating vortex
     angle += sin(uTime * 3.0) * uIntensity * 1.5 * falloff;

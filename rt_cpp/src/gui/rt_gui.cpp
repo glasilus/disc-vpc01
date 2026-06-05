@@ -499,6 +499,11 @@ void RtGui::draw_overlay_panel(EngineSettings& s) {
         if (s.ck_mode == 3) {
             ImGui::ColorEdit3("Key Color", &s.ck_r);
         }
+        ImGui::Checkbox("Chroma Key Gated FX", &s.ck_gate_fx);
+        if (s.ck_gate_fx) {
+            static const char* gate_modes[] = {"Foreground (Keep BG clean)", "Background (Keep FG clean)"};
+            ImGui::Combo("Gating Mode", &s.ck_gate_mode, gate_modes, 2);
+        }
     }
 }
 

@@ -62,6 +62,8 @@ bool PresetManager::load(const std::string& path, EngineSettings& out) {
     if (j.contains("ck_r"))         out.ck_r         = j["ck_r"].get<float>();
     if (j.contains("ck_g"))         out.ck_g         = j["ck_g"].get<float>();
     if (j.contains("ck_b"))         out.ck_b         = j["ck_b"].get<float>();
+    if (j.contains("ck_gate_fx"))   out.ck_gate_fx   = j["ck_gate_fx"].get<bool>();
+    if (j.contains("ck_gate_mode")) out.ck_gate_mode = j["ck_gate_mode"].get<int>();
 
     if (j.contains("fx_state")) {
         auto& fx = j["fx_state"];
@@ -92,6 +94,8 @@ bool PresetManager::save(const std::string& path, const EngineSettings& s) {
     j["ck_r"]             = s.ck_r;
     j["ck_g"]             = s.ck_g;
     j["ck_b"]             = s.ck_b;
+    j["ck_gate_fx"]       = s.ck_gate_fx;
+    j["ck_gate_mode"]     = s.ck_gate_mode;
 
     json fx;
     for (int i = 0; i < (int)FxId::COUNT; ++i)
