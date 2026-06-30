@@ -119,11 +119,16 @@ jobs:
           if not exist dist mkdir dist
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VS_PATH=%%i
           call "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          rem vcvars64 on the VS 2026 image overrides VCPKG_ROOT with the
+          rem VS-bundled vcpkg (a path containing spaces). Re-pin it to the
+          rem vcpkg we bootstrapped, via the space-free, un-clobbered
+          rem GITHUB_WORKSPACE, and quote every path argument.
+          set "VCPKG_ROOT=%GITHUB_WORKSPACE%\vcpkg"
           cmake -S rt_cpp -B rt_cpp\build ^
             -DCMAKE_BUILD_TYPE=Release ^
-            -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake ^
+            -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" ^
             -DVCPKG_TARGET_TRIPLET=x64-windows-static-release ^
-            -DVCPKG_OVERLAY_TRIPLETS=%GITHUB_WORKSPACE%\rt_cpp\triplets ^
+            -DVCPKG_OVERLAY_TRIPLETS="%GITHUB_WORKSPACE%\rt_cpp\triplets" ^
             -DVCPKG_MANIFEST_MODE=OFF ^
             -G Ninja ^
             -DCMAKE_C_COMPILER=cl.exe ^

@@ -21,18 +21,19 @@
     - [3.3 Audio Analysis Engine](#33-audio-analysis-engine)
     - [3.4 Cut Logic](#34-cut-logic)
     - [3.4a Anatomy of an Effect Block](#34a-anatomy-of-an-effect-block)
-    - [3.5 Effects — Core](#35-effects--core)
-    - [3.6 Effects — Glitch](#36-effects--glitch)
-    - [3.7 Effects — Complex](#37-effects--complex)
-    - [3.8 Effects — Degradation](#38-effects--degradation)
-    - [3.8a Effects — Broken](#38a-effects--broken)
-    - [3.8b Effects — Virus](#38b-effects--virus)
+    - [3.4b Navigation Bar](#34b-navigation-bar)
+    - [3.5 Effects — Source Feed](#35-effects--source-feed)
+    - [3.6 Effects — Raster Fault](#36-effects--raster-fault)
+    - [3.7 Effects — Feedback Bus](#37-effects--feedback-bus)
+    - [3.8 Effects — Tape Rot](#38-effects--tape-rot)
+    - [3.8a Effects — Codec Rot](#38a-effects--codec-rot)
+    - [3.8b Effects — Malware](#38b-effects--malware)
     - [3.8c Effects — Paint Canvas](#38c-effects--paint-canvas)
     - [3.9 Effects — Overlays and Chroma Key](#39-effects--overlays-and-chroma-key)
     - [Chroma Key (Green Screen)](#chroma-key-green-screen)
-    - [3.10 Effects — Signal Domain](#310-effects--signal-domain)
+    - [3.10 Effects — DSP Kernel](#310-effects--dsp-kernel)
     - [3.10b Hide Color-Altering Effects](#310b-hide-color-altering-effects)
-    - [3.10c Effects — Warp](#310c-effects--warp)
+    - [3.10c Effects — Geometry Fault](#310c-effects--geometry-fault)
     - [3.10d FORMULA Tab](#310d-formula-tab)
     - [3.11 Export Settings](#311-export-settings)
     - [3.12 Presets](#312-presets)
@@ -193,7 +194,7 @@ The window is divided into three vertical panels:
 | **Center** | Tabs: EFFECTS / EXPORT / FORMULA / MYSTERY |
 | **Right** | Live preview monitor, progress bar, status log |
 
-The **EFFECTS** tab also has a **Hide color-altering effects** checkbox at the top — see §3.10b.
+The **EFFECTS** tab opens with a navigation bar (search, filters, jump-to-group, collapse/expand) above the effect list — see §3.4b. The status log has **Copy** (copies the whole log to the clipboard) and **Clear** buttons in its top strip.
 
 ### 3.2 Loading Source Files
 
@@ -335,7 +336,26 @@ This is per-effect: turning `always` on for *Scanlines* does not affect any othe
 
 ---
 
-### 3.5 Effects — Core
+### 3.4b Navigation Bar
+
+With 50+ effects spread across a dozen accordion groups, scrolling to find one gets old fast. A sticky navigation bar sits at the top of the **EFFECTS** tab, above the effect list, so it stays in reach no matter how far down you scroll. It is purely a *view* control — nothing it does changes a single effect setting, so it can never affect what a preset saves.
+
+**Row 1 — search and filters:**
+
+- **Search** — type to filter the whole list at once. It matches "like a search engine": each word you type must appear somewhere in an effect's **name OR its description** (the same text you see in the `[?]` tooltip). So `rgb` finds *RGB Shift*; `tape` finds anything whose description mentions tape; `left chroma` requires both words to match. Groups that contain a hit auto-expand; everything else is hidden until you clear the box. Press `Esc` or click `✕` to reset.
+- **Active only** — show only the effects that are currently enabled. A fast way to review "what's actually on" without scrolling past everything that's off. It updates live as you toggle effects, and changes no settings.
+- **Hide color-altering effects** — the colour-preservation toggle described in §3.10b.
+
+**Row 2 — jump and fold:**
+
+- **⤓ Jump to group ▾** — a dropdown listing every group; pick one to scroll straight to it and expand it. The groups are ordered as a loose signal chain, and share a vocabulary where **Fault** marks sudden-glitch families and **Rot** marks gradual-decay ones.
+- **⊟ Collapse all / ⊞ Expand all** — one toggle to fold every group shut (tames the long scroll) and to open them all again.
+
+Every control has a hover tooltip in English and Russian.
+
+---
+
+### 3.5 Effects — Source Feed
 
 These are the most-used visual treatments — flashes, stutters, ghost trails, pixel-sort, datamosh, ASCII. Each one has an on/off switch and, where it makes sense, a **chance** slider — that's just "how often should this fire when a suitable moment comes up." `0.0` = never. `1.0` = every time.
 
@@ -430,7 +450,7 @@ Converts the frame to ASCII art rendered back as an image. Each character repres
 
 ---
 
-### 3.6 Effects — Glitch
+### 3.6 Effects — Raster Fault
 
 These effects simulate signal degradation, codec artefacts, and transmission errors.
 
@@ -447,7 +467,7 @@ Each effect has a **Chance** slider controlling the probability of firing on an 
 
 ---
 
-### 3.7 Effects — Complex
+### 3.7 Effects — Feedback Bus
 
 These effects involve multi-frame state or more computationally involved transforms.
 
@@ -491,9 +511,9 @@ Chains several glitch effects in sequence on a single frame, compounding their r
 
 ---
 
-### 3.8 Effects — Degradation
+### 3.8 Effects — Tape Rot
 
-Degradation effects simulate worn or low-quality recording/playback media.
+Tape Rot effects simulate worn or low-quality recording/playback media.
 
 | Effect | Trigger | Description |
 |---|---|---|
@@ -517,9 +537,9 @@ Each effect has a **Chance** slider.
 
 ---
 
-### 3.8a Effects — Broken
+### 3.8a Effects — Codec Rot
 
-The **BROKEN** group is for "the picture is wrong" effects — they look like the video file or the decoder is failing, rather than like decorative glitch art. Different from the GLITCH group: those decorate, these damage.
+The **CODEC ROT** group is for "the picture is wrong" effects — they look like the video file or the decoder is failing, rather than like decorative glitch art. Different from the **RASTER FAULT** group: those decorate, these damage.
 
 ---
 
@@ -573,9 +593,9 @@ Pseudo-MPEG with lost motion vectors. ~10–30 % of the frame's 16×16 macrobloc
 
 ---
 
-### 3.8b Effects — Virus
+### 3.8b Effects — Malware
 
-The **VIRUS** group is the Win95-malware-aesthetic shelf — effects that look like a 90s machine under attack rather than a video glitch. Two effects so far.
+The **MALWARE** group is the Win95-malware-aesthetic shelf — effects that look like a 90s machine under attack rather than a video glitch. Two effects so far.
 
 ---
 
@@ -680,9 +700,9 @@ Removes a background colour from each overlay image before compositing, making t
 
 ---
 
-### 3.10 Effects — Signal Domain
+### 3.10 Effects — DSP Kernel
 
-The **SIGNAL DOMAIN** group is the experimental shelf — these are stranger, more abstract effects. They take ideas from audio processing, file compression, and even cellular automata, and apply them to pixels in ways those processes weren't really meant for. Results range from subtle to completely image-destroying. If you want to know exactly *why* each one looks the way it does, the descriptions below explain the underlying technique; if you just want a new look, flip them on and try.
+The **DSP KERNEL** group is the experimental shelf — these are stranger, more abstract effects. They take ideas from audio processing, file compression, and even cellular automata, and apply them to pixels in ways those processes weren't really meant for. Results range from subtle to completely image-destroying. If you want to know exactly *why* each one looks the way it does, the descriptions below explain the underlying technique; if you just want a new look, flip them on and try.
 
 All effects in this group are triggered by audio segment type and intensity, same as all other effects. Each has an enable checkbox, a Chance slider, and one or two parameter sliders.
 
@@ -777,13 +797,14 @@ Constructs a decaying impulse response (a series of diminishing echoes at fixed 
 
 ### 3.10b Hide Color-Altering Effects
 
-The **EFFECTS** tab has a top-bar checkbox: **Hide color-altering effects**. When ticked, it does three things at once:
+The **EFFECTS** tab has a checkbox in the navigation bar (§3.4b): **Hide color-altering effects**. When ticked, it does four things at once:
 
 1. Force-disables the listed effects (their checkboxes go off).
 2. Hides their accordion blocks entirely so they can't be re-enabled by accident while the toggle is on.
 3. If `Silence Treatment` was set to `Dim`, switches it to `None` and hides the `Dim` radio button.
+4. Locks `ASCII Filter`'s colour-mode dropdown to `original` only — its `fixed` and `inverted` modes recolour the frame, so they're removed from the dropdown while the toggle is on.
 
-When you uncheck it, the previous state of every affected effect — including the `Dim` choice if it was active — is restored from a snapshot taken at the moment you ticked it. So you can flip back and forth without losing your settings.
+When you uncheck it, the previous state of every affected effect — including the `Dim` choice and the ASCII colour mode if they were active — is restored from a snapshot taken at the moment you ticked it. So you can flip back and forth without losing your settings.
 
 Effects classified as "color-altering" — every effect whose **primary action is to change the palette** and that has no built-in mode to preserve source colours. The list is grouped by *how* the colour is changed:
 
@@ -797,7 +818,7 @@ Effects intentionally **NOT** in the list — either their primary action isn't 
 
 - **Has a palette-preserving mode** (you decide via the effect's own controls): `ASCII Filter` (`original` colour mode samples source pixels).
 - **Primary action is texture / noise / motion, not colour** — even though minor colour drift can occur: `VHS Tape (composite)` (chroma blur + grain), `Histogram Lag` (palette borrowing is subtle at low values), `Bit Flip` (data corruption first, colour shifts are an artefact), `JPEG Crush` (block artefacts first, hue drift is incidental).
-- **Pure geometric** — palette is preserved: `Pixel Sort`, `Pixel Drift`, `Phase Shift`, `Mosaic Pulse`, `Zoom Glitch`, `Fisheye / Barrel`, all `Warp` effects, `VSync Roll`, `Wrong Motion Vector`.
+- **Pure geometric** — palette is preserved: `Pixel Sort`, `Pixel Drift`, `Phase Shift`, `Mosaic Pulse`, `Zoom Glitch`, `Fisheye / Barrel`, all `Geometry Fault` effects, `VSync Roll`, `Wrong Motion Vector`.
 - **Frame-blending** — averages source colours, doesn't introduce new ones: `Ghost Trails`, `Datamosh`, `Freeze + Corrupt`, `P-Frame Lag`, `Self Cannibalize`, `Interlace`, `Feedback Loop`.
 - **Subtle modulation / small area**: `Scan Lines`, `Sharpen`, `Resonant Rows`, `Game of Life Mask`, `VHS Tracking`, `Block Glitch`, `Cursor Storm`, `Stutter`.
 - **User-controlled content**: `Overlays`, `Formula`.
@@ -806,9 +827,9 @@ Use this when the source video's original colour grading matters (footage from a
 
 ---
 
-### 3.10c Effects — Warp
+### 3.10c Effects — Geometry Fault
 
-The **WARP** group bends pixels through displacement maps. Where Glitch and Degradation effects work locally (per-pixel or per-row), Warp effects move whole regions of the image around — they're closer to optical flow than to corruption. Subtle at low intensity, image-destroying at high.
+The **GEOMETRY FAULT** group bends pixels through displacement maps. Where Raster Fault and Tape Rot effects work locally (per-pixel or per-row), Geometry Fault effects move whole regions of the image around — they're closer to optical flow than to corruption. Subtle at low intensity, image-destroying at high.
 
 All four effects in this group support `always`-on for permanent baseline warping.
 
@@ -1213,11 +1234,11 @@ Select the desired device before starting. The **↺** button refreshes the devi
 
 **Changing the device while running:** Select a new device from the dropdown while the engine is active. The audio stream switches immediately and recalibration begins automatically.
 
-**📁 Video** — load one or more video files to be played and processed. Supported formats: `.mp4`, `.avi`, `.mov`, `.mkv`, `.flv`, `.wmv`, `.mpg`, `.mpeg`. Hold `Ctrl` or `Shift` to select multiple files at once.
+**Video** — load one or more video files to be played and processed. Supported formats: `.mp4`, `.avi`, `.mov`, `.mkv`, `.flv`, `.wmv`, `.mpg`, `.mpeg`. Hold `Ctrl` or `Shift` to select multiple files at once.
 
 When multiple files are loaded, the engine keeps a separate sequential reader for each. Random cuts (triggered by audio events) jump to a random frame from a randomly selected source. Sequential playback stays within the current source until its end, then continues from the next source on the following call. Pre-caching runs on all sources in parallel on startup. The label shows `N videos loaded` when more than one file is active.
 
-**📁 Overlays** — load a folder of overlay images (same formats as §3.9).
+**Overlays** — load a folder of overlay images (same formats as §3.9).
 
 ---
 

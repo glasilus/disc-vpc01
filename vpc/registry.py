@@ -139,6 +139,30 @@ GROUP_ORDER: List[str] = [
 ]
 
 
+# Display labels for the effect groups. The internal group keys (above and on
+# every EffectSpec.group) stay constant — they drive grouping logic, the
+# accordion's hidden-group filter, and the navbar's jump targets — while these
+# strings are what the GUI actually shows. Presets never reference groups
+# (they key on fx_* enable keys), so renaming here is fully preset-safe.
+#
+# The names read left-to-right as a corrupting signal chain:
+#   SOURCE FEED → RASTER FAULT → TAPE ROT → FEEDBACK BUS → DSP KERNEL →
+#   GEOMETRY FAULT → CODEC ROT → MALWARE → (PAINT) → (OVERLAYS)
+# with a shared vocabulary: FAULT = sudden glitch, ROT = gradual decay.
+# A key absent here (CUT LOGIC, OVERLAYS, FORMULA) displays under its own name.
+GROUP_DISPLAY_NAMES: dict = {
+    'CORE FX': 'SOURCE FEED',
+    'GLITCH': 'RASTER FAULT',
+    'DEGRADATION': 'TAPE ROT',
+    'COMPLEX': 'FEEDBACK BUS',
+    'SIGNAL DOMAIN': 'DSP KERNEL',
+    'WARP': 'GEOMETRY FAULT',
+    'BROKEN': 'CODEC ROT',
+    'VIRUS': 'MALWARE',
+    'PAINT': 'PAINT CANVAS FX',
+}
+
+
 # Groups that the effects accordion should NOT render (they get a dedicated tab).
 ACCORDION_HIDDEN_GROUPS = {'FORMULA'}
 

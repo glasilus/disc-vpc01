@@ -25,6 +25,7 @@ import tempfile
 import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -39,7 +40,7 @@ from vpc.render.quality import (
 )
 from vpc.render.encoders import available_specs as available_encoder_specs
 from vpc.registry import EFFECTS, GROUP_ORDER, default_cfg, bi
-from vpc.registry import ACCORDION_HIDDEN_GROUPS
+from vpc.registry import ACCORDION_HIDDEN_GROUPS, GROUP_DISPLAY_NAMES
 from vpc.mystery import MYSTERY_KNOBS, MYSTERY_ALWAYS_LABELS
 from vpc.effects.formula import compile_formula
 from vpc.paths import presets_path, temp_preview_path
@@ -278,6 +279,15 @@ class MainGUI(tk.Tk):
         self.style.configure('W95.TButton', background=C_SILVER, foreground=C_TEXT,
                              relief='raised', borderwidth=2)
         self.style.map('W95.TButton',
+                       background=[('active', '#D6D6D6'), ('disabled', C_SILVER)],
+                       relief=[('pressed', 'sunken'), ('active', 'raised')])
+        # Slim variant for cramped strips (e.g. the log Copy/Clear row) —
+        # same Win95 look, minimal padding + smaller font so it doesn't
+        # hog vertical/horizontal space.
+        self.style.configure('W95Thin.TButton', background=C_SILVER,
+                             foreground=C_TEXT, relief='raised', borderwidth=1,
+                             padding=(2, 0), font=('MS Sans Serif', 8))
+        self.style.map('W95Thin.TButton',
                        background=[('active', '#D6D6D6'), ('disabled', C_SILVER)],
                        relief=[('pressed', 'sunken'), ('active', 'raised')])
         self.style.configure('Draft.TButton', background=C_BLUE_LIGHT, foreground=C_TEXT,
@@ -586,8 +596,16 @@ class MainGUI(tk.Tk):
         cp.pack(fill='both', expand=True, padx=8, pady=(2, 6))
         log_top = tk.Frame(cp, bg=C_SILVER)
         log_top.pack(fill='x', padx=4, pady=(2, 0))
-        ttk.Button(log_top, text='Clear', style='W95.TButton',
-                   width=7, command=self._clear_log).pack(side='right')
+        clr_btn = ttk.Button(log_top, text='Clear', style='W95Thin.TButton',
+                             width=6, command=self._clear_log)
+        clr_btn.pack(side='right')
+        copy_btn = ttk.Button(log_top, text='Copy', style='W95Thin.TButton',
+                              width=6, command=self._copy_log)
+        copy_btn.pack(side='right', padx=(0, 4))
+        Tooltip(copy_btn,
+                'Copy the entire log to the clipboard.\n──\n'
+                'Скопировать весь лог в буфер обмена.')
+        Tooltip(clr_btn, 'Clear the log.\n──\nОчистить лог.')
         self.console = tk.Text(cp, height=6, font=('Courier New', 9),
                                bg=C_WHITE, fg=C_BLACK, bd=2, relief='sunken')
         self.console.pack(fill='both', expand=True, padx=4, pady=(2, 4))
@@ -860,8 +878,15 @@ class MainGUI(tk.Tk):
         bg = self._parent_bg(parent)
         f = tk.Frame(parent, bg=bg)
         f.pack(fill='x', padx=(pad, 8), pady=(0, 2))
-        ttk.Combobox(f, values=values, textvariable=self.vars[name],
-                     style='W95.TCombobox', width=14).pack(side='left')
+        cb = ttk.Combobox(f, values=values, textvariable=self.vars[name],
+                          style='W95.TCombobox', width=14)
+        cb.pack(side='left')
+        # Track by cfg key + remember the full choice list so modes like
+        # hide-color-fx can temporarily restrict the options and restore.
+        cb._sb_full_values = list(values)
+        if not hasattr(self, '_combos'):
+            self._combos = {}
+        self._combos[name] = cb
         return f
 
     # ─── conditional enable / position-preserving repack helpers ───
@@ -920,32 +945,56 @@ class MainGUI(tk.Tk):
             v.trace_add('write', _apply)
         _apply()
 
+    def _snapshot_pack_order(self, parent):
+        """Snapshot a parent's child order AND each child's original pack
+        options, so `_repack_in_order` can restore a hidden child to both
+        its original slot and its original geometry (padx/pady/anchor/side).
+        Without the options snapshot, re-packed sliders lost their indent and
+        snapped flush to the left edge.
+        """
+        children = list(parent.winfo_children())
+        parent._sb_initial_order = children
+        info = {}
+        for ch in children:
+            try:
+                pi = ch.pack_info()
+                for k in ('in', 'before', 'after'):
+                    pi.pop(k, None)
+                info[ch] = pi
+            except tk.TclError:
+                pass
+        parent._sb_pack_info = info
+
     def _repack_in_order(self, widget, order, **pack_kw):
         """Re-pack `widget` so it lands at its original position from
-        `order` (a snapshot of its parent's children taken at build).
-        Walks `order` forward from `widget`'s slot to find the next
-        currently-mapped sibling and packs `before=` it. Falls back to
-        plain pack (end) if nothing later is visible.
+        `order` (a snapshot of its parent's children taken at build) AND with
+        its original pack options (preserved in `_sb_pack_info`). Walks
+        `order` forward from `widget`'s slot to find the next currently-mapped
+        sibling and packs `before=` it. Falls back to plain pack (end) if
+        nothing later is visible. Explicit `pack_kw` overrides the snapshot.
 
         Fixes the bug where pack_forget'd widgets always reappeared at
         the bottom of their parent (passthrough cut-widgets, color-fx
         hidden effect blocks).
         """
+        parent = widget.master
+        info_map = getattr(parent, '_sb_pack_info', None)
+        opts = dict(info_map[widget]) if info_map and widget in info_map else {}
+        opts.update(pack_kw)
         try:
             idx = order.index(widget)
         except ValueError:
-            widget.pack(**pack_kw)
+            widget.pack(**opts)
             return
-        parent = widget.master
         for sibling in order[idx + 1:]:
             try:
                 if (sibling.winfo_exists() and sibling.winfo_ismapped()
                         and sibling.master is parent):
-                    widget.pack(before=sibling, **pack_kw)
+                    widget.pack(before=sibling, **opts)
                     return
             except tk.TclError:
                 continue
-        widget.pack(**pack_kw)
+        widget.pack(**opts)
 
     # ─── effects accordion (registry-driven) ───
     def _build_effects_accordion(self, parent):
@@ -954,26 +1003,23 @@ class MainGUI(tk.Tk):
         outer = tk.Frame(parent, bg=C_SILVER)
         outer.pack(fill='both', expand=True)
 
-        # Top toolbar: hide-color-effects switch lives here so it's reachable
-        # without scrolling and clearly separate from per-group accordions.
-        tools = tk.Frame(outer, bg=C_SILVER, bd=1, relief='groove')
-        tools.pack(fill='x', side='top', padx=4, pady=(4, 2))
-        cb = ttk.Checkbutton(
-            tools, text='Hide color-altering effects',
-            variable=self.var_hide_color_fx,
-            style='W95.TCheckbutton',
-            command=self._on_toggle_hide_color_fx)
-        cb.pack(side='left', padx=6, pady=4)
-        Tooltip(cb,
-                'Hides and disables effects that significantly alter the '
-                'source palette / RGB channels (Flash, RGB Shift, Color '
-                'Bleed, Negative, Posterize, Glitch Cascade, Temporal RGB, '
-                'FFT Phase, Tube Sat, Dtype Reinterpret, ELA, Spatial '
-                "Reverb) and forces silence-treatment 'dim' to 'none'. "
-                'Previous settings are restored when unchecked.\n──\n'
-                'Скрывает и выключает эффекты, заметно меняющие палитру / '
-                'RGB-каналы исходника. Состояния сохраняются и '
-                'восстанавливаются при снятии галочки.')
+        # Registries the navigation contract reads from. Initialised before
+        # any group/block is built (both _acc_group and _build_effect_block
+        # write into them).
+        self._acc_groups: dict = {}
+        self._effect_block_group: dict = {}
+        self._fx_filter_group_snapshot = None
+        # Desired filter-visibility per block, tracked independently of
+        # winfo_ismapped (which also reports False when the group is merely
+        # collapsed — two separate concerns). Blocks start packed → True.
+        self._block_visible: dict = {}
+        self._combos: dict = {}
+        self._build_search_index()
+
+        # Top navigation bar (search / filters / jump-to chips). Replaces the
+        # old single-checkbox toolbar; the Hide color-altering switch now
+        # lives inside it.
+        self._build_effects_navbar(outer)
 
         canvas = tk.Canvas(outer, bg=C_SILVER, highlightthickness=0)
         vsb = ttk.Scrollbar(outer, orient='vertical', command=canvas.yview)
@@ -1034,6 +1080,10 @@ class MainGUI(tk.Tk):
         canvas.bind('<Enter>', lambda e: canvas.bind_all('<MouseWheel>', _wheel))
         canvas.bind('<Leave>', lambda e: canvas.unbind_all('<MouseWheel>'))
 
+        # Canvas refs the navigation contract uses for scroll_to_group.
+        self._effects_canvas = canvas
+        self._effects_cf = cf
+
         # Track per-effect block frames so the color-fx hide toggle can
         # pack_forget / pack them again without rebuilding the whole tree.
         self._effect_block_frames: dict = {}
@@ -1053,19 +1103,21 @@ class MainGUI(tk.Tk):
             if not specs:
                 continue
             opened = group_name in ('CORE FX', 'PAINT')
+            title = GROUP_DISPLAY_NAMES.get(group_name, group_name)
             if group_name == 'PAINT':
-                body = self._acc_group(cf, 'PAINT CANVAS FX', open=opened, bg_color='#008080', fg_color='#FFFFFF')
+                body = self._acc_group(cf, title, open=opened, bg_color='#008080', fg_color='#FFFFFF')
             else:
-                body = self._acc_group(cf, group_name, open=opened)
+                body = self._acc_group(cf, title, open=opened)
             for s in specs:
                 blk = self._build_effect_block(body, s)
                 self._effect_block_frames[s.enable_key] = blk
+                self._effect_block_group[s.enable_key] = title
             if group_name == 'OVERLAYS':
                 self._build_overlay_dir_picker(body)
-            # Snapshot child order so passthrough/color-fx restoration
-            # re-packs hidden blocks back into their original slots
-            # instead of dumping them at the end of the body.
-            body._sb_initial_order = list(body.winfo_children())
+            # Snapshot child order + pack options so passthrough/color-fx
+            # restoration re-packs hidden blocks back into their original
+            # slots (and geometry) instead of dumping them at the end.
+            self._snapshot_pack_order(body)
 
         # Apply current hide-color-fx state to freshly built blocks.
         if self.var_hide_color_fx.get():
@@ -1076,12 +1128,273 @@ class MainGUI(tk.Tk):
         if self.vars.get('passthrough_mode') and self.vars['passthrough_mode'].get():
             self._apply_passthrough_hide(active=True, take_snapshot=False)
 
+        # Settle visibility through the single source of truth so any active
+        # search / active-only filter is reflected on a fresh rebuild.
+        self._recompute_block_visibility()
+
+    # ─── navigation: search index, navbar, contract, visibility ───
+    def _build_search_index(self):
+        """Build a lower-cased haystack per effect for the unified search.
+
+        Indexes the effect's display name, its tooltip, and every parameter
+        label + tooltip — so a query matches "as in Google" across name AND
+        descriptions, not just the title.
+        """
+        self._search_index: dict = {}
+        for spec in EFFECTS:
+            parts = [spec.label, spec.tooltip]
+            for p in spec.params:
+                parts.append(getattr(p, 'label', ''))
+                parts.append(getattr(p, 'tooltip', ''))
+            self._search_index[spec.enable_key] = ' '.join(
+                str(x) for x in parts if x).lower()
+
+    def _build_effects_navbar(self, parent):
+        """Sticky navigation bar over the effects accordion.
+
+        Pure view controller: it owns its tk Variables and drives the
+        accordion exclusively through the navigation contract
+        (_recompute_block_visibility / expand_all_groups / scroll_to_group).
+        It never touches effect cfg vars, so it cannot affect what a preset
+        serialises.
+        """
+        bar = tk.Frame(parent, bg=C_SILVER, bd=1, relief='groove')
+        bar.pack(fill='x', side='top', padx=4, pady=(4, 2))
+
+        # Row 1 — search box + filter toggles + collapse/expand.
+        row1 = tk.Frame(bar, bg=C_SILVER)
+        row1.pack(fill='x', padx=4, pady=(4, 2))
+
+        srch = tk.Label(row1, text='🔍', bg=C_SILVER, fg=C_TEXT,
+                        font=('MS Sans Serif', 9))
+        srch.pack(side='left', padx=(2, 2))
+        self.var_fx_search = tk.StringVar(value='')
+        ent = ttk.Entry(row1, textvariable=self.var_fx_search, width=22)
+        ent.pack(side='left', padx=(0, 2))
+        self.var_fx_search.trace_add(
+            'write', lambda *_: self._recompute_block_visibility())
+        # Esc clears the query (mirrors the ✕ button) — a familiar reset.
+        ent.bind('<Escape>', lambda e: self.var_fx_search.set(''))
+        clr = tk.Button(row1, text='✕', bg=C_SILVER, fg=C_TEXT,
+                        relief='raised', bd=1, padx=2, pady=0,
+                        font=('MS Sans Serif', 8),
+                        command=lambda: self.var_fx_search.set(''))
+        clr.pack(side='left', padx=(0, 8))
+        Tooltip(ent,
+                'Search effects by name OR description. Multiple words must '
+                'all match (AND), like a search engine. Matching groups '
+                'auto-expand; clear to restore.\n──\n'
+                'Поиск эффектов по названию ИЛИ описанию. Несколько слов '
+                'должны совпасть все (И), как в поисковике. Группы с '
+                'совпадениями авто-раскрываются; очистите для возврата.')
+        Tooltip(clr, 'Clear search\n──\nОчистить поиск')
+
+        self.var_fx_active_only = tk.BooleanVar(value=False)
+        ao = ttk.Checkbutton(row1, text='Active only',
+                             variable=self.var_fx_active_only,
+                             style='W95.TCheckbutton')
+        ao.pack(side='left', padx=6)
+        # trace (not command=) so programmatic changes also recompute.
+        self.var_fx_active_only.trace_add(
+            'write', lambda *_: self._recompute_block_visibility())
+        Tooltip(ao,
+                'Show only effects that are currently enabled — a quick '
+                'overview of what is on. Does not change any setting.\n──\n'
+                'Показывать только включённые сейчас эффекты — быстрый обзор '
+                'того, что активно. Никакие настройки не меняются.')
+
+        cb = ttk.Checkbutton(
+            row1, text='Hide color-altering effects',
+            variable=self.var_hide_color_fx,
+            style='W95.TCheckbutton',
+            command=self._on_toggle_hide_color_fx)
+        cb.pack(side='left', padx=6)
+        Tooltip(cb,
+                'Hides and disables effects that significantly alter the '
+                'source palette / RGB channels (Flash, RGB Shift, Color '
+                'Bleed, Negative, Posterize, Glitch Cascade, Temporal RGB, '
+                'FFT Phase, Tube Sat, Dtype Reinterpret, ELA, Spatial '
+                "Reverb) and forces silence-treatment 'dim' to 'none'. "
+                'Previous settings are restored when unchecked.\n──\n'
+                'Скрывает и выключает эффекты, заметно меняющие палитру / '
+                'RGB-каналы исходника. Состояния сохраняются и '
+                'восстанавливаются при снятии галочки.')
+
+        # Row 2 — compact "jump to group" dropdown + collapse/expand toggle.
+        # A flat row of chips would overflow the panel once enough groups
+        # exist, so a single menubutton lists every group and scales without
+        # eating width. The collapse toggle lives here too, on the same level.
+        row2 = tk.Frame(bar, bg=C_SILVER)
+        row2.pack(fill='x', padx=4, pady=(0, 4))
+
+        self.var_fx_all_collapsed = tk.BooleanVar(value=False)
+        collapse_btn = tk.Button(
+            row2, text='⊟ Collapse all', bg=C_SILVER, fg=C_TEXT,
+            relief='raised', bd=2, padx=6, pady=0,
+            font=('MS Sans Serif', 8),
+            cursor='hand2')
+
+        def _toggle_all():
+            if self.var_fx_all_collapsed.get():
+                self.expand_all_groups()
+                self.var_fx_all_collapsed.set(False)
+                collapse_btn.configure(text='⊟ Collapse all')
+            else:
+                self.collapse_all_groups()
+                self.var_fx_all_collapsed.set(True)
+                collapse_btn.configure(text='⊞ Expand all')
+        collapse_btn.configure(command=_toggle_all)
+        collapse_btn.pack(side='right', padx=4, pady=2)
+        Tooltip(collapse_btn,
+                'Collapse every group at once, then expand them all again — '
+                'tames the long scroll.\n──\n'
+                'Свернуть все группы сразу, затем снова развернуть — '
+                'укрощает длинную простыню.')
+
+        by_group = {}
+        for spec in EFFECTS:
+            by_group.setdefault(spec.group, []).append(spec)
+        chip_titles = ['CUT LOGIC']
+        for group_name in GROUP_ORDER:
+            if group_name in ACCORDION_HIDDEN_GROUPS:
+                continue
+            if not by_group.get(group_name):
+                continue
+            chip_titles.append(GROUP_DISPLAY_NAMES.get(group_name, group_name))
+
+        jump_mb = tk.Menubutton(
+            row2, text='⤓ Jump to group ▾', bg=C_SILVER, fg=C_TEXT,
+            relief='raised', bd=2, padx=6, pady=0,
+            font=('MS Sans Serif', 8), cursor='hand2')
+        jump_menu = tk.Menu(jump_mb, tearoff=0,
+                            font=('MS Sans Serif', 8),
+                            bg=C_SILVER, fg=C_TEXT,
+                            activebackground=C_TITLE_BAR,
+                            activeforeground=C_WHITE)
+        for title in chip_titles:
+            jump_menu.add_command(
+                label=title,
+                command=lambda t=title: self.scroll_to_group(t))
+        jump_mb.configure(menu=jump_menu)
+        jump_mb.pack(side='left', padx=2, pady=2)
+        Tooltip(jump_mb,
+                'Jump to and expand any effect group.\n──\n'
+                'Перейти к любой группе эффектов и раскрыть её.')
+
+    # ─── navigation contract (driven by the navbar) ───
+    def expand_group(self, title):
+        h = self._acc_groups.get(title)
+        if h is not None:
+            h.set_open(True)
+
+    def collapse_group(self, title):
+        h = self._acc_groups.get(title)
+        if h is not None:
+            h.set_open(False)
+
+    def expand_all_groups(self):
+        for h in self._acc_groups.values():
+            h.set_open(True)
+
+    def collapse_all_groups(self):
+        for h in self._acc_groups.values():
+            h.set_open(False)
+
+    def scroll_to_group(self, title):
+        h = self._acc_groups.get(title)
+        canvas = getattr(self, '_effects_canvas', None)
+        if h is None or canvas is None:
+            return
+        self.expand_group(title)
+        # Highlight the chip's target so the user sees where they landed.
+        self.update_idletasks()
+        bbox = canvas.bbox('all')
+        if not bbox:
+            return
+        total = max(1, bbox[3] - bbox[1])
+        y = max(0, h.frame.winfo_y() - bbox[1])
+        canvas.yview_moveto(min(1.0, y / total))
+
+    def _recompute_block_visibility(self):
+        """Single source of truth for which effect blocks are mapped.
+
+        Every hiding mechanism feeds into this one decision instead of each
+        calling pack_forget/repack on its own:
+
+            visible = not hidden_by_color_fx and not hidden_by_passthrough
+                      and matches_search and (not active_only or enabled)
+
+        Semantics (forcing vars off, snapshot/restore) still live in the
+        color-fx / passthrough handlers; this method owns only *view*. Because
+        it never writes cfg vars, presets stay byte-identical regardless of
+        what is filtered out.
+        """
+        if not hasattr(self, '_effect_block_frames'):
+            return
+        query = (self.var_fx_search.get().strip().lower()
+                 if hasattr(self, 'var_fx_search') else '')
+        words = query.split()
+        active_only = bool(self.var_fx_active_only.get()) if hasattr(
+            self, 'var_fx_active_only') else False
+        color_active = bool(self.var_hide_color_fx.get()) if hasattr(
+            self, 'var_hide_color_fx') else False
+        pass_var = self.vars.get('passthrough_mode')
+        pass_active = bool(pass_var.get()) if pass_var is not None else False
+        filtering = bool(words) or active_only
+
+        groups_with_visible: set = set()
+        for key, blk in self._effect_block_frames.items():
+            hidden_color = color_active and key in COLOR_EFFECT_KEYS
+            hidden_pass = pass_active and key in PASSTHROUGH_HIDDEN_KEYS
+            haystack = self._search_index.get(key, '')
+            matches = all(w in haystack for w in words)
+            enabled = bool(self.vars[key].get()) if key in self.vars else False
+            visible = (not hidden_color and not hidden_pass and matches
+                       and (not active_only or enabled))
+            # Compare against tracked desired-state, NOT winfo_ismapped — a
+            # block in a collapsed group is unmapped yet still filter-visible.
+            prev = self._block_visible.get(key, True)
+            if visible and not prev:
+                order = getattr(blk.master, '_sb_initial_order', None)
+                if order is not None:
+                    self._repack_in_order(blk, order, fill='x')
+                else:
+                    blk.pack(fill='x')
+            elif not visible and prev:
+                blk.pack_forget()
+            self._block_visible[key] = visible
+            if visible:
+                groups_with_visible.add(self._effect_block_group.get(key))
+
+        # While filtering, drive group open-state to follow matches and
+        # snapshot the user's manual state so it is restored on clear. This
+        # mirrors the snapshot/restore idiom the hide-toggles already use.
+        if filtering:
+            if self._fx_filter_group_snapshot is None:
+                self._fx_filter_group_snapshot = {
+                    t: h.is_open() for t, h in self._acc_groups.items()}
+            for title, h in self._acc_groups.items():
+                # CUT LOGIC holds no effect blocks — leave it as the user set.
+                if title == 'CUT LOGIC':
+                    continue
+                h.set_open(title in groups_with_visible, refresh=False)
+        elif self._fx_filter_group_snapshot is not None:
+            for title, was_open in self._fx_filter_group_snapshot.items():
+                h = self._acc_groups.get(title)
+                if h is not None:
+                    h.set_open(was_open, refresh=False)
+            self._fx_filter_group_snapshot = None
+
+        refresh = getattr(self, '_effects_refresh_scroll', None)
+        if refresh is not None:
+            self.after_idle(refresh)
+
     def _acc_group(self, parent, title, open=False, bg_color=None, fg_color=None):
         g = tk.Frame(parent, bg=C_SILVER, bd=1, relief='solid')
         g.pack(fill='x', padx=4, pady=2)
         default_bg = bg_color if bg_color else (C_TITLE_BAR if open else C_SILVER)
         default_fg = fg_color if fg_color else (C_WHITE if open else C_TEXT)
-        
+
         hdr = tk.Frame(g, bg=default_bg, cursor='hand2')
         hdr.pack(fill='x')
         arrow = tk.StringVar(value='▼' if open else '▶')
@@ -1097,14 +1410,21 @@ class MainGUI(tk.Tk):
         if open:
             body.pack(fill='x')
 
-        def _toggle(_e=None):
-            if body.winfo_ismapped():
-                body.pack_forget()
-                hdr.configure(bg=C_SILVER)
-                ar_l.configure(bg=C_SILVER, fg=C_TEXT)
-                t_l.configure(bg=C_SILVER, fg=C_TEXT)
-                arrow.set('▶')
-            else:
+        # Open-state is tracked explicitly, NOT read back from
+        # winfo_ismapped — the latter is stale between pack()/pack_forget()
+        # and the event loop catching up, which makes rapid programmatic
+        # toggles (filter restore → collapse_all) misfire.
+        state = {'open': bool(open)}
+
+        # `set_open` is the single primitive both the user toggle and the
+        # navigation contract (expand_group / collapse_all / scroll_to_group)
+        # drive — so programmatic and manual expansion stay byte-identical.
+        def _set_open(open_, *, refresh=True):
+            open_ = bool(open_)
+            if open_ == state['open']:
+                return
+            state['open'] = open_
+            if open_:
                 body.pack(fill='x')
                 active_bg = bg_color if bg_color else C_TITLE_BAR
                 active_fg = fg_color if fg_color else C_WHITE
@@ -1112,11 +1432,28 @@ class MainGUI(tk.Tk):
                 ar_l.configure(bg=active_bg, fg=active_fg)
                 t_l.configure(bg=active_bg, fg=active_fg)
                 arrow.set('▼')
-            refresh = getattr(self, '_effects_refresh_scroll', None)
-            if refresh is not None:
-                self.after_idle(refresh)
+            else:
+                body.pack_forget()
+                hdr.configure(bg=C_SILVER)
+                ar_l.configure(bg=C_SILVER, fg=C_TEXT)
+                t_l.configure(bg=C_SILVER, fg=C_TEXT)
+                arrow.set('▶')
+            if refresh:
+                _refresh = getattr(self, '_effects_refresh_scroll', None)
+                if _refresh is not None:
+                    self.after_idle(_refresh)
+
+        def _toggle(_e=None):
+            _set_open(not state['open'])
         for w in (hdr, ar_l, t_l):
             w.bind('<Button-1>', _toggle)
+
+        handle = SimpleNamespace(
+            name=title, frame=g, hdr=hdr, body=body,
+            arrow=arrow, arrow_label=ar_l, title_label=t_l,
+            set_open=_set_open,
+            is_open=lambda: state['open'])
+        self._acc_groups[title] = handle
         return body
 
     # ─── color-fx hide toggle ───
@@ -1153,16 +1490,14 @@ class MainGUI(tk.Tk):
                             except Exception:
                                 snap[key] = False
                 self._passthrough_snapshot = snap
+            # Force the keys off; block visibility follows via
+            # _recompute_block_visibility (single source of truth).
             for key in PASSTHROUGH_HIDDEN_KEYS:
                 if key in self.vars:
                     try:
                         self.vars[key].set(False)
                     except Exception:
                         pass
-                blk = self._effect_block_frames.get(key) if hasattr(
-                    self, '_effect_block_frames') else None
-                if blk is not None and blk.winfo_ismapped():
-                    blk.pack_forget()
             # Cut Logic widgets that have no meaning in passthrough.
             for w in getattr(self, '_passthrough_cut_widgets', []):
                 if w.winfo_ismapped():
@@ -1192,19 +1527,6 @@ class MainGUI(tk.Tk):
                             self.vars[key].set(snap[key])
                         except Exception:
                             pass
-                blk = self._effect_block_frames.get(key) if hasattr(
-                    self, '_effect_block_frames') else None
-                # Don't re-pack a block that color-fx hide is currently
-                # holding hidden — let that mode own visibility for shared
-                # keys until it's disabled.
-                shared_hidden = color_active and key in COLOR_EFFECT_KEYS
-                if (blk is not None and not blk.winfo_ismapped()
-                        and not shared_hidden):
-                    order = getattr(blk.master, '_sb_initial_order', None)
-                    if order is not None:
-                        self._repack_in_order(blk, order, fill='x')
-                    else:
-                        blk.pack(fill='x')
             # Re-pack cut-only widgets in their ORIGINAL slots, not at
             # the end. Plain `pack(fill='x')` previously dumped them
             # below every Cut Logic control because tk.pack appends.
@@ -1221,9 +1543,7 @@ class MainGUI(tk.Tk):
                 btn.state(['!disabled'])
             self._passthrough_snapshot = {}
 
-        refresh = getattr(self, '_effects_refresh_scroll', None)
-        if refresh is not None:
-            self.after_idle(refresh)
+        self._recompute_block_visibility()
 
     def _on_toggle_hide_color_fx(self):
         """Checkbox callback. Snapshots states + applies, or restores."""
@@ -1233,10 +1553,10 @@ class MainGUI(tk.Tk):
     def _apply_hide_color_fx(self, *, active: bool, take_snapshot: bool):
         """Hide+disable all color-altering effects, or restore.
 
-        On enable: snapshot current enable-state of every key in
-        COLOR_EFFECT_KEYS plus silence_mode, then force them off / 'none'
-        and pack_forget the corresponding effect blocks.
-        On disable: restore from the snapshot (if any) and re-pack.
+        Owns only the *semantics*: snapshot/restore of enable-state and
+        silence_mode, and forcing the color keys off. Block visibility is
+        delegated to `_recompute_block_visibility`, the single source of
+        truth — this method no longer packs/unpacks anything itself.
         """
         if active:
             if take_snapshot:
@@ -1248,23 +1568,25 @@ class MainGUI(tk.Tk):
                         except Exception:
                             snap[key] = False
                 snap['__silence_mode__'] = self.var_silence_mode.get()
+                if 'fx_ascii_color_mode' in self.vars:
+                    snap['__ascii_color_mode__'] = \
+                        self.vars['fx_ascii_color_mode'].get()
                 self._color_fx_snapshot = snap
 
-            # Disable + hide
+            # Disable (visibility follows via _recompute_block_visibility).
             for key in COLOR_EFFECT_KEYS:
                 if key in self.vars:
                     try:
                         self.vars[key].set(False)
                     except Exception:
                         pass
-                blk = self._effect_block_frames.get(key) if hasattr(
-                    self, '_effect_block_frames') else None
-                if blk is not None and blk.winfo_ismapped():
-                    blk.pack_forget()
             # Force silence_mode 'dim' off (other modes survive)
             if self.var_silence_mode.get() == 'dim':
                 self.var_silence_mode.set('none')
             self._sync_silence_radio_visibility()
+            # ASCII 'fixed'/'inverted' colour modes recolour the output, so
+            # lock the dropdown to 'original' only while color-fx hide is on.
+            self._lock_ascii_color_mode(True)
         else:
             # Restore
             snap = self._color_fx_snapshot or {}
@@ -1274,23 +1596,39 @@ class MainGUI(tk.Tk):
                         self.vars[key].set(snap[key])
                     except Exception:
                         pass
-                blk = self._effect_block_frames.get(key) if hasattr(
-                    self, '_effect_block_frames') else None
-                if blk is not None and not blk.winfo_ismapped():
-                    order = getattr(blk.master, '_sb_initial_order', None)
-                    if order is not None:
-                        self._repack_in_order(blk, order, fill='x')
-                    else:
-                        blk.pack(fill='x')
             prev_silence = snap.get('__silence_mode__')
             if prev_silence:
                 self.var_silence_mode.set(prev_silence)
+            # Unlock the ASCII colour dropdown and restore the user's choice.
+            self._lock_ascii_color_mode(False)
+            prev_ascii = snap.get('__ascii_color_mode__')
+            if prev_ascii and 'fx_ascii_color_mode' in self.vars:
+                self.vars['fx_ascii_color_mode'].set(prev_ascii)
             self._color_fx_snapshot = {}
             self._sync_silence_radio_visibility()
 
-        refresh = getattr(self, '_effects_refresh_scroll', None)
-        if refresh is not None:
-            self.after_idle(refresh)
+        self._recompute_block_visibility()
+
+    def _lock_ascii_color_mode(self, locked: bool):
+        """Restrict the ASCII colour-mode dropdown to 'original' (locked) or
+        restore its full choice list. 'fixed' and 'inverted' recolour the
+        frame, so they must be unavailable while Hide color-altering is on.
+        Pure UI gating — when locked it forces the value to 'original'; the
+        previous value is snapshotted/restored by the caller.
+        """
+        combo = getattr(self, '_combos', {}).get('fx_ascii_color_mode')
+        if combo is None:
+            return
+        try:
+            if locked:
+                if self.vars['fx_ascii_color_mode'].get() != 'original':
+                    self.vars['fx_ascii_color_mode'].set('original')
+                combo.configure(values=['original'])
+            else:
+                combo.configure(values=getattr(
+                    combo, '_sb_full_values', ['fixed', 'original', 'inverted']))
+        except tk.TclError:
+            pass
 
     # ─── Quality preset ↔ manual fields sync ───
     def _on_quality_preset_changed(self):
@@ -1512,10 +1850,11 @@ class MainGUI(tk.Tk):
             self._silence_radios[val] = rb
         self._sync_silence_radio_visibility()
 
-        # Snapshot the body's child order so the passthrough toggle can
-        # re-pack cut-only widgets back into their original slots via
-        # `before=` anchors, instead of dumping them at the bottom.
-        body._sb_initial_order = list(body.winfo_children())
+        # Snapshot the body's child order + pack options so the passthrough
+        # toggle can re-pack cut-only widgets back into their original slots
+        # (with their original indent) instead of dumping them flush-left at
+        # the bottom.
+        self._snapshot_pack_order(body)
 
     def _build_effect_block(self, parent, spec):
         """Build the GUI block for one EffectSpec.
@@ -1680,6 +2019,10 @@ class MainGUI(tk.Tk):
                 if _is_packed(inner):
                     inner.pack_forget()
             _refresh_scroll()
+            # Keep the "Active only" view live as effects are toggled.
+            ao = getattr(self, 'var_fx_active_only', None)
+            if ao is not None and ao.get():
+                self._recompute_block_visibility()
 
         enable_var.trace_add('write', _sync_inner)
 
@@ -3235,6 +3578,13 @@ class MainGUI(tk.Tk):
     # ─── log helpers ───
     def _clear_log(self):
         self.console.delete('1.0', tk.END)
+
+    def _copy_log(self):
+        """Copy the whole status log to the clipboard."""
+        text = self.console.get('1.0', tk.END).rstrip('\n')
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        self.log('Log copied to clipboard.')
 
     def log(self, msg):
         self.console.insert(tk.END, f'[{time.strftime("%H:%M:%S")}] > {msg}\n')
