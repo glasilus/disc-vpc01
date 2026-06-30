@@ -56,6 +56,44 @@ try:
 except Exception:
     pass
 
+
+def _wait_file_writable(path: str, timeout: float = 2.0) -> None:
+    """Poll until `path` can be opened for exclusive write, or `timeout` seconds pass.
+
+    On Windows 11, cv2.VideoCapture uses the Media Foundation (MSMF) backend
+    which releases the underlying OS file handle asynchronously via MF worker
+    threads after cap.release() is called. This means the handle can remain
+    alive for ~100-200 ms after the Python thread has exited and join()
+    returned. ffmpeg needs GENERIC_WRITE access (no read sharing) to overwrite
+    the file; while MSMF still holds it with FILE_SHARE_READ, that open fails
+    with ERROR_SHARING_VIOLATION. This function retries every 50 ms using the
+    Win32 CreateFile API with dwShareMode=0 (exclusive), which is the most
+    conservative test: if it succeeds, ffmpeg will too.
+    """
+    if sys.platform != 'win32':
+        return
+    import ctypes
+    k32 = ctypes.windll.kernel32
+    # Set restype explicitly so Python gets a signed 32-bit int back.
+    # Without this, ctypes defaults to c_int anyway, but being explicit
+    # avoids the comparison trap: INVALID_HANDLE_VALUE as c_int is -1,
+    # while ctypes.c_void_p(-1).value on 64-bit is 0xFFFFFFFFFFFFFFFF —
+    # they are not equal as Python ints even though they represent the same
+    # handle, which would make the check silently wrong.
+    k32.CreateFileW.restype = ctypes.c_long  # 32-bit signed; INVALID_HANDLE_VALUE → -1
+    GENERIC_WRITE = 0x40000000
+    FILE_SHARE_NONE = 0
+    OPEN_EXISTING = 3
+    INVALID_HANDLE_VALUE = -1
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        h = k32.CreateFileW(path, GENERIC_WRITE, FILE_SHARE_NONE,
+                            None, OPEN_EXISTING, 0, None)
+        if h != INVALID_HANDLE_VALUE:
+            k32.CloseHandle(h)
+            return
+        time.sleep(0.05)
+
 # ── Win95 colours ──
 C_SILVER = '#C0C0C0'
 C_DARK_GRAY = '#808080'
@@ -1702,6 +1740,7 @@ class MainGUI(tk.Tk):
                              command=self._open_paint_window)
             btn.pack(fill='x', padx=20, pady=4)
 
+        _sync_inner()
         return block
 
     def _open_paint_window(self):
@@ -2192,12 +2231,14 @@ class MainGUI(tk.Tk):
         if self.video_paths:
             path = self.video_paths[0]
             cap = cv2.VideoCapture(path)
-            if cap.isOpened():
-                w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-                h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+            try:
+                if cap.isOpened():
+                    w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+                    h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+                    if w > 0 and h > 0:
+                        return w / h
+            finally:
                 cap.release()
-                if w > 0 and h > 0:
-                    return w / h
         return 16.0 / 9.0
 
     def _setup_paint_canvas_trace(self):
@@ -3303,6 +3344,23 @@ class MainGUI(tk.Tk):
             btn.configure(state='disabled')
         # Cancel button is the inverse: enabled exactly during a render.
         self.btn_cancel_render.configure(state='normal', text='CANCEL RENDER')
+        # Stop any running playback before render — the render writes to
+        # temp_preview_path, and on Windows a cv2.VideoCapture in the
+        # playback loop holds the file open, causing ffmpeg to fail or
+        # cv2 to read corrupt data and segfault on the second draft.
+        if mode in ('draft', 'preview'):
+            self.stop_and_clear_playback()
+            # Windows 11 uses the Media Foundation (MSMF) backend for
+            # cv2.VideoCapture. MSMF releases the OS file handle
+            # asynchronously through MF worker threads AFTER cap.release()
+            # returns, so even after the playback thread joins, the handle
+            # can still be alive for ~100-200 ms. ffmpeg needs GENERIC_WRITE
+            # access to overwrite the file; if MSMF still holds it with
+            # FILE_SHARE_READ (no write sharing), ffmpeg gets
+            # ERROR_SHARING_VIOLATION and the render silently fails or
+            # crashes. Poll via CreateFile until the file is writable.
+            if sys.platform == 'win32' and os.path.exists(self.temp_preview_path):
+                _wait_file_writable(self.temp_preview_path)
         threading.Thread(target=self._render_thread, args=(cfg,), daemon=True).start()
 
     def cancel_render(self):
