@@ -117,15 +117,19 @@ jobs:
         shell: cmd
         run: |
           if not exist dist mkdir dist
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VS_PATH=%%i
+          call "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
           cmake -S rt_cpp -B rt_cpp\build ^
             -DCMAKE_BUILD_TYPE=Release ^
             -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake ^
             -DVCPKG_TARGET_TRIPLET=x64-windows-static-release ^
             -DVCPKG_OVERLAY_TRIPLETS=%GITHUB_WORKSPACE%\rt_cpp\triplets ^
             -DVCPKG_MANIFEST_MODE=OFF ^
-            -G "Visual Studio 17 2022" -A x64 || exit /b 1
+            -G Ninja ^
+            -DCMAKE_C_COMPILER=cl.exe ^
+            -DCMAKE_CXX_COMPILER=cl.exe || exit /b 1
           cmake --build rt_cpp\build --config Release || exit /b 1
-          copy /Y rt_cpp\build\Release\DiscVPC01-RT.exe dist\DiscVPC01-RT.exe || exit /b 1
+          copy /Y rt_cpp\build\DiscVPC01-RT.exe dist\DiscVPC01-RT.exe || exit /b 1
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
