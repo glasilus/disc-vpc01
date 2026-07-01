@@ -2573,15 +2573,22 @@ class MainGUI(tk.Tk):
     def _get_source_aspect_ratio(self):
         if self.video_paths:
             path = self.video_paths[0]
-            cap = cv2.VideoCapture(path)
-            try:
-                if cap.isOpened():
-                    w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-                    h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-                    if w > 0 and h > 0:
-                        return w / h
-            finally:
-                cap.release()
+            from vpc.render.source import is_image
+            from vpc.render.image_source import imread_unicode
+            if is_image(path):
+                img = imread_unicode(path)
+                if img is not None and img.shape[0] > 0:
+                    return img.shape[1] / img.shape[0]
+            else:
+                cap = cv2.VideoCapture(path)
+                try:
+                    if cap.isOpened():
+                        w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+                        h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+                        if w > 0 and h > 0:
+                            return w / h
+                finally:
+                    cap.release()
         return 16.0 / 9.0
 
     def _setup_paint_canvas_trace(self):
@@ -3312,9 +3319,15 @@ class MainGUI(tk.Tk):
             self._audio_dot.configure(fg=C_GREEN_DOT)
 
     def sel_video(self):
+        from vpc.render.source import IMAGE_EXTS
+        _vid = '*.mp4 *.mov *.mkv *.avi *.wmv *.flv *.mpg *.mpeg'
+        _img = ' '.join(sorted('*' + e for e in IMAGE_EXTS))
         ps = filedialog.askopenfilenames(
-            title='Select Video Source(s)',
-            filetypes=[('Video', '*.mp4 *.mov *.mkv *.avi *.wmv *.flv *.mpg *.mpeg')])
+            title='Select Source(s) — video or photo',
+            filetypes=[('Media (video + photo)', f'{_vid} {_img}'),
+                       ('Video', _vid),
+                       ('Images', _img),
+                       ('All files', '*.*')])
         if ps:
             self.video_paths = list(ps)
             n = len(self.video_paths)
@@ -3602,11 +3615,17 @@ class MainGUI(tk.Tk):
             self.log('Match FPS: no source video loaded yet.')
             return
         import cv2
-        cap = cv2.VideoCapture(self.video_paths[0])
+        from vpc.render.source import is_image
+        video_only = [p for p in self.video_paths if not is_image(p)]
+        if not video_only:
+            self.log('Match FPS: no video source loaded (photos have no FPS).')
+            return
+        src_path = video_only[0]
+        cap = cv2.VideoCapture(src_path)
         try:
             if not cap.isOpened():
                 self.log(f'Match FPS: could not open '
-                         f'{os.path.basename(self.video_paths[0])}.')
+                         f'{os.path.basename(src_path)}.')
                 return
             src_fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
         finally:

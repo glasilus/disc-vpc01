@@ -353,9 +353,24 @@ class BreakcoreEngine:
             if not video_paths:
                 self.log('ERROR: passthrough mode requires a source video.')
                 return False
-            if len(video_paths) > 1:
-                self.log(f'Passthrough: {len(video_paths)} sources loaded — '
-                         f'using only the first ({os.path.basename(video_paths[0])}).')
+            # Passthrough is 1:1 over a real video (timeline + its own audio) —
+            # a still image can provide neither. Pick the first video source and
+            # drop images from the pool for this render; a photos-only pool is a
+            # hard error.
+            from vpc.render.source import is_image
+            video_only = [p for p in video_paths if not is_image(p)]
+            if not video_only:
+                self.log('ERROR: passthrough mode requires a video source '
+                         '(a photo has no timeline or audio). Load a video or '
+                         'turn passthrough off.')
+                return False
+            dropped = len(video_paths) - len(video_only)
+            if len(video_only) > 1 or dropped:
+                msg = f'Passthrough: using only {os.path.basename(video_only[0])}'
+                if dropped:
+                    msg += f' ({dropped} image source(s) ignored)'
+                self.log(msg + '.')
+            video_paths = [video_only[0]]
             self.log('Passthrough: extracting audio from source video...')
             extracted = self._extract_audio_track(video_paths[0])
             if extracted is None:
@@ -620,13 +635,21 @@ class BreakcoreEngine:
         datamosh_total_frames = pool.vid_total_frames
         passthrough_dm_cap = None
         passthrough_dm_path = None
-        if is_final and rc.datamosh_enabled:
+        # Datamosh prebake needs a real video (it strips I-frames from a
+        # bitstream). Pick the first video in the pool — in passthrough the
+        # pool is already a single video, in normal mode this skips any photo
+        # sources that would otherwise silently degrade the prebake.
+        dm_idx = pool.first_video_index() if (is_final and rc.datamosh_enabled) else None
+        if is_final and rc.datamosh_enabled and dm_idx is None:
+            self.log('Datamosh: no video source in pool — using optical flow only.')
+        if is_final and rc.datamosh_enabled and dm_idx is not None:
+            dm_src_path = pool.paths[dm_idx]
             dm_path = output_path + '_dmosh_src.mp4'
             if os.path.exists(dm_path):
                 try: os.remove(dm_path)
                 except OSError: pass
             self.log('Preparing datamosh source (strip)...')
-            if self._prepare_datamosh_source(video_paths[0], dm_path, mode='strip'):
+            if self._prepare_datamosh_source(dm_src_path, dm_path, mode='strip'):
                 if rc.passthrough_mode:
                     cap_try = cv2.VideoCapture(dm_path)
                     if cap_try.isOpened():
