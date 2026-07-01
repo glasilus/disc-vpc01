@@ -21,7 +21,9 @@ class FeedbackLoopEffect(BaseEffect):
     def _apply(self, frame, seg, draft):
         intensity = self.scaled_intensity(seg)
         weight = intensity * 0.7
-        if seg.type == SegmentType.IMPACT:
+        live = getattr(seg, 'live', None)
+        beat_clear = self.react and live is not None and bool(getattr(live, 'beat', False))
+        if seg.type == SegmentType.IMPACT or beat_clear:
             self.accumulated = None
         if self.accumulated is None or self.accumulated.shape != frame.shape:
             self.accumulated = frame.astype(np.float32)

@@ -18,6 +18,7 @@ import cv2
 import numpy as np
 
 from vpc.analyzer import AudioAnalyzer, Segment, SegmentType
+from vpc.render.reactor import AudioReactor
 from .config import RenderConfig, RENDER_DRAFT, RENDER_FINAL
 from .source import VideoPool
 from .sink import FFmpegSink, EXPORT_FORMATS, ffmpeg_bin
@@ -86,6 +87,9 @@ class _RenderCtx:
     # events. None outside passthrough.
     event_rng_seed: Optional[int] = None
     frames_emitted: int = 0
+    # Per-frame audio reactor for visualizer effects. Sampled in
+    # `_apply_chain` and attached to seg.live each frame. None = no audio.
+    reactor: object = None
 
 
 class BreakcoreEngine:
@@ -286,6 +290,13 @@ class BreakcoreEngine:
         `_run_passthrough_loop`). Behaviour is byte-for-byte equivalent —
         same iteration order, same per-effect throttled error logging.
         """
+        # Per-frame audio sample for visualizer effects. Single-threaded,
+        # sequential render → mutating the shared seg here is safe; non-
+        # visualizer effects ignore seg.live.
+        if ctx.reactor is not None:
+            t = ctx.frames_emitted / ctx.fps if ctx.fps else 0.0
+            seg.live = (ctx.reactor.sample(t) if getattr(ctx.reactor, 'f', None) is not None
+                        else ctx.reactor.synth(seg.intensity, ctx.frames_emitted))
         for fx in ctx.effects:
             try:
                 frame = fx.apply(frame, seg, ctx.is_draft)
@@ -383,6 +394,7 @@ class BreakcoreEngine:
         segments: List[Segment] = []
         audio_duration = 0.0
         analyzer_bpm = 0.0
+        audio_features = None
         if audio_path:
             self.log('Analyzing audio...')
             analyzer = AudioAnalyzer(
@@ -395,7 +407,7 @@ class BreakcoreEngine:
                 manual_bpm=rc.manual_bpm,
                 use_manual_bpm=rc.use_manual_bpm,
             )
-            segments, audio_duration = analyzer.analyze()
+            segments, audio_duration, audio_features = analyzer.analyze()
             analyzer_bpm = analyzer.detected_bpm
             if audio_duration == 0.0 or not segments:
                 self.log('Warning: audio unreadable / no segments — output will have no effects.')
@@ -670,6 +682,7 @@ class BreakcoreEngine:
             datamosh_total_frames=datamosh_total_frames,
             passthrough_dm_cap=passthrough_dm_cap,
             event_rng_seed=event_rng_seed,
+            reactor=AudioReactor(audio_features, fps=fps),
         )
 
         try:

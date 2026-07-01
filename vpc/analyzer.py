@@ -5,10 +5,47 @@ import sys
 import warnings
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 import librosa
+
+
+N_BINS = 24
+
+
+@dataclass
+class AudioFeatures:
+    """Per-frame audio feature track, time-aligned to STFT hop frames.
+
+    Every band array is normalized to ~0..1 against its own running max so
+    visualizers get a stable dynamic range regardless of master level.
+    """
+    times: np.ndarray          # (n_frames,) seconds
+    bass: np.ndarray           # (n_frames,) 0..1
+    mid: np.ndarray            # (n_frames,) 0..1
+    high: np.ndarray           # (n_frames,) 0..1
+    onset: np.ndarray          # (n_frames,) 0..1 onset strength
+    bins: np.ndarray           # (n_frames, N_BINS) 0..1 log-spaced magnitude
+    sr: int
+    hop: int
+
+
+@dataclass
+class AudioSample:
+    """One frame's worth of smoothed, render-ready audio reactivity.
+
+    Lives here (not in the render layer) so effect modules can depend on it
+    without importing the render package — keeping the effect→render edge
+    one-directional and avoiding an import cycle.
+    """
+    bass: float
+    mid: float
+    high: float
+    onset: float
+    beat: bool
+    bins: np.ndarray   # (N_BINS,) 0..1, peak-hold smoothed
+    t: float
 
 
 @contextmanager
@@ -47,6 +84,7 @@ class Segment:
     rms: float
     flatness: float
     rms_change: float
+    live: object = None   # transient per-frame AudioSample, set at render time
 
 
 class SegmentClassifier:
@@ -258,8 +296,8 @@ class AudioAnalyzer:
                 result.append(t)
         return result
 
-    def analyze(self) -> Tuple[List[Segment], float]:
-        """Returns (segments, audio_duration).
+    def analyze(self) -> Tuple[List[Segment], float, Optional[AudioFeatures]]:
+        """Returns (segments, audio_duration, features).
 
         If the audio file is unreadable or corrupt, attempts to transcode it
         to PCM WAV via ffmpeg first.  If that also fails, returns an empty
@@ -270,7 +308,7 @@ class AudioAnalyzer:
         if y is None or len(y) == 0:
             print('[ANALYZER] Warning: audio file could not be decoded. '
                   'Running without audio analysis.')
-            return [], 0.0
+            return [], 0.0, None
 
         duration = len(y) / sr
 
@@ -335,6 +373,45 @@ class AudioAnalyzer:
 
         flat_frames = librosa.feature.spectral_flatness(
             y=y, hop_length=hop, n_fft=n_fft)[0]
+
+        # --- Per-frame band / spectrum feature track for visualizers ---
+        # Reuses the same hop / n_fft so the track is time-aligned to the
+        # features the classifier already consumes. Every array is normalized
+        # to ~0..1 against its own max for a stable visual dynamic range.
+        def _norm01(a: np.ndarray) -> np.ndarray:
+            a = np.asarray(a, dtype=np.float32)
+            m = float(a.max()) if a.size else 0.0
+            return (a / m) if m > 1e-6 else np.zeros_like(a)
+
+        S = np.abs(librosa.stft(y, n_fft=n_fft, hop_length=hop))   # (1+n_fft/2, T)
+        freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
+        n_t = S.shape[1]
+        times_track = librosa.frames_to_time(np.arange(n_t), sr=sr, hop_length=hop)
+
+        def _band(lo: float, hi: float) -> np.ndarray:
+            sel = (freqs >= lo) & (freqs < hi)
+            return S[sel].mean(axis=0) if sel.any() else np.zeros(n_t)
+
+        bass_track = _norm01(_band(0, 250))
+        mid_track = _norm01(_band(250, 2000))
+        high_track = _norm01(_band(2000, sr / 2))
+        onset_env_times = librosa.frames_to_time(
+            np.arange(len(onset_env)), sr=sr, hop_length=hop)
+        onset_track = _norm01(np.interp(times_track, onset_env_times, onset_env))
+
+        # Log-spaced magnitude bins for true equalizer bars.
+        edges = np.logspace(np.log10(20), np.log10(sr / 2), N_BINS + 1)
+        bins = np.zeros((n_t, N_BINS), dtype=np.float32)
+        for b in range(N_BINS):
+            sel = (freqs >= edges[b]) & (freqs < edges[b + 1])
+            if sel.any():
+                bins[:, b] = S[sel].mean(axis=0)
+        bins = _norm01(bins)
+
+        features = AudioFeatures(
+            times=times_track, bass=bass_track, mid=mid_track, high=high_track,
+            onset=onset_track, bins=bins, sr=sr, hop=hop,
+        )
 
         onsets = list(onsets)
 
@@ -413,4 +490,4 @@ class AudioAnalyzer:
             segments.append(seg)
             rms_history.append(rms)
 
-        return segments, duration
+        return segments, duration, features

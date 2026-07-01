@@ -1,6 +1,8 @@
 """Signal-domain effects — DSP-style operations applied to image data."""
 from __future__ import annotations
 
+import collections
+
 import cv2
 import numpy as np
 
@@ -9,6 +11,16 @@ from .base import BaseEffect, _ensure_uint8, _SCIPY_OK
 
 if _SCIPY_OK:
     from scipy.signal import butter, sosfilt, fftconvolve
+
+
+def _spectral_centroid(bins: np.ndarray) -> float:
+    """Normalized (0..1) spectral centroid of a per-frame magnitude spectrum."""
+    b = np.asarray(bins, dtype=np.float32)
+    s = float(b.sum())
+    if s <= 1e-6 or len(b) < 2:
+        return 0.0
+    idx = np.arange(len(b), dtype=np.float32)
+    return float((idx * b).sum() / s / (len(b) - 1))
 
 
 def _match_histograms(src: np.ndarray, ref: np.ndarray) -> np.ndarray:
@@ -39,6 +51,13 @@ class ResonantRowsEffect(BaseEffect):
             return frame
         intensity = self.scaled_intensity(seg)
         freq = float(np.clip(self.cutoff, 0.01, 0.45))
+        if self.react:
+            live = getattr(seg, 'live', None)
+            if live is not None:
+                # Spectral centroid → visual resonance frequency: the ringing
+                # rises and falls with the pitch of the music.
+                c = _spectral_centroid(live.bins)
+                freq = float(np.clip(0.02 + c * 0.4, 0.01, 0.45))
         low = max(0.001, freq * 0.7)
         high = min(0.499, freq * 1.3)
         try:
@@ -93,17 +112,45 @@ class FFTPhaseCorruptEffect(BaseEffect):
     def __init__(self, amount=0.5, **kw):
         super().__init__(**kw)
         self.amount = amount
+        self._ring_idx: dict = {}   # (rfft2 shape, n_bins) -> radial bin index map
+
+    def _ring_idx_map(self, shape, n_bins):
+        """Radial frequency-ring bin index for every rfft2 coefficient.
+
+        Rows use full fftfreq (-0.5..0.5); the rfft axis spans 0..0.5. The
+        normalized radius is bucketed into n_bins rings so audio bin k drives
+        the image's k-th spatial-frequency ring. Cached per (shape, n_bins)."""
+        key = (shape, n_bins)
+        cached = self._ring_idx.get(key)
+        if cached is not None:
+            return cached
+        h, wr = shape
+        fy = np.fft.fftfreq(h)[:, None]
+        fx = np.linspace(0.0, 0.5, wr)[None, :]
+        r = np.sqrt(fy ** 2 + fx ** 2)
+        idx = np.clip((r / (r.max() + 1e-9) * n_bins).astype(np.int32), 0, n_bins - 1)
+        self._ring_idx[key] = idx
+        return idx
+
+    def _phase_noise(self, shape, noise_scale, ring_bins):
+        noise = np.random.uniform(-1.0, 1.0, shape).astype(np.float32) * noise_scale
+        if ring_bins is not None:
+            noise = noise * ring_bins[self._ring_idx_map(shape, len(ring_bins))]
+        return noise
 
     def _apply(self, frame, seg, draft):
         intensity = self.scaled_intensity(seg)
         noise_scale = float(self.amount) * intensity * np.pi
+        live = getattr(seg, 'live', None)
+        ring_bins = (np.asarray(live.bins, np.float32)
+                     if (self.react and live is not None) else None)
         result = np.zeros_like(frame)
         if draft:
             small = cv2.resize(frame, (frame.shape[1] // 2, frame.shape[0] // 2))
             for c in range(3):
                 ch = small[:, :, c].astype(np.float32)
                 F = np.fft.rfft2(ch)
-                phase_noise = np.random.uniform(-noise_scale, noise_scale, F.shape)
+                phase_noise = self._phase_noise(F.shape, noise_scale, ring_bins)
                 F2 = np.abs(F) * np.exp(1j * (np.angle(F) + phase_noise))
                 rec = np.clip(np.fft.irfft2(F2, s=ch.shape), 0, 255).astype(np.uint8)
                 result[:, :, c] = cv2.resize(rec, (frame.shape[1], frame.shape[0]))
@@ -111,7 +158,7 @@ class FFTPhaseCorruptEffect(BaseEffect):
             for c in range(3):
                 ch = frame[:, :, c].astype(np.float32)
                 F = np.fft.rfft2(ch)
-                phase_noise = np.random.uniform(-noise_scale, noise_scale, F.shape)
+                phase_noise = self._phase_noise(F.shape, noise_scale, ring_bins)
                 F2 = np.abs(F) * np.exp(1j * (np.angle(F) + phase_noise))
                 result[:, :, c] = np.clip(np.fft.irfft2(F2, s=ch.shape), 0, 255).astype(np.uint8)
         return result
@@ -265,12 +312,22 @@ class SpatialReverbEffect(BaseEffect):
         super().__init__(**kw)
         self.decay = decay
         self.reflections = reflections
+        self._onset_hist: collections.deque = collections.deque(maxlen=12)
 
     def _apply(self, frame, seg, draft):
         if not _SCIPY_OK:
             return frame
         intensity = self.scaled_intensity(seg)
         decay = float(self.decay) * intensity
+        if self.react:
+            live = getattr(seg, 'live', None)
+            if live is not None:
+                # Onset density over a short rolling window drives the tail:
+                # busy percussion → high density → faster decay (tight echoes),
+                # sparse passages → low density → long tails.
+                self._onset_hist.append(float(getattr(live, 'onset', 0.0)))
+                density = float(np.mean(self._onset_hist))
+                decay = float(np.clip(self.decay * (0.4 + 1.4 * density), 0.05, 0.45))
         ir_len = min(frame.shape[1] // 3, 256)
         if ir_len < 1:
             return frame

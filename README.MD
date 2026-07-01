@@ -22,6 +22,7 @@
     - [3.4 Cut Logic](#34-cut-logic)
     - [3.4a Anatomy of an Effect Block](#34a-anatomy-of-an-effect-block)
     - [3.4b Navigation Bar](#34b-navigation-bar)
+    - [3.4c Audio-Reactive Controls](#34c-audio-reactive-controls)
     - [3.5 Effects — Source Feed](#35-effects--source-feed)
     - [3.6 Effects — Raster Fault](#36-effects--raster-fault)
     - [3.7 Effects — Feedback Bus](#37-effects--feedback-bus)
@@ -29,6 +30,7 @@
     - [3.8a Effects — Codec Rot](#38a-effects--codec-rot)
     - [3.8b Effects — Malware](#38b-effects--malware)
     - [3.8c Effects — Paint Canvas](#38c-effects--paint-canvas)
+    - [3.8d Effects — Windows Media Player](#38d-effects--windows-media-player)
     - [3.9 Effects — Overlays and Chroma Key](#39-effects--overlays-and-chroma-key)
     - [Chroma Key (Green Screen)](#chroma-key-green-screen)
     - [3.10 Effects — DSP Kernel](#310-effects--dsp-kernel)
@@ -355,6 +357,41 @@ Every control has a hover tooltip in English and Russian.
 
 ---
 
+### 3.4c Audio-Reactive Controls
+
+Most effects take their intensity from the *segment* — one loudness value for the whole slice between two cuts. A handful of effects can instead follow the music **frame by frame**, reacting to specific frequency bands or to individual beats inside a held note. These are opt-in extras: left at their defaults, every effect behaves exactly as it always has, so existing presets are untouched.
+
+Three controls show up — only on the effects that support them, as indented combos inside the effect block:
+
+**Audio Drive** *(segment / auto / bass / mid / high)* — chooses what drives the effect's intensity on every frame:
+
+- `segment` *(default)* — overall loudness of the current segment; the classic behaviour.
+- `auto` — whichever of bass / mid / high is loudest at that instant. Reacts on any track regardless of its spectral balance — the safe pick when you're unsure.
+- `bass` / `mid` / `high` — lock the effect to one band. `bass` pulses on the kick, `high` fires on hats and cymbals, `mid` rides vocals and leads.
+
+Each band is normalised to its own peak across the track, so even a bass-light song still reaches full strength at its bassiest moments — a band-driven effect is never silently dead. If a band genuinely carries no energy at all, use `auto`.
+
+Effects with Audio Drive: **RGB Shift**, **Block Glitch**, **Bad Signal**, **Bit Flip**, **Mosaic Pulse**, **Zoom Glitch**, **Feedback Loop**.
+
+**Beat Gate** *(off / beat / onset)* — restricts the effect to fire only on a beat frame *inside* a segment:
+
+- `off` *(default)* — no gating; the effect fires as usual.
+- `beat` — only on detected beats.
+- `onset` — on any transient.
+
+Because cuts already land on onsets, this only adds something for effects that would otherwise run across a whole held segment — it lets them punch on the pulse instead of smearing through it (a strobing invert, a zoom that snaps on the kick). Effects with Beat Gate: **Negative**, **Zoom Glitch**.
+
+**Audio React** *(off / on)* — a per-effect switch for effects whose *structure* changes with the sound, not just their intensity. Off keeps the plain behaviour; on wires the effect to the spectrum in a bespoke way:
+
+- **Feedback Loop** — the trail buffer clears on every beat, so echoes reset on the kick instead of only on IMPACT segments.
+- **Resonant Rows** — the visual resonance tracks the music's spectral centroid: the ringing rises and falls with the pitch of the track (a rising synth lifts the resonance).
+- **FFT Phase Corrupt** — the audio spectrum is mapped onto the frame's own frequency rings, so the picture breaks up at exactly the spatial frequencies where the music currently has energy.
+- **Spatial Reverb** — the echo tail follows onset density: busy percussion gives short, tight echoes; sparse passages open into long tails.
+
+All three are ordinary effect parameters — they carry hover tooltips in English and Russian, and presets save them like any other slider or combo.
+
+---
+
 ### 3.5 Effects — Source Feed
 
 These are the most-used visual treatments — flashes, stutters, ghost trails, pixel-sort, datamosh, ASCII. Each one has an on/off switch and, where it makes sense, a **chance** slider — that's just "how often should this fire when a suitable moment comes up." `0.0` = never. `1.0` = every time.
@@ -649,6 +686,101 @@ Applies drawing strokes as a mask for color overlays, frame delay (lag), or warp
   - `Invert` — swaps black and white colors.
   - `Load` — imports any photo and opens a popup asking whether to extract thin **Contours** (Canny edges, ideal for photos) or binarize the image into a solid **Silhouette** (Otsu threshold, ideal for logos or text graphics).
 - **Overlay Color / Цвет**: A 10-color swatch grid and a custom palette selector to define the overlay RGB values.
+
+---
+
+### 3.8d Effects — Windows Media Player
+
+The **WINDOWS MEDIA PLAYER** group is a shelf of audio-reactive visualizers in the spirit of the classic media-player visualizations — spectrum bars, oscilloscopes, and procedural abstractions that dance to the analyzed track. Each effect reads a per-frame feed of the audio spectrum (bass / mid / high bands plus a log-spaced bin array and a beat envelope), so visuals move with the music rather than pulsing as a single blob.
+
+Every visualizer shares one decisive control, **Composite Mode**, which decides how the generated visual meets the source frame:
+
+- `replace` — the visual fills the frame (full-screen visualizer).
+- `over` — the visual is blended on top of the video (**Opacity / Amount** sets the strength).
+- `warp` — the visual's brightness is used as a displacement map, so the music literally bends the source picture (**Opacity / Amount** sets the displacement strength).
+- `mask` — the visual's brightness becomes an alpha that reveals the source against black.
+
+Because of `warp` and `mask`, any view doubles as a way to drive the source material — there is no separate "warp" effect to enable. When there is no audio (or in a still preview) the visuals fall back to an intensity-driven animation so the block is never blank.
+
+---
+
+**Spectrum Bars**
+
+*Trigger: any segment type*
+
+The classic equalizer: per-band bars with peak-hold smoothing (fast attack, slow release).
+
+- **Composite Mode** — `replace` / `over` / `warp` / `mask` (see above).
+- **Opacity / Amount** *(0.0 – 1.0)* — blend strength for `over`, displacement amount for `warp`.
+- **Band Count** *(4 – 64)* — number of bars.
+- **Mirror** *(off/on)* — grow bars from the centre instead of from the bottom.
+
+---
+
+**Radial Spectrum**
+
+*Trigger: any segment type*
+
+The equalizer wrapped around a circle: each ray's length tracks a frequency band and the whole corona rotates slowly.
+
+- **Composite Mode** / **Opacity / Amount** — as above.
+- **Ray Count** *(8 – 128)* — number of radial rays.
+
+---
+
+**Oscilloscope**
+
+*Trigger: any segment type*
+
+A horizontal scope line whose amplitude follows the spectrum and scrolls in phase with time. Cleanest as an `over`-blend on top of the video.
+
+- **Composite Mode** / **Opacity / Amount** — as above.
+- **Line Thickness** *(1 – 8)* — scope line width in pixels.
+
+---
+
+**Lissajous (XY)**
+
+*Trigger: any segment type*
+
+XY oscilloscope figures: bass and high steer the two axis frequencies while time drifts the phase, drawing evolving loops — a retro lab-scope look.
+
+- **Composite Mode** / **Opacity / Amount** — as above.
+- **Frequency Ratio** *(1.0 – 8.0)* — base X:Y frequency ratio of the figure.
+
+---
+
+**Plasma Field**
+
+*Trigger: any segment type*
+
+Demoscene plasma built from summed sine fields. Bass shifts the palette, mids drive the speed, highs the brightness. In `warp` mode it ripples the source.
+
+- **Composite Mode** / **Opacity / Amount** — as above.
+- **Scale** *(0.01 – 0.15)* — spatial frequency of the plasma; higher = finer ripples.
+
+---
+
+**Beat Particles**
+
+*Trigger: any segment type*
+
+A particle system emitting from the centre: each detected beat throws a burst whose size scales with bass, then gravity pulls the particles down.
+
+- **Composite Mode** / **Opacity / Amount** — as above.
+- **Particle Count** *(16 – 512)* — maximum particles in the system.
+- **Gravity** *(0.0 – 1.5)* — downward pull applied each frame.
+
+---
+
+**Flow Field**
+
+*Trigger: any segment type*
+
+A trail buffer that advects itself along a time-varying vector field while energy is injected at the centre, coloured by the bands. Mids drive the turbulence.
+
+- **Composite Mode** / **Opacity / Amount** — as above.
+- **Flow Scale** *(0.005 – 0.08)* — spatial scale of the turbulence; higher = tighter swirls.
 
 ---
 

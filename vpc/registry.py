@@ -28,6 +28,10 @@ from .effects import (
     vhs as vhs_fx, broken as broken_fx, virus as virus_fx,
 )
 from .effects.paint import PaintCanvasEffect
+from .effects.visualizer import (
+    SpectrumBarsEffect, RadialSpectrumEffect, OscilloscopeEffect,
+    LissajousEffect, PlasmaFieldEffect, BeatParticlesEffect, FlowFieldEffect,
+)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -134,6 +138,7 @@ GROUP_ORDER: List[str] = [
     'BROKEN',            # decoder/memory-corruption family
     'VIRUS',             # Win95-virus aesthetic
     'PAINT',
+    'VISUALIZER',        # audio-reactive music visualizers (WMP-style)
     'OVERLAYS',
     'FORMULA',           # rendered as its own dedicated tab, not in the accordion
 ]
@@ -160,6 +165,7 @@ GROUP_DISPLAY_NAMES: dict = {
     'BROKEN': 'CODEC ROT',
     'VIRUS': 'MALWARE',
     'PAINT': 'PAINT CANVAS FX',
+    'VISUALIZER': 'WINDOWS MEDIA PLAYER',
 }
 
 
@@ -248,6 +254,82 @@ def _formula_extras(cfg: dict) -> dict:
         b=float(cfg.get('fx_formula_b', 0.5)),
         c=float(cfg.get('fx_formula_c', 0.5)),
         d=float(cfg.get('fx_formula_d', 0.5)),
+    )
+
+
+def _drive_param(ek: str, recommend: str = '') -> 'ParamSpec':
+    """Opt-in Audio Drive selector for an existing effect. Default 'segment'
+    reproduces today's behaviour, so it's fully preset-safe."""
+    rec_en = f' Recommended for this effect: {recommend}.' if recommend else ''
+    rec_ru = f' Рекомендуется для этого эффекта: {recommend}.' if recommend else ''
+    return ParamSpec(
+        f'{ek}_drive', 'Audio Drive', 'segment', kind='choice',
+        choices=['segment', 'auto', 'bass', 'mid', 'high'], indent=True, kwarg=None,
+        tooltip=bi(
+            'What drives this effect\'s intensity per frame: segment (overall '
+            'loudness, the default), auto (loudest of bass/mid/high — always '
+            'reacts on any track), or a specific band.' + rec_en,
+            'Что покадрово задаёт интенсивность эффекта: segment (общая громкость, '
+            'по умолчанию), auto (самая громкая из bass/mid/high — реагирует на '
+            'любом треке) или конкретная полоса.' + rec_ru))
+
+
+def _gate_param(ek: str) -> 'ParamSpec':
+    """Opt-in intra-segment Beat Gate. Default 'off' is preset-safe. Only
+    meaningful for effects that fire every frame across a held segment."""
+    return ParamSpec(
+        f'{ek}_gate', 'Beat Gate', 'off', kind='choice',
+        choices=['off', 'beat', 'onset'], indent=True, kwarg=None,
+        tooltip=bi(
+            'Fire only on a per-frame beat/onset INSIDE a segment: off (default), '
+            'beat (locked to detected beats), onset (any transient). Segment cuts '
+            'already sit on onsets, so this only adds pulses within long segments.',
+            'Срабатывать только на покадровом бите/онсете ВНУТРИ сегмента: off (по '
+            'умолчанию), beat (по детектированным битам), onset (любой транзиент). '
+            'Нарезка и так идёт по онсетам — это добавляет пульс лишь внутри длинных '
+            'сегментов.'))
+
+
+def _react_param(ek: str, what: str, what_ru: str) -> 'ParamSpec':
+    """Opt-in bespoke audio-reactivity toggle. Default 'off' is preset-safe."""
+    return ParamSpec(
+        f'{ek}_react', 'Audio React', 'off', kind='choice',
+        choices=['off', 'on'], indent=True, kwarg=None,
+        tooltip=bi(
+            f'When on, {what} Off (default) keeps the plain, non-reactive behaviour.',
+            f'Когда on, {what_ru} Off (по умолчанию) — обычное, нереактивное поведение.'))
+
+
+def _viz_mode_params(ek: str) -> List['ParamSpec']:
+    """Shared composite-mode + opacity params for every visualizer effect.
+
+    Keys are concrete per-effect (`<ek>_mode`, `<ek>_opacity`); both are
+    consumed by the effect's extra_factory (kwarg=None here), never passed
+    through the generic param→ctor path.
+    """
+    return [
+        ParamSpec(f'{ek}_mode', 'Composite Mode', 'replace', kind='choice',
+                  choices=['replace', 'over', 'warp', 'mask'], indent=True, kwarg=None,
+                  tooltip=bi(
+                      'How the visual meets the source: replace (full-screen), '
+                      'over (blend on top), warp (visual brightness displaces the source), '
+                      'mask (visual brightness reveals the source against black).',
+                      'Как визуал встречает источник: replace (на весь экран), '
+                      'over (подмешать сверху), warp (яркость визуала смещает источник), '
+                      'mask (яркость визуала проявляет источник на чёрном).')),
+        ParamSpec(f'{ek}_opacity', 'Opacity / Amount', 0.85, 0.0, 1.0, indent=True, kwarg=None,
+                  tooltip=bi(
+                      'Blend strength for over, displacement amount for warp. '
+                      'No effect in replace mode.',
+                      'Сила смешения для over, величина смещения для warp. '
+                      'В режиме replace не действует.')),
+    ]
+
+
+def _viz_extras_base(cfg: dict, ek: str) -> dict:
+    return dict(
+        mode=cfg.get(f'{ek}_mode', 'replace'),
+        opacity=float(cfg.get(f'{ek}_opacity', 0.85)),
     )
 
 
@@ -445,6 +527,7 @@ EFFECTS: List[EffectSpec] = [
         cls=glitch.RGBShiftEffect,
         enable_key='fx_rgb', enabled_default=True,
         chance_key='fx_rgb_chance', default_chance=0.7,
+        params=[_drive_param('fx_rgb', 'high')],
         note='IMPACT / BUILD / NOISE / DROP — colour fringing.',
         tooltip=bi(
             'Shifts R right and B left by an intensity-driven amount. Higher CHANCE = '
@@ -458,6 +541,7 @@ EFFECTS: List[EffectSpec] = [
         cls=glitch.BlockGlitchEffect,
         enable_key='fx_block_glitch', enabled_default=False,
         chance_key='fx_block_glitch_chance', default_chance=0.5,
+        params=[_drive_param('fx_block_glitch', 'high')],
         note='IMPACT / DROP / NOISE — random 16px blocks corrupted.',
         tooltip=bi(
             'Replaces random 16×16 blocks with pixels copied from elsewhere in the frame or '
@@ -509,6 +593,7 @@ EFFECTS: List[EffectSpec] = [
         cls=glitch.NegativeEffect,
         enable_key='fx_negative', enabled_default=False,
         chance_key='fx_negative_chance', default_chance=0.2,
+        params=[_gate_param('fx_negative')],
         note='IMPACT / DROP / NOISE — full colour invert.',
         tooltip=bi(
             '255 − pixel for every channel. Use sparingly — at high CHANCE it strobes.',
@@ -636,6 +721,7 @@ EFFECTS: List[EffectSpec] = [
         cls=degradation.BadSignalEffect,
         enable_key='fx_bad_signal', enabled_default=False,
         chance_key='fx_bad_signal_chance', default_chance=0.3,
+        params=[_drive_param('fx_bad_signal', 'high')],
         note='DROP / NOISE — vertical noise bars + row shifts.',
         tooltip=bi(
             'Sprays random-coloured vertical bars and rolls random rows horizontally. Digital '
@@ -669,7 +755,9 @@ EFFECTS: List[EffectSpec] = [
                               'whip; longer = visible breathing.',
                               'За сколько кадров эффект упруго возвращается. Меньше — резче '
                               'хлыст; больше — заметное «дыхание».',
-                          ))],
+                          )),
+                _drive_param('fx_zoom_glitch', 'bass'),
+                _gate_param('fx_zoom_glitch')],
         note='IMPACT / DROP — anisotropic squash/stretch with curved return.',
         tooltip=bi(
             'On trigger picks one axis (X or Y) and either stretches it strongly (≈1.4–2×) or '
@@ -718,6 +806,14 @@ EFFECTS: List[EffectSpec] = [
         cls=complex_fx.FeedbackLoopEffect,
         enable_key='fx_feedback', enabled_default=False,
         chance_key=None,                 # always-on
+        params=[
+            _drive_param('fx_feedback', 'mid'),
+            _react_param('fx_feedback',
+                         'the accumulator is cleared on each detected beat, so trails '
+                         'reset on the kick instead of only on IMPACT segments.',
+                         'аккумулятор сбрасывается на каждый детектированный бит — '
+                         'шлейфы обнуляются на кике, а не только на IMPACT-сегментах.'),
+        ],
         note='SUSTAIN / BUILD — accumulates frames recursively.',
         tooltip=bi(
             'accumulator = current·(1−w) + accumulator·w. IMPACT clears it. Builds wash-style '
@@ -744,6 +840,7 @@ EFFECTS: List[EffectSpec] = [
         cls=complex_fx.MosaicPulseEffect,
         enable_key='fx_mosaic', enabled_default=False,
         chance_key='fx_mosaic_chance', default_chance=0.5,
+        params=[_drive_param('fx_mosaic', 'bass')],
         note='IMPACT / BUILD — pixelation pulse.',
         tooltip=bi(
             'Down-up resampling produces blocky pixelation. Block size scales with intensity '
@@ -814,6 +911,13 @@ EFFECTS: List[EffectSpec] = [
                           'edges.',
                           'Острота полосы. >15 даёт чёткие «резонансные полосы» вдоль контуров.',
                       )),
+            _react_param('fx_resonant',
+                         'the resonance centre frequency tracks the music\'s spectral '
+                         'centroid, so the visual ringing rises and falls with the pitch '
+                         'of the track (a rising synth raises the resonance).',
+                         'центральная частота резонанса следует за спектральным центроидом '
+                         'музыки — визуальный «звон» поднимается и опускается вместе с '
+                         'высотой трека (растёт синт — растёт резонанс).'),
         ],
         note='IIR bandpass along pixel rows — spatial ringing at edges.',
         tooltip=bi(
@@ -856,7 +960,14 @@ EFFECTS: List[EffectSpec] = [
                               'wave-interference patterns; >0.7 fully ungrounds it.',
                               'Подмешивает шум в фазу FFT, сохраняя амплитуду. Кадр превращается '
                               'в волновую интерференцию; >0.7 — изображение полностью «расходится».',
-                          ))],
+                          )),
+                _react_param('fx_fft_phase',
+                             'the audio spectrum is mapped onto the radial frequency rings of '
+                             'the frame\'s 2-D FFT, so phase noise hits the image at exactly the '
+                             'spatial frequencies where the music currently has energy.',
+                             'аудио-спектр накладывается на радиальные частотные кольца 2D-FFT '
+                             'кадра — фазовый шум бьёт по изображению именно на тех '
+                             'пространственных частотах, где у музыки сейчас энергия.')],
         note='Scrambles 2-D FFT phase, preserves magnitude — wave interference.',
         tooltip=bi(
             'Forward FFT, randomly shift phase, inverse FFT. Looks like a hologram corrupted '
@@ -1002,7 +1113,12 @@ EFFECTS: List[EffectSpec] = [
                               'Reflection strength. Higher = more pronounced echo trails along '
                               'each row.',
                               'Сила отражений. Выше — заметнее «эхо-шлейфы» вдоль каждой строки.',
-                          ))],
+                          )),
+                _react_param('fx_spatial_reverb',
+                             'the echo tail follows onset density: busy percussion gives short, '
+                             'tight echoes while sparse passages open up into long tails.',
+                             'хвост эха следует за плотностью онсетов: плотная перкуссия даёт '
+                             'короткое тугое эхо, а разреженные места раскрываются в длинные хвосты.')],
         note='Decaying horizontal echo — acoustic reverb on light.',
         tooltip=bi(
             'FFT-convolves each row with a sparse impulse response (6 reflections, '
@@ -1223,6 +1339,7 @@ EFFECTS: List[EffectSpec] = [
                           'редкие LSB-флипы (мягкое дрожание). Высоко — частые MSB-флипы '
                           '(катастрофические цветовые сдвиги по плоским цветовым областям).',
                       )),
+            _drive_param('fx_bit_flip', 'high'),
         ],
         intensity_max_kwarg='intensity_max',
         note='SUSTAIN / NOISE — quiet bit rot during steady passages, masked by noise.',
@@ -1484,6 +1601,166 @@ EFFECTS: List[EffectSpec] = [
             'Применяет рисунок как маску для наложения цвета, задержки кадров (lag) или искажения.'
         ),
     ),
+
+    # ── VISUALIZER (WINDOWS MEDIA PLAYER — audio-reactive) ──────────────
+    # Each renderer draws a visual from the per-frame audio bands (seg.live)
+    # and the shared Composite Mode decides how it meets the source frame.
+    EffectSpec(
+        id='viz_bars', label='Spectrum Bars', group='VISUALIZER',
+        cls=SpectrumBarsEffect, enable_key='fx_viz_bars', enabled_default=False,
+        chance_key=None,
+        params=_viz_mode_params('fx_viz_bars') + [
+            ParamSpec('fx_viz_bars_bands', 'Band Count', 24, 4, 64, kind='int', indent=True,
+                      kwarg=None,
+                      tooltip=bi('Number of equalizer bars.', 'Количество столбиков эквалайзера.')),
+            ParamSpec('fx_viz_bars_mirror', 'Mirror', 'off', kind='choice',
+                      choices=['off', 'on'], indent=True, kwarg=None,
+                      tooltip=bi('Grow bars from the centre instead of the bottom.',
+                                 'Растить столбики от центра, а не от низа.')),
+        ],
+        extra_factory=lambda cfg: dict(
+            **_viz_extras_base(cfg, 'fx_viz_bars'),
+            n_bands=int(cfg.get('fx_viz_bars_bands', 24)),
+            mirror=(cfg.get('fx_viz_bars_mirror', 'off') == 'on'),
+        ),
+        note='Audio-reactive — classic equalizer bars driven by the spectrum.',
+        tooltip=bi(
+            'Classic WMP equalizer: per-band bars with peak-hold smoothing. Use Composite '
+            'Mode to overlay or warp the source instead of replacing it.',
+            'Классический эквалайзер WMP: столбики по полосам со сглаживанием peak-hold. '
+            'Composite Mode позволяет накладывать или варпить источник вместо замены.'),
+    ),
+    EffectSpec(
+        id='viz_radial', label='Radial Spectrum', group='VISUALIZER',
+        cls=RadialSpectrumEffect, enable_key='fx_viz_radial', enabled_default=False,
+        chance_key=None,
+        params=_viz_mode_params('fx_viz_radial') + [
+            ParamSpec('fx_viz_radial_rays', 'Ray Count', 48, 8, 128, kind='int', indent=True,
+                      kwarg=None,
+                      tooltip=bi('Number of radial rays around the circle.',
+                                 'Количество лучей по кругу.')),
+        ],
+        extra_factory=lambda cfg: dict(
+            **_viz_extras_base(cfg, 'fx_viz_radial'),
+            rays=int(cfg.get('fx_viz_radial_rays', 48)),
+        ),
+        note='Audio-reactive — spectrum bars wrapped into a pulsing corona.',
+        tooltip=bi(
+            'The equalizer wrapped around a circle: each ray length tracks a frequency band, '
+            'the whole corona rotates slowly. Strong as a full-screen replace or a warp map.',
+            'Эквалайзер, свёрнутый в круг: длина каждого луча следует за полосой частот, вся '
+            'корона медленно вращается. Хорош и на весь экран, и как warp-карта.'),
+    ),
+    EffectSpec(
+        id='viz_scope', label='Oscilloscope', group='VISUALIZER',
+        cls=OscilloscopeEffect, enable_key='fx_viz_scope', enabled_default=False,
+        chance_key=None,
+        params=_viz_mode_params('fx_viz_scope') + [
+            ParamSpec('fx_viz_scope_thick', 'Line Thickness', 2, 1, 8, kind='int', indent=True,
+                      kwarg=None,
+                      tooltip=bi('Scope line thickness in pixels.',
+                                 'Толщина линии осциллографа в пикселях.')),
+        ],
+        extra_factory=lambda cfg: dict(
+            **_viz_extras_base(cfg, 'fx_viz_scope'),
+            thickness=int(cfg.get('fx_viz_scope_thick', 2)),
+        ),
+        note='Audio-reactive — waveform scope line.',
+        tooltip=bi(
+            'A horizontal scope line whose amplitude follows the spectrum, scrolling in phase '
+            'with time. Cleanest as an over-blend on top of the video.',
+            'Горизонтальная линия осциллографа, амплитуда которой следует за спектром и '
+            'смещается по фазе со временем. Лучше всего как over-наложение поверх видео.'),
+    ),
+    EffectSpec(
+        id='viz_lissajous', label='Lissajous (XY)', group='VISUALIZER',
+        cls=LissajousEffect, enable_key='fx_viz_lissajous', enabled_default=False,
+        chance_key=None,
+        params=_viz_mode_params('fx_viz_lissajous') + [
+            ParamSpec('fx_viz_lissajous_ratio', 'Frequency Ratio', 3.0, 1.0, 8.0, indent=True,
+                      kwarg=None,
+                      tooltip=bi('Base X:Y frequency ratio of the figure.',
+                                 'Базовое соотношение частот X:Y фигуры.')),
+        ],
+        extra_factory=lambda cfg: dict(
+            **_viz_extras_base(cfg, 'fx_viz_lissajous'),
+            ratio=float(cfg.get('fx_viz_lissajous_ratio', 3.0)),
+        ),
+        note='Audio-reactive — XY Lissajous figures.',
+        tooltip=bi(
+            'XY oscilloscope figures: bass and high steer the two axis frequencies while time '
+            'drifts the phase, drawing evolving loops. A retro lab-scope look.',
+            'XY-фигуры осциллографа: бас и верх управляют частотами по двум осям, а время '
+            'дрейфует фазу, рисуя меняющиеся петли. Ретро-вайб лабораторного осциллографа.'),
+    ),
+    EffectSpec(
+        id='viz_plasma', label='Plasma Field', group='VISUALIZER',
+        cls=PlasmaFieldEffect, enable_key='fx_viz_plasma', enabled_default=False,
+        chance_key=None,
+        params=_viz_mode_params('fx_viz_plasma') + [
+            ParamSpec('fx_viz_plasma_scale', 'Scale', 0.04, 0.01, 0.15, indent=True,
+                      kwarg=None,
+                      tooltip=bi('Spatial frequency of the plasma. Higher = finer ripples.',
+                                 'Пространственная частота плазмы. Выше — мельче рябь.')),
+        ],
+        extra_factory=lambda cfg: dict(
+            **_viz_extras_base(cfg, 'fx_viz_plasma'),
+            scale=float(cfg.get('fx_viz_plasma_scale', 0.04)),
+        ),
+        note='Audio-reactive — procedural plasma; colour & speed from the bands.',
+        tooltip=bi(
+            'Demoscene plasma built from summed sine fields. Bass shifts the palette, mids '
+            'drive the speed, highs the brightness. Use warp mode to ripple the source.',
+            'Demoscene-плазма из суммы синусоид. Бас сдвигает палитру, середина задаёт '
+            'скорость, верх — яркость. В режиме warp создаёт рябь по источнику.'),
+    ),
+    EffectSpec(
+        id='viz_particles', label='Beat Particles', group='VISUALIZER',
+        cls=BeatParticlesEffect, enable_key='fx_viz_particles', enabled_default=False,
+        chance_key=None,
+        params=_viz_mode_params('fx_viz_particles') + [
+            ParamSpec('fx_viz_particles_count', 'Particle Count', 120, 16, 512, kind='int', indent=True,
+                      kwarg=None,
+                      tooltip=bi('Maximum number of particles in the system.',
+                                 'Максимальное число частиц в системе.')),
+            ParamSpec('fx_viz_particles_grav', 'Gravity', 0.3, 0.0, 1.5, indent=True,
+                      kwarg=None,
+                      tooltip=bi('Downward pull applied to particles each frame.',
+                                 'Сила, тянущая частицы вниз каждый кадр.')),
+        ],
+        extra_factory=lambda cfg: dict(
+            **_viz_extras_base(cfg, 'fx_viz_particles'),
+            count=int(cfg.get('fx_viz_particles_count', 120)),
+            gravity=float(cfg.get('fx_viz_particles_grav', 0.3)),
+        ),
+        note='Audio-reactive — particle bursts thrown on the beat.',
+        tooltip=bi(
+            'A particle system emitting from the centre: each detected beat throws a burst '
+            'whose size scales with bass, then gravity pulls them down. Great over the video.',
+            'Система частиц с эмиссией из центра: каждый бит выбрасывает рой, размер которого '
+            'растёт с басом, затем гравитация тянет их вниз. Отлично смотрится поверх видео.'),
+    ),
+    EffectSpec(
+        id='viz_flow', label='Flow Field', group='VISUALIZER',
+        cls=FlowFieldEffect, enable_key='fx_viz_flow', enabled_default=False,
+        chance_key=None,
+        params=_viz_mode_params('fx_viz_flow') + [
+            ParamSpec('fx_viz_flow_noise', 'Flow Scale', 0.02, 0.005, 0.08, indent=True,
+                      kwarg=None,
+                      tooltip=bi('Spatial scale of the flow turbulence. Higher = tighter swirls.',
+                                 'Пространственный масштаб турбулентности потока. Выше — туже завитки.')),
+        ],
+        extra_factory=lambda cfg: dict(
+            **_viz_extras_base(cfg, 'fx_viz_flow'),
+            noise_scale=float(cfg.get('fx_viz_flow_noise', 0.02)),
+        ),
+        note='Audio-reactive — a self-advecting trail field flowing under the spectrum.',
+        tooltip=bi(
+            'A trail buffer that advects itself along a time-varying vector field while energy '
+            'is injected at the centre, coloured by the bands. Mids drive the turbulence.',
+            'Буфер следов, который переносит сам себя вдоль меняющегося во времени векторного '
+            'поля, пока в центр впрыскивается энергия цвета полос. Середина задаёт турбулентность.'),
+    ),
 ]
 
 
@@ -1583,6 +1860,15 @@ def build_chain(cfg: dict) -> List[BaseEffect]:
             fx.chance = 1.0
         elif spec.trigger_types is not None:
             fx.trigger_types = list(spec.trigger_types)
+
+        # Generic audio-reactivity wiring. Defaults reproduce today's
+        # behaviour, so effects that don't expose these params (and old
+        # presets) are unaffected. Only effects that declare the matching
+        # ParamSpec surface the control in the GUI.
+        fx.audio_drive = cfg.get(spec.enable_key + '_drive', 'segment')
+        fx.beat_gate = cfg.get(spec.enable_key + '_gate', 'off')
+        _react_val = cfg.get(spec.enable_key + '_react', 'off')
+        fx.react = (_react_val is True) or (str(_react_val).lower() == 'on')
 
         chain.append(fx)
 
