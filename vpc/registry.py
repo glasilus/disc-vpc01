@@ -668,7 +668,7 @@ EFFECTS: List[EffectSpec] = [
                           'тяжёлая потеря качества (размытая цветность, плёночный шум, '
                           'сжатие контраста, head-switch шум по низу кадра).',
                       )),
-            ParamSpec('fx_vhstape_dust', 'Dust scratches', False, kind='choice',
+            ParamSpec('fx_vhstape_dust', 'Dust scratches', 'off', kind='choice',
                       choices=['off', 'on'], kwarg=None,
                       tooltip=bi(
                           'Adds rare 1-px vertical scratches to imitate physical tape dust.',

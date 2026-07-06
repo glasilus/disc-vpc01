@@ -3489,6 +3489,20 @@ class MainGUI(tk.Tk):
             self._presets_listbox.insert(tk.END, disp)
 
     def apply_preset_config(self, cfg, name):
+        # Reset every var to its registry default FIRST, then overlay the saved
+        # config. Without this, any key absent from `cfg` keeps whatever the UI
+        # currently holds — so a preset saved by an older build (missing the
+        # newer fx_viz_*/_drive/_gate/_react keys) would silently leave stale
+        # effects enabled and stale audio-drive/gate wiring active. That is the
+        # "effects I never enabled appear, and tweaks affect the wrong thing"
+        # class of bug. The builtin `apply_preset` already resets first; this
+        # path must match it so a saved config fully determines the state.
+        for k, v in self._defaults_all.items():
+            if k in self.vars:
+                try:
+                    self.vars[k].set(v)
+                except Exception:
+                    pass
         for k, v in cfg.items():
             if k in self.vars:
                 try:
