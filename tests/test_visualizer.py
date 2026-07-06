@@ -129,9 +129,19 @@ def test_abstraction_renderers_nonempty():
         assert field.shape == (120, 160)
 
 
-def test_visualizer_package_exports_seven():
+def test_alchemy_renderer_nonempty():
+    from vpc.effects.visualizer.alchemy import AlchemyEffect
+    fx = AlchemyEffect()
+    vis, field = fx._render(120, 160, _fake_sample(0.9))
+    assert vis.shape == (120, 160, 3) and vis.dtype == np.uint8
+    assert field.shape == (120, 160)
+    assert vis.max() > 0
+
+
+def test_visualizer_package_exports_eight():
     import vpc.effects.visualizer as v
-    assert len(v.__all__) == 7
+    assert len(v.__all__) == 8
+    assert 'AlchemyEffect' in v.__all__
 
 
 def test_visualizer_full_apply_pipeline():
@@ -153,7 +163,8 @@ def test_registry_has_wmp_group():
     assert 'VISUALIZER' in GROUP_ORDER
     assert GROUP_DISPLAY_NAMES['VISUALIZER'] == 'WINDOWS MEDIA PLAYER'
     viz = [e for e in EFFECTS if e.group == 'VISUALIZER']
-    assert len(viz) == 7
+    assert len(viz) == 8
+    assert 'viz_alchemy' in {e.id for e in viz}
     assert all(e.enable_key.startswith('fx_viz_') for e in viz)
     assert all(e.enabled_default is False for e in viz)
 

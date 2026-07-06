@@ -31,6 +31,7 @@ from .effects.paint import PaintCanvasEffect
 from .effects.visualizer import (
     SpectrumBarsEffect, RadialSpectrumEffect, OscilloscopeEffect,
     LissajousEffect, PlasmaFieldEffect, BeatParticlesEffect, FlowFieldEffect,
+    AlchemyEffect,
 )
 
 
@@ -1754,12 +1755,50 @@ EFFECTS: List[EffectSpec] = [
             **_viz_extras_base(cfg, 'fx_viz_flow'),
             noise_scale=float(cfg.get('fx_viz_flow_noise', 0.02)),
         ),
-        note='Audio-reactive — a self-advecting trail field flowing under the spectrum.',
+        note='Audio-reactive — thousands of particles tracing a turbulent flow field.',
         tooltip=bi(
-            'A trail buffer that advects itself along a time-varying vector field while energy '
-            'is injected at the centre, coloured by the bands. Mids drive the turbulence.',
-            'Буфер следов, который переносит сам себя вдоль меняющегося во времени векторного '
-            'поля, пока в центр впрыскивается энергия цвета полос. Середина задаёт турбулентность.'),
+            'A cloud of particles advected along a slowly evolving turbulent vector field, each '
+            'leaving a fading trail so the streamlines reveal the flow. Mids and bass drive the '
+            'flow speed; the current bands tint the ink. Flow Scale sets the swirl tightness.',
+            'Облако частиц, переносимых по медленно эволюционирующему турбулентному векторному '
+            'полю; каждая оставляет затухающий след, и линии тока проявляют форму потока. '
+            'Середина и бас задают скорость; полосы окрашивают «чернила». Flow Scale — плотность завитков.'),
+    ),
+    EffectSpec(
+        id='viz_alchemy', label='Alchemy', group='VISUALIZER',
+        cls=AlchemyEffect, enable_key='fx_viz_alchemy', enabled_default=False,
+        chance_key=None,
+        params=_viz_mode_params('fx_viz_alchemy') + [
+            ParamSpec('fx_viz_alchemy_symmetry', 'Symmetry', 6, 2, 12, kind='int', indent=True,
+                      kwarg=None,
+                      tooltip=bi('Number of petals / fold symmetry of the rose.',
+                                 'Число лепестков / кратность симметрии розетки.')),
+            ParamSpec('fx_viz_alchemy_zoom', 'Feedback Zoom', 1.035, 1.0, 1.09, indent=True,
+                      kwarg=None,
+                      tooltip=bi('Per-frame zoom of the feedback tunnel. Higher = faster outward rush.',
+                                 'Покадровый зум feedback-тоннеля. Выше — быстрее «наплыв» наружу.')),
+            ParamSpec('fx_viz_alchemy_spin', 'Feedback Spin', 2.0, 0.0, 6.0, indent=True,
+                      kwarg=None,
+                      tooltip=bi('Per-frame rotation of the tunnel, in degrees. Drives the spiral twist.',
+                                 'Покадровый поворот тоннеля в градусах. Задаёт закрутку спирали.')),
+        ],
+        extra_factory=lambda cfg: dict(
+            **_viz_extras_base(cfg, 'fx_viz_alchemy'),
+            symmetry=int(cfg.get('fx_viz_alchemy_symmetry', 6)),
+            zoom=float(cfg.get('fx_viz_alchemy_zoom', 1.035)),
+            spin=float(cfg.get('fx_viz_alchemy_spin', 2.0)),
+        ),
+        note='Audio-reactive — WMP "Alchemy" feedback spiral tunnel with a spectrum rose.',
+        tooltip=bi(
+            'A video-feedback "liquid light" field: each frame the previous image is rotated, '
+            'zoomed and dimmed, then a radially symmetric rose whose petals track the spectrum is '
+            'drawn on top. The compounding rotate+zoom becomes an endless glowing spiral tunnel '
+            'with a slowly cycling hue. Strong as a full-screen replace or a warp map.',
+            'Поле видео-обратной связи в духе «жидкого света»: каждый кадр предыдущее изображение '
+            'поворачивается, увеличивается и притухает, а поверх рисуется радиально-симметричная '
+            'розетка, лепестки которой следуют за спектром. Накапливающийся поворот+зум даёт '
+            'бесконечный светящийся спиральный тоннель с плавно меняющимся оттенком. Хорош на '
+            'весь экран и как warp-карта.'),
     ),
 ]
 

@@ -777,10 +777,23 @@ A particle system emitting from the centre: each detected beat throws a burst wh
 
 *Trigger: any segment type*
 
-A trail buffer that advects itself along a time-varying vector field while energy is injected at the centre, coloured by the bands. Mids drive the turbulence.
+Thousands of particles are advected along a slowly evolving turbulent vector field, each leaving a fading trail so the streamlines reveal the flow. Mids and bass drive the flow speed; the current bands tint the ink.
 
 - **Composite Mode** / **Opacity / Amount** — as above.
 - **Flow Scale** *(0.005 – 0.08)* — spatial scale of the turbulence; higher = tighter swirls.
+
+---
+
+**Alchemy**
+
+*Trigger: any segment type*
+
+A WMP-style video-feedback "liquid light" field: each frame the previous image is rotated, zoomed and dimmed, then a radially symmetric rose whose petals track the spectrum is drawn on top. The compounding rotate + zoom becomes an endless glowing kaleidoscopic tunnel with a slowly cycling hue. Strong as a full-screen replace or a warp map.
+
+- **Composite Mode** / **Opacity / Amount** — as above.
+- **Symmetry** *(2 – 12)* — number of petals / fold symmetry of the rose.
+- **Feedback Zoom** *(1.0 – 1.09)* — per-frame zoom of the tunnel; higher = faster outward rush.
+- **Feedback Spin** *(0 – 6)* — per-frame rotation in degrees; drives the spiral twist.
 
 ---
 
