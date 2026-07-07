@@ -70,6 +70,15 @@ const char* fx_tip(FxId id);    // GUI hover tooltip: how the effect LOOKS
 extern const char* const kFxGroupOrder[];
 extern const int         kFxGroupOrderCount;
 
+// Keyboard / display ordering. Effects are laid out grouped by category (in
+// kFxGroupOrder), NOT in raw enum order, so the Q..P key banks line up with the
+// grouped GUI list instead of jumping around. Both the keyboard handler and the
+// GUI highlight read these so they stay in lockstep.
+//   fx_slot_to_id(slot) : slot 0..COUNT-1  -> FxId index, or -1 if out of range
+//   fx_id_to_slot(id)   : FxId index        -> slot 0..COUNT-1
+int fx_slot_to_id(int slot);
+int fx_id_to_slot(int id);
+
 // How an effect's audio-reactive envelope is driven.
 //   Auto      - attack on musical accents (beat OR segment change), then decay.
 //   Beat      - attack strictly on detected beats, then decay.

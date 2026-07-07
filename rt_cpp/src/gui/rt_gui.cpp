@@ -217,33 +217,44 @@ void RtGui::render(EngineSettings& settings, float fps, GLuint display_tex) {
     ImGui::Separator();
 
     // ── Control panels (4 columns) ───────────────────────────────────────────
-    float col_w = win_w * 0.25f;
-    float ctrl_h = win_h - kPrevH - 40.f;
+    // Content is balanced across columns so none sits half-empty:
+    //   1 Master   : master sliders + canvas + live audio device/meters
+    //   2 Effects  : FX-region gate + the grouped effect list (the tallest, so
+    //                it gets a touch more width)
+    //   3 Sources  : video files + overlays + chroma-key compositing
+    //   4 Session  : presets + output + MIDI learn
+    const float kGap = 8.f;
+    float avail_w = win_w - kGap * 3.f - 8.f;
+    float narrow  = avail_w * 0.225f;   // cols 1,3,4
+    float wide    = avail_w - narrow * 3.f; // col 2 (effects) gets the remainder
+    float ctrl_h  = win_h - kPrevH - 40.f;
 
-    ImGui::BeginChild("##master",  {col_w, ctrl_h}, true);
+    ImGui::BeginChild("##master",  {narrow, ctrl_h}, true);
     Win95::title_bar("Master");
     draw_master_panel(settings);
-    ImGui::EndChild();
-
-    ImGui::SameLine();
-    ImGui::BeginChild("##effects", {col_w, ctrl_h}, true);
-    Win95::title_bar("Effects");
-    draw_effects_panel(settings);
-    ImGui::EndChild();
-
-    ImGui::SameLine();
-    ImGui::BeginChild("##vidaudio", {col_w, ctrl_h}, true);
-    Win95::title_bar("Video / Audio");
-    draw_video_panel();
     ImGui::Separator();
     draw_audio_panel(settings);
     ImGui::EndChild();
 
-    ImGui::SameLine();
-    ImGui::BeginChild("##ovpreset", {col_w - 4, ctrl_h}, true);
-    Win95::title_bar("Overlays / Presets / Output");
+    ImGui::SameLine(0.f, kGap);
+    ImGui::BeginChild("##effects", {wide, ctrl_h}, true);
+    Win95::title_bar("Effects");
+    draw_effects_panel(settings);
+    ImGui::EndChild();
+
+    ImGui::SameLine(0.f, kGap);
+    ImGui::BeginChild("##sources", {narrow, ctrl_h}, true);
+    Win95::title_bar("Video / Overlays");
+    draw_video_panel();
+    ImGui::Separator();
     draw_overlay_panel(settings);
     ImGui::Separator();
+    draw_chroma_panel(settings);
+    ImGui::EndChild();
+
+    ImGui::SameLine(0.f, kGap);
+    ImGui::BeginChild("##session", {narrow, ctrl_h}, true);
+    Win95::title_bar("Presets / Output / MIDI");
     draw_presets_panel(settings);
     ImGui::Separator();
     draw_output_panel();
@@ -395,33 +406,27 @@ void RtGui::draw_master_panel(EngineSettings& s) {
     // Aspect fit mode
     static const char* kAspectLabels[] = {"Contain", "Cover", "Stretch", "Native 1:1"};
     ImGui::Combo("Scale Mode", &s.aspect_mode, kAspectLabels, 4);
-
-    ImGui::Separator();
-    ImGui::TextUnformatted("CHROMA KEY / FX GATING");
-    static const char* ck_modes[] = {"None","Dominant","Secondary","Manual"};
-    ImGui::Combo("Chroma Key", &s.ck_mode, ck_modes, 4);
-    if (s.ck_mode != 0) {
-        ImGui::SliderFloat("Tolerance",  &s.ck_tolerance, 0.f, 90.f, "%.1f");
-        ImGui::SliderFloat("Softness##ck",&s.ck_softness,  0.f, 30.f, "%.1f");
-        if (s.ck_mode == 3) {
-            ImGui::ColorEdit3("Key Color", &s.ck_r);
-        }
-        ImGui::Checkbox("Chroma Key Gated FX", &s.ck_gate_fx);
-        if (s.ck_gate_fx) {
-            static const char* gate_modes[] = {"Foreground (Keep BG clean)", "Background (Keep FG clean)"};
-            ImGui::Combo("Gating Mode", &s.ck_gate_mode, gate_modes, 2);
-        }
-    }
 }
 
 // Draw one effect's row: colored checkbox (blue if in the active keyboard
 // bank) plus, when enabled, a compact indented control line.
 void RtGui::draw_effect_row(EngineSettings& s, int i, int b0, int b1) {
     static const char* modes[] = {"Auto", "Beat", "Sustain", "Manual"};
+    // The keyboard row that toggles the current bank, in slot order.
+    static const char* kBankKeys[10] = {"Q","W","E","R","T","Y","U","I","O","P"};
     ImGui::PushID(i);
-    bool in_bank = (i >= b0 && i <= b1);
+    int  slot    = fx_id_to_slot(i);
+    bool in_bank = (slot >= b0 && slot <= b1);
     if (in_bank) ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 220, 255, 255));
-    ImGui::Checkbox(fx_label((FxId)i), &s.fx[i].enabled);
+    if (in_bank) {
+        // Prefix the row with the physical key that toggles it, so the binding
+        // is self-documenting during a set (e.g. "[E] Stutter").
+        char label[96];
+        std::snprintf(label, sizeof(label), "[%s] %s", kBankKeys[slot - b0], fx_label((FxId)i));
+        ImGui::Checkbox(label, &s.fx[i].enabled);
+    } else {
+        ImGui::Checkbox(fx_label((FxId)i), &s.fx[i].enabled);
+    }
     if (in_bank) ImGui::PopStyleColor();
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", fx_tip((FxId)i));
 
@@ -451,10 +456,29 @@ void RtGui::draw_effect_row(EngineSettings& s, int i, int b0, int b1) {
 void RtGui::draw_effects_panel(EngineSettings& s) {
     ImGui::TextUnformatted("EFFECTS");
     ImGui::SameLine();
-    // Which effects the Q-P keyboard row currently toggles (highlighted blue).
+    // The blue [Q]..[P] rows below are the ones the keyboard toggles right now;
+    // \ cycles to the next bank. Slots follow the grouped list order, so a bank
+    // is always a contiguous run.
     int b0 = fx_bank_ * 10;
     int b1 = std::min(b0 + 9, (int)FxId::COUNT - 1);
-    ImGui::TextDisabled("(Q-P: #%d-%d  \\=bank)", b0 + 1, b1 + 1);
+    ImGui::TextDisabled("(keys Q..P  \\ = bank %d/%d)",
+                        fx_bank_ + 1, ((int)FxId::COUNT + 9) / 10);
+
+    // FX-region gate: restrict where effects land using the chroma-key mask.
+    // This is about effect scope, so it belongs here - the key itself is set up
+    // in the Chroma Key panel. Presented as one 3-way choice mapping onto the
+    // ck_gate_fx flag + ck_gate_mode.
+    int gate = s.ck_gate_fx ? (s.ck_gate_mode == 1 ? 2 : 1) : 0;
+    static const char* kGateLabels[] = {"Everywhere", "Foreground only", "Background only"};
+    ImGui::SetNextItemWidth(150.f);
+    if (ImGui::Combo("FX Region", &gate, kGateLabels, 3)) {
+        s.ck_gate_fx   = (gate != 0);
+        s.ck_gate_mode = (gate == 2) ? 1 : 0;
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Limit effects to the keyed foreground or background.\nNeeds Chroma Key active (set it in the Video / Overlays column).");
+    if (gate != 0 && s.ck_mode == 0)
+        ImGui::TextColored({1.f, 0.7f, 0.2f, 1.f}, "  (enable Chroma Key first)");
     ImGui::Separator();
 
     bool shown[(int)FxId::COUNT] = {};
@@ -592,6 +616,26 @@ void RtGui::draw_overlay_panel(EngineSettings& s) {
         // earlier sessions.
         if (s.overlay_intensity > 0.01f)
             s.fx[(int)FxId::OVERLAYS].enabled = true;
+    }
+}
+
+// Chroma key belongs to the OVERLAY composite: it keys the chosen colour out of
+// the overlay image so the video shows through those areas (see chroma_key.frag).
+// That is why it sits directly under the overlay controls. The separate "gate
+// effects by this mask" option lives in the Effects panel, since that is about
+// where effects apply, not about the overlay key itself.
+void RtGui::draw_chroma_panel(EngineSettings& s) {
+    ImGui::TextUnformatted("OVERLAY CHROMA KEY");
+    ImGui::Separator();
+    static const char* ck_modes[] = {"None","Dominant","Secondary","Manual"};
+    ImGui::Combo("Key##ck", &s.ck_mode, ck_modes, 4);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Keys a colour OUT of the overlay image so the video shows through there.");
+    if (s.ck_mode != 0) {
+        ImGui::SliderFloat("Tolerance",   &s.ck_tolerance, 0.f, 90.f, "%.1f");
+        ImGui::SliderFloat("Softness##ck",&s.ck_softness,  0.f, 30.f, "%.1f");
+        if (s.ck_mode == 3)
+            ImGui::ColorEdit3("Key Color", &s.ck_r);
     }
 }
 

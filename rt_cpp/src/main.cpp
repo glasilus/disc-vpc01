@@ -124,7 +124,11 @@ static void toggle_fullscreen_control(App* app) {
     }
 }
 
-static void toggle_effect(EngineSettings* s, int id) {
+// Toggle by keyboard SLOT (grouped display order), not raw FxId, so the Q..P
+// row matches the grouped GUI list. fx_slot_to_id() bounds-checks and returns
+// -1 for empty trailing slots, which we ignore.
+static void toggle_effect(EngineSettings* s, int slot) {
+    int id = fx_slot_to_id(slot);
     if (id < 0 || id >= (int)FxId::COUNT) return;
     s->fx[id].enabled = !s->fx[id].enabled;
 }

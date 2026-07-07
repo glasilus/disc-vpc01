@@ -51,6 +51,7 @@ private:
     void draw_video_panel();
     void draw_audio_panel(EngineSettings& s);
     void draw_overlay_panel(EngineSettings& s);
+    void draw_chroma_panel(EngineSettings& s);
     void draw_presets_panel(EngineSettings& s);
     void draw_video_preview(GLuint tex, int win_w, int win_h);
     void draw_transport(EngineSettings& s, float fps);

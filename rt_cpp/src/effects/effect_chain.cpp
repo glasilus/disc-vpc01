@@ -103,6 +103,41 @@ const char* const kFxGroupOrder[] = {
 };
 const int kFxGroupOrderCount = (int)(sizeof(kFxGroupOrder) / sizeof(kFxGroupOrder[0]));
 
+// ── Keyboard / display order ──────────────────────────────────────────────────
+// Built once from kFxGroupOrder: for each group in order, append every effect
+// belonging to it (in enum order); any effect whose group isn't listed is
+// appended at the end so it can never become unreachable. This is the exact
+// order the GUI renders the effect list in, so slot index == display position,
+// which makes each Q..P key bank highlight a contiguous run.
+struct FxKeyOrder {
+    int slot_to_id[(int)FxId::COUNT];
+    int id_to_slot[(int)FxId::COUNT];
+    FxKeyOrder() {
+        int n = 0;
+        for (int g = 0; g < kFxGroupOrderCount; ++g)
+            for (int i = 0; i < (int)FxId::COUNT; ++i)
+                if (std::strcmp(fx_group((FxId)i), kFxGroupOrder[g]) == 0)
+                    slot_to_id[n++] = i;
+        // Safety net: any ungrouped effect gets appended.
+        for (int i = 0; i < (int)FxId::COUNT; ++i) {
+            bool seen = false;
+            for (int k = 0; k < n; ++k) if (slot_to_id[k] == i) { seen = true; break; }
+            if (!seen) slot_to_id[n++] = i;
+        }
+        for (int k = 0; k < (int)FxId::COUNT; ++k) id_to_slot[slot_to_id[k]] = k;
+    }
+};
+static const FxKeyOrder kKeyOrder;
+
+int fx_slot_to_id(int slot) {
+    if (slot < 0 || slot >= (int)FxId::COUNT) return -1;
+    return kKeyOrder.slot_to_id[slot];
+}
+int fx_id_to_slot(int id) {
+    if (id < 0 || id >= (int)FxId::COUNT) return -1;
+    return kKeyOrder.id_to_slot[id];
+}
+
 // ── FboPair ───────────────────────────────────────────────────────────────────
 
 void FboPair::create(int w, int h) {
