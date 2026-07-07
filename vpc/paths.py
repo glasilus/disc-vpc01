@@ -44,7 +44,13 @@ def data_home() -> Path:
     if override:
         p = Path(override).expanduser()
     elif getattr(sys, 'frozen', False):
-        p = Path(sys.executable).resolve().parent
+        if sys.platform == 'darwin':
+            # A .app's executable dir (Contents/MacOS) lives inside the bundle:
+            # read-only once installed to /Applications, and writing there also
+            # breaks the code signature. Persist user data outside the bundle.
+            p = Path.home() / 'Library' / 'Application Support' / 'disc_vpc'
+        else:
+            p = Path(sys.executable).resolve().parent
     elif _is_dev_checkout():
         p = _REPO_ROOT
     else:

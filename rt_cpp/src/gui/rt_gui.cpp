@@ -67,6 +67,11 @@ static std::string open_folder_dialog() {
     CoTaskMemFree(pidl);
     return wide_to_utf8(buf);
 }
+#elif defined(__APPLE__)
+// Route to the Cocoa NSOpenPanel implementation (mac_dialogs.mm).
+#include "native_dialogs.h"
+static std::vector<std::string> open_file_dialog_multi(const wchar_t*) { return native_open_files(); }
+static std::string open_folder_dialog() { return native_open_folder(); }
 #else
 static std::vector<std::string> open_file_dialog_multi(const wchar_t*) { return {}; }
 static std::string open_folder_dialog() { return {}; }

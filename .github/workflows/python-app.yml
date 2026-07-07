@@ -84,6 +84,7 @@ jobs:
             --collect-all llvmlite ^
             --collect-all scenedetect ^
             --collect-all opensimplex ^
+            --collect-all tkinterdnd2 ^
             --hidden-import=scenedetect.detectors ^
             --collect-submodules vpc ^
             --paths . ^
@@ -208,6 +209,7 @@ jobs:
             --collect-all llvmlite \
             --collect-all scenedetect \
             --collect-all opensimplex \
+            --collect-all tkinterdnd2 \
             --hidden-import=scenedetect.detectors \
             --collect-submodules vpc \
             --paths . \
@@ -411,6 +413,7 @@ jobs:
             --collect-all llvmlite \
             --collect-all scenedetect \
             --collect-all opensimplex \
+            --collect-all tkinterdnd2 \
             --hidden-import=scenedetect.detectors \
             --collect-submodules vpc \
             --paths . \

@@ -9,4 +9,5 @@ imageio-ffmpeg==0.5.1
 numba==0.58.1
 opensimplex==0.4.5
 sounddevice==0.5.5
+tkinterdnd2
 pytest==7.4.0

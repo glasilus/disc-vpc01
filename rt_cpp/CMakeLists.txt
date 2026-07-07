@@ -4,6 +4,11 @@ project(DiscVPC01_RT VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# macOS uses a Cocoa NSOpenPanel dialog written in Objective-C++ (.mm).
+if(APPLE)
+    enable_language(OBJCXX)
+endif()
+
 # Static runtime on MSVC
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -138,6 +143,8 @@ if(APPLE)
     set_source_files_properties("${MAC_ICON_SRC}"
         PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
     list(APPEND SOURCES "${MAC_ICON_SRC}")
+    # Cocoa file/folder pickers (Objective-C++).
+    list(APPEND SOURCES src/gui/mac_dialogs.mm)
 endif()
 
 add_executable(DiscVPC01-RT WIN32 MACOSX_BUNDLE ${SOURCES} ${GENERATED_HEADERS})
@@ -145,6 +152,11 @@ add_executable(DiscVPC01-RT WIN32 MACOSX_BUNDLE ${SOURCES} ${GENERATED_HEADERS})
 if(APPLE)
     set_target_properties(DiscVPC01-RT PROPERTIES
         MACOSX_BUNDLE TRUE
+        # Custom Info.plist template — carries NSMicrophoneUsageDescription
+        # (mandatory for live audio capture on macOS 10.14+) and
+        # NSHighResolutionCapable (crisp rendering on Retina displays), which
+        # the default CMake-generated plist does not include.
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist.in"
         MACOSX_BUNDLE_BUNDLE_NAME "DiscVPC01-RT"
         MACOSX_BUNDLE_GUI_IDENTIFIER "org.discvpc.rt"
         MACOSX_BUNDLE_BUNDLE_VERSION "1.0"
@@ -194,6 +206,27 @@ endif()
 # propagate the transitive JACK / ALSA link deps — resolve them explicitly.
 if(UNIX AND NOT APPLE)
     target_link_libraries(DiscVPC01-RT PRIVATE jack asound)
+endif()
+
+# macOS static link: the vcpkg targets don't always propagate every system
+# framework the static libs need. CoreMIDI is required by RtMidi; the rest are
+# the usual transitive deps of a statically-linked FFmpeg / PortAudio / GLFW.
+# Frameworks are idempotent — listing one that's already pulled in is harmless.
+if(APPLE)
+    target_link_libraries(DiscVPC01-RT PRIVATE
+        "-framework CoreMIDI"        # RtMidi backend
+        "-framework CoreFoundation"
+        "-framework CoreAudio"       # PortAudio
+        "-framework AudioToolbox"
+        "-framework AudioUnit"
+        "-framework CoreMedia"       # FFmpeg (VideoToolbox path)
+        "-framework CoreVideo"
+        "-framework VideoToolbox"
+        "-framework Security"
+        "-framework Cocoa"           # GLFW
+        "-framework IOKit"
+        "-liconv"
+    )
 endif()
 
 install(TARGETS DiscVPC01-RT DESTINATION .)

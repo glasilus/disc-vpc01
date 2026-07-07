@@ -17,7 +17,16 @@
 
 #include "midi_control.h"
 
-#include <RtMidi.h>
+// RtMidi's header location varies by distribution: vcpkg installs it under
+// <rtmidi/RtMidi.h> (the package's include dir is the root `include`), while a
+// system/pkg-config install typically exposes it as <RtMidi.h>. Probe both.
+#if __has_include(<rtmidi/RtMidi.h>)
+#  include <rtmidi/RtMidi.h>
+#elif __has_include(<RtMidi.h>)
+#  include <RtMidi.h>
+#else
+#  error "RtMidi.h not found — ensure the 'rtmidi' vcpkg port is installed"
+#endif
 #include <nlohmann/json.hpp>
 
 #include <filesystem>

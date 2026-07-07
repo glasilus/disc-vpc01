@@ -224,7 +224,15 @@ class MainGUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title('Disc VPC 01')
-        self.geometry('1500x900')
+        # Clamp the initial size to the screen so the window doesn't open larger
+        # than the display (common on laptops / smaller Macs, where a fixed
+        # 1500x900 would spill off-screen and hide controls).
+        try:
+            sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+            w, h = min(1500, sw - 80), min(900, sh - 120)
+            self.geometry(f'{max(900, w)}x{max(700, h)}')
+        except Exception:
+            self.geometry('1500x900')
         self.minsize(900, 700)
         self.configure(bg=C_SILVER)
         self.resizable(True, True)
@@ -267,6 +275,7 @@ class MainGUI(tk.Tk):
         self._setup_styles()
         self._setup_vars()
         self._build_ui()
+        self._setup_dnd()          # optional drag-and-drop (tkinterdnd2)
         self._load_presets_file()
         self._setup_paint_canvas_trace()
 
@@ -2178,10 +2187,10 @@ class MainGUI(tk.Tk):
         from PIL import ImageFont
 
         def get_system_fonts():
-            import winreg
             import platform
             fonts = {}
             if platform.system() == 'Windows':
+                import winreg   # Windows-only module — import inside the guard
                 for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
                     try:
                         key = winreg.OpenKey(hive, r'SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts')
@@ -3343,6 +3352,95 @@ class MainGUI(tk.Tk):
         if p:
             self.overlay_dir = p
             self.lbl_overlay_dir.configure(text=os.path.basename(p))
+
+    # ─── drag-and-drop ───
+    def _setup_dnd(self):
+        """Enable drag-and-drop file loading via tkinterdnd2 (optional).
+
+        Fully degrades: if the package or its native tkdnd binary isn't present
+        (e.g. a build without it), the app runs exactly as before and users load
+        files through the existing buttons. Drop zones are the video / audio /
+        overlay slots, but any file dropped on any of them is classified by its
+        extension, so the exact target doesn't matter.
+        """
+        try:
+            from tkinterdnd2 import TkinterDnD, DND_FILES
+            # Load the tkdnd Tcl package into this (plain tk.Tk) interpreter.
+            TkinterDnD._require(self)
+        except Exception:
+            return
+
+        targets = []
+        for name in ('lbl_video_name', 'lbl_audio_name', 'lbl_overlay_dir'):
+            w = getattr(self, name, None)
+            if w is None:
+                continue
+            # Register the row (bigger drop target) and the label itself.
+            for tgt in (getattr(w, 'master', None), w):
+                if tgt is not None and tgt not in targets:
+                    targets.append(tgt)
+        for tgt in targets:
+            try:
+                tgt.drop_target_register(DND_FILES)
+                tgt.dnd_bind('<<Drop>>', self._on_dnd_drop)
+            except Exception:
+                pass
+
+    def _on_dnd_drop(self, event):
+        try:
+            paths = list(self.tk.splitlist(event.data))
+        except Exception:
+            paths = [event.data] if getattr(event, 'data', None) else []
+        self._handle_dropped_paths([p for p in paths if p])
+        return getattr(event, 'action', 'copy')
+
+    def _handle_dropped_paths(self, paths):
+        """Classify dropped paths by extension and route them to the right slot,
+        mirroring sel_video / sel_audio / sel_ov (labels, tooltips, status dots)."""
+        try:
+            from vpc.render.source import IMAGE_EXTS
+            img_exts = {e.lower() for e in IMAGE_EXTS}
+        except Exception:
+            img_exts = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tga', '.webp'}
+        vid_exts = {'.mp4', '.mov', '.mkv', '.avi', '.wmv', '.flv',
+                    '.mpg', '.mpeg', '.webm', '.m4v'}
+        aud_exts = {'.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac'}
+
+        new_vids, new_audio, new_folder = [], None, None
+        for p in paths:
+            if os.path.isdir(p):
+                new_folder = p
+                continue
+            ext = os.path.splitext(p)[1].lower()
+            if ext in vid_exts or ext in img_exts:
+                new_vids.append(p)
+            elif ext in aud_exts:
+                new_audio = p
+
+        if new_vids:
+            merged = list(self.video_paths)
+            for v in new_vids:
+                if v not in merged:
+                    merged.append(v)
+            self.video_paths = merged
+            n = len(self.video_paths)
+            label_text = (self._shorten_name(os.path.basename(self.video_paths[0]))
+                          if n == 1 else f'{n} files loaded')
+            self.lbl_video_name.configure(text=label_text)
+            Tooltip(self.lbl_video_name,
+                    self.video_paths[0] if n == 1 else '\n'.join(self.video_paths))
+            self._video_dot.configure(fg=C_GREEN_DOT)
+
+        if new_audio:
+            self.audio_path = new_audio
+            self.lbl_audio_name.configure(
+                text=self._shorten_name(os.path.basename(new_audio)))
+            Tooltip(self.lbl_audio_name, new_audio)
+            self._audio_dot.configure(fg=C_GREEN_DOT)
+
+        if new_folder:
+            self.overlay_dir = new_folder
+            self.lbl_overlay_dir.configure(text=os.path.basename(new_folder))
 
     # ─── config + preset I/O ───
     def get_current_config(self):

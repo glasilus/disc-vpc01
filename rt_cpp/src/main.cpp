@@ -5,6 +5,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#if defined(__APPLE__)
+#  include <unistd.h>       // chdir
+#  include <filesystem>
+#  include <string>
+#endif
 
 #define STB_IMAGE_IMPLEMENTATION_NOT_NEEDED  // marker — stb_image.h is
 // already implemented elsewhere in the build (effects/overlay manager
@@ -244,6 +249,25 @@ static void key_callback(GLFWwindow* w, int key, int /*sc*/, int action, int mod
 }
 
 int main() {
+#if defined(__APPLE__)
+    // An .app launched from Finder/Dock inherits the working directory "/",
+    // which is read-only. All our relative paths (presets/, midi.json, the log)
+    // would then fail to load or save. Move to a writable per-user location so
+    // the app behaves the same as the Windows/Linux binaries (which run with
+    // their CWD next to the executable). Best-effort — if anything fails we just
+    // stay in the original CWD.
+    {
+        const char* home = std::getenv("HOME");
+        if (home && *home) {
+            std::string dir = std::string(home) +
+                              "/Library/Application Support/DiscVPC01-RT";
+            std::error_code ec;
+            std::filesystem::create_directories(dir + "/presets", ec);
+            if (!ec) (void)chdir(dir.c_str());
+        }
+    }
+#endif
+
     // First thing: redirect stderr/stdout to vpc01rt.log so every diagnostic
     // (including ones written before any console can be attached) is
     // recoverable after a crash. Logs go next to the working directory.
