@@ -44,6 +44,7 @@ from vpc.registry import ACCORDION_HIDDEN_GROUPS, GROUP_DISPLAY_NAMES
 from vpc.mystery import MYSTERY_KNOBS, MYSTERY_ALWAYS_LABELS
 from vpc.effects.formula import compile_formula
 from vpc.paths import presets_path, temp_preview_path
+from vpc.render.preview_player import PreviewPlayer
 
 try:
     import sounddevice as _sd
@@ -247,18 +248,17 @@ class MainGUI(tk.Tk):
         self.temp_preview_path = str(temp_preview_path())
 
         self.progress_var = tk.DoubleVar(value=0)
-        self.video_cap = None
-        self.playback_thread = None
-        self._audio_thread = None
+        # Audio-mastered preview player (vpc.render.preview_player). Owns its
+        # own worker thread + master clock; the GUI only marshals frames onto
+        # the Tk thread and drives transport. See PreviewPlayer for the sync
+        # design (video is a pure function of the audio clock → no drift).
+        self._player = None
         self._audio_wav = None
-        self.stop_playback = threading.Event()
         # Cooperative cancellation: GUI sets engine.abort = True from the
         # main thread; the worker thread reads it. CPython GIL makes plain
         # attribute writes atomic, so no lock is needed.
         self.engine = None
-        # Preview-player pause/volume state. Volume is applied per playback
-        # loop iteration (≤5s latency) — sufficient for a 5s looping preview.
-        self.pause_event = threading.Event()
+        # Preview-player volume/mute state (applied live via the player).
         self._volume = 0.8
         self._volume_pre_mute = 0.8
         self._muted = False
@@ -3808,11 +3808,15 @@ class MainGUI(tk.Tk):
                            {'mode': 'determinate', 'value': 0})
 
     # ─── transport (preview player) ───
+    def _apply_player_volume(self):
+        """Push the effective (mute-aware) volume to the live player."""
+        if self._player is not None:
+            self._player.set_volume(0.0 if self._muted else self._volume)
+
     def _on_volume_change(self):
-        """Volume slider callback. Picked up by _audio_loop on the next
-        playback iteration (≤5s — preview is a 5s loop, so this is fine).
-        Moving the slider also implicitly un-mutes (matches every other
-        media player on the planet)."""
+        """Volume slider callback — applied to the player live (the audio
+        callback reads gain per block). Moving the slider also implicitly
+        un-mutes (matches every other media player on the planet)."""
         v = max(0.0, min(1.0, self.var_volume.get() / 100.0))
         if self._muted and v > 0.0:
             self._muted = False
@@ -3820,19 +3824,15 @@ class MainGUI(tk.Tk):
         self._volume = v
         if not self._muted:
             self._volume_pre_mute = v
+        self._apply_player_volume()
 
     def _toggle_pause(self):
-        if self.pause_event.is_set():
-            self.pause_event.clear()
-            self.btn_pause.configure(text='PAUSE')
-        else:
-            self.pause_event.set()
+        if self._player is None:
+            return
+        if self._player.toggle_pause():
             self.btn_pause.configure(text='PLAY')
-            # Cut audio immediately so pause feels instant. The audio loop
-            # will re-enter sd.play() on the next unpause iteration.
-            if _AUDIO_OK:
-                try: _sd.stop()
-                except Exception: pass
+        else:
+            self.btn_pause.configure(text='PAUSE')
 
     def _toggle_mute(self):
         if self._muted:
@@ -3842,8 +3842,8 @@ class MainGUI(tk.Tk):
             restore = self._volume_pre_mute if self._volume_pre_mute > 0.01 else 0.8
             self._muted = False
             self._volume = restore
-            # Setting var_volume fires _on_volume_change, but the un-mute
-            # branch there is a no-op (we already cleared _muted).
+            # Setting var_volume fires _on_volume_change, which re-applies the
+            # volume to the player.
             self.var_volume.set(restore * 100.0)
             self.btn_mute.configure(text='MUTE')
         else:
@@ -3851,6 +3851,7 @@ class MainGUI(tk.Tk):
             self._muted = True
             self._volume = 0.0
             self.btn_mute.configure(text='UNMUTE')
+            self._apply_player_volume()
 
     # ─── playback ───
     # Settle delay between stop_and_clear_playback() and re-opening the
@@ -3871,166 +3872,76 @@ class MainGUI(tk.Tk):
         self.after(self._PLAYBACK_RESTART_MS,
                    lambda: self._start_playback_phase2(path))
 
+    def _extract_preview_wav(self, path):
+        """Extract the clip's audio to a temp PCM wav for the master clock.
+
+        soundfile can't read the mp4 directly, and the audio-mastered player
+        needs raw PCM. Returns the wav path or None (silent preview on
+        failure)."""
+        wav_fd, wav_path = tempfile.mkstemp(suffix='.wav')
+        os.close(wav_fd)
+        try:
+            from vpc.render.sink import ffmpeg_bin
+            _ff = ffmpeg_bin()
+            subprocess.run(
+                [_ff, '-y', '-i', path, '-vn', '-acodec', 'pcm_s16le',
+                 '-ar', '44100', '-ac', '2', wav_path],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            return wav_path
+        except Exception as e:
+            self.log(f'WARNING: audio extract failed ({e}); preview will be silent.')
+            try: os.remove(wav_path)
+            except OSError: pass
+            return None
+
     def _start_playback_phase2(self, path):
-        cap = cv2.VideoCapture(path)
-        if not cap.isOpened():
-            cap.release(); self.log('ERROR: Cannot open preview video.')
+        self._audio_wav = self._extract_preview_wav(path) if _AUDIO_OK else None
+        self._player = PreviewPlayer(
+            path, on_frame=self._present_frame, size=(640, 360),
+            wav_path=self._audio_wav, log=self.log)
+        self._player.set_volume(0.0 if self._muted else self._volume)
+        if not self._player.start():
+            self._player = None
+            self._cleanup_preview_wav()
             return
-        cap.release()
-        self.video_cap = None
-        self._playback_path = path
-        self.log('Starting playback (looping)...')
+        self.log('Playback started (audio-synced, looping).')
         # Enable transport controls. Mute/Volume only meaningful when the
         # audio backend (sounddevice + soundfile) is available.
         self.btn_pause.configure(state='normal', text='PAUSE')
         self.btn_clear_monitor.configure(state='normal')
         self.btn_mute.configure(state=('normal' if _AUDIO_OK else 'disabled'),
                                 text='MUTE')
-        self.pause_event.clear()
-        self.stop_playback.clear()
 
-        self._audio_wav = None
-        if _AUDIO_OK:
-            wav_fd, wav_path = tempfile.mkstemp(suffix='.wav')
-            os.close(wav_fd)
-            try:
-                from vpc.render.sink import ffmpeg_bin
-                _ff = ffmpeg_bin()
-                subprocess.run(
-                    [_ff, '-y', '-i', path, '-vn', '-acodec', 'pcm_s16le',
-                     '-ar', '44100', '-ac', '2', wav_path],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-                self._audio_wav = wav_path
-            except Exception as e:
-                self.log(f'WARNING: audio extract failed ({e}); preview will be silent.')
-                try: os.remove(wav_path)
-                except OSError: pass
-
-        self.playback_thread = threading.Thread(
-            target=self._playback_loop, args=(path,), daemon=True)
-        self.playback_thread.start()
-        if self._audio_wav:
-            self._audio_thread = threading.Thread(
-                target=self._audio_loop, args=(self._audio_wav,), daemon=True)
-            self._audio_thread.start()
-
-    def _playback_loop(self, path):
-        W, H = 640, 360
-        while not self.stop_playback.is_set():
-            cap = cv2.VideoCapture(path)
-            if not cap.isOpened():
-                break
-            fps = cap.get(cv2.CAP_PROP_FPS) or 24
-            frame_dur = 1.0 / fps
-            loop_start = time.time(); idx = 0
-            while not self.stop_playback.is_set():
-                # Pause: freeze the current frame and shift loop_start by
-                # the paused duration so frame scheduling stays correct
-                # after resume (otherwise the loop "fast-forwards" to make
-                # up the missed time and stutters).
-                if self.pause_event.is_set():
-                    pause_t0 = time.time()
-                    while (self.pause_event.is_set()
-                           and not self.stop_playback.is_set()):
-                        self.stop_playback.wait(0.05)
-                    loop_start += time.time() - pause_t0
-                    continue
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                img = img.resize((W, H), Image.Resampling.LANCZOS)
-                imgtk = ImageTk.PhotoImage(image=img)
-                self.after(0, self._show_frame, imgtk)
-                idx += 1
-                wait = (loop_start + idx * frame_dur) - time.time()
-                if wait > 0:
-                    self.stop_playback.wait(wait)
-            cap.release()
+    def _present_frame(self, rgb):
+        """Player worker-thread callback: build the Tk image and hand it to
+        the GUI thread. Building the PhotoImage off the Tk thread keeps the UI
+        responsive; only the cheap widget assignment runs on the main thread."""
+        try:
+            imgtk = ImageTk.PhotoImage(image=Image.fromarray(rgb))
+        except Exception:
+            return
+        self.after(0, self._show_frame, imgtk)
 
     def _show_frame(self, imgtk):
-        if self.stop_playback.is_set():
+        if self._player is None:
             return
         self.player_label.imgtk = imgtk
         self.player_label.configure(image=imgtk, text='')
 
-    def _audio_loop(self, wav_path):
-        if not _AUDIO_OK:
-            return
-        try:
-            data, sr = _sf.read(wav_path, dtype='float32')
-        except Exception as e:
-            # Surface decode failure: previously this branch was silent and
-            # the audio thread would just exit, leaving the user wondering
-            # why preview is muted with the slider untouched.
-            self.after(0, self.log,
-                       f'ERROR: preview audio decode failed ({e}); preview is silent.')
-            return
-        dur = len(data) / sr
-        while not self.stop_playback.is_set():
-            if self.pause_event.is_set():
-                self.stop_playback.wait(0.1)
-                continue
-            try:
-                # Per-iteration volume scaling. ~5s of stereo float32 at
-                # 44.1kHz is ~1.7 MB; multiply is sub-millisecond. Skip
-                # the copy when volume is effectively unity.
-                v = self._volume
-                if v <= 0.0:
-                    # Fully muted — sleep one loop length and re-check.
-                    # _sd.stop() is mandatory here: if v dropped to 0
-                    # mid-playback (slider → 0 / mute hit), the previous
-                    # sd.play buffer would otherwise keep playing at the
-                    # OLD gain through to its natural end (~5s ghost).
-                    try: _sd.stop()
-                    except Exception: pass
-                    if self.stop_playback.wait(dur):
-                        break
-                    continue
-                buf = data if v >= 0.999 else (data * v).astype(np.float32)
-                _sd.play(buf, sr)
-                # Wake periodically so pause/stop/volume-zero respond
-                # within ~50ms instead of waiting up to 5s for the loop
-                # to expire. Bailing on `_volume <= 0.0` matters: without
-                # it, dragging the slider to 0 would let the prior
-                # sd.play buffer finish at the ORIGINAL gain (ghost play).
-                end_t = time.time() + dur
-                while (not self.stop_playback.is_set()
-                       and not self.pause_event.is_set()
-                       and self._volume > 0.0
-                       and time.time() < end_t):
-                    self.stop_playback.wait(0.05)
-                _sd.stop()
-            except Exception as e:
-                # Same rationale as the decode-error branch above: a
-                # mid-playback PortAudio failure (device unplugged, sample
-                # rate refused, etc.) used to silently kill this thread.
-                # Log once and exit — the loop is unrecoverable from here
-                # because the device handle is what failed.
-                self.after(0, self.log,
-                           f'ERROR: preview audio playback aborted ({e}).')
-                break
-
-    def stop_and_clear_playback(self):
-        self.stop_playback.set()
-        if _AUDIO_OK:
-            try: _sd.stop()
-            except Exception: pass
-        if self.playback_thread and self.playback_thread.is_alive():
-            self.playback_thread.join(timeout=1.0)
-        if self._audio_thread and self._audio_thread.is_alive():
-            self._audio_thread.join(timeout=1.0)
-        if self.video_cap:
-            self.video_cap.release(); self.video_cap = None
+    def _cleanup_preview_wav(self):
         wav = getattr(self, '_audio_wav', None)
         if wav and os.path.exists(wav):
             try: os.remove(wav)
             except OSError: pass
         self._audio_wav = None
-        self.stop_playback.clear()
+
+    def stop_and_clear_playback(self):
+        if self._player is not None:
+            self._player.stop()
+            self._player = None
+        self._cleanup_preview_wav()
         # Reset transport state. _muted/_volume_pre_mute persist across
         # previews intentionally (user-set preference).
-        self.pause_event.clear()
         self.btn_pause.configure(state='disabled', text='PAUSE')
         self.btn_mute.configure(state='disabled')
         self.btn_clear_monitor.configure(state='disabled')
