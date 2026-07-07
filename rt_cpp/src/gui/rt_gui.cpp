@@ -2,12 +2,14 @@
 #include "theme.h"
 #include "font_loader.h"
 #include "win95.h"
+#include "../control/midi_control.h"
 #include <imgui.h>
 #include <cfloat>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
 #include <cstdio>
+#include <cstring>
 #include <algorithm>
 #include <filesystem>
 
@@ -240,6 +242,8 @@ void RtGui::render(EngineSettings& settings, float fps, GLuint display_tex) {
     draw_presets_panel(settings);
     ImGui::Separator();
     draw_output_panel();
+    ImGui::Separator();
+    draw_midi_panel();
     ImGui::EndChild();
 
     ImGui::End();
@@ -297,6 +301,19 @@ void RtGui::draw_transport(EngineSettings& s, float fps) {
     ImGui::Text("FPS: %.0f", fps);
     ImGui::EndGroup();
 
+    ImGui::SameLine();
+    ImGui::BeginGroup();
+    // Tap-tempo metronome: TAP a few times, arms a synthetic beat grid that is
+    // OR'd with audio detection (keeps cuts/effects on tempo when the beat is
+    // weak). Also drivable from the keyboard (Enter) and MIDI.
+    if (Win95::button("TAP", 60.f, 22.f)) gui_tap();
+    ImGui::SameLine();
+    ImGui::Checkbox("Metro##tr", &engine_->metronome);
+    if (engine_->bpm() > 1.f) ImGui::Text("BPM: %.0f", engine_->bpm());
+    else                      ImGui::TextDisabled("BPM: --");
+    ImGui::TextDisabled("FX bank %d/%d", fx_bank_ + 1, ((int)FxId::COUNT + 9) / 10);
+    ImGui::EndGroup();
+
     ImGui::Separator();
 
     // Right: live audio meters, segment readout, device line.
@@ -345,7 +362,11 @@ void RtGui::draw_master_panel(EngineSettings& s) {
     ImGui::Separator();
     ImGui::SliderFloat("Chaos##m",     &s.chaos,            0.f, 1.f, "%.2f");
     ImGui::SliderFloat("Intensity##m", &s.master_intensity, 0.f, 1.f, "%.2f");
-    ImGui::SliderFloat("Threshold##m", &s.sensitivity,      0.1f,3.f, "%.2f");
+    // Higher = the audio gate sits higher, so only louder passages trigger
+    // segments/effects (a noise-gate threshold, not a boost).
+    ImGui::SliderFloat("Gate Thresh##m", &s.sensitivity,    0.1f,3.f, "%.2f");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Audio gate level: higher = only louder material reacts.");
     ImGui::SliderFloat("Cut Interval", &s.cut_interval,     0.05f,2.f,"%.2f");
 
     ImGui::Separator();
@@ -388,20 +409,79 @@ void RtGui::draw_master_panel(EngineSettings& s) {
     }
 }
 
+// Draw one effect's row: colored checkbox (blue if in the active keyboard
+// bank) plus, when enabled, a compact indented control line.
+void RtGui::draw_effect_row(EngineSettings& s, int i, int b0, int b1) {
+    static const char* modes[] = {"Auto", "Beat", "Sustain", "Manual"};
+    ImGui::PushID(i);
+    bool in_bank = (i >= b0 && i <= b1);
+    if (in_bank) ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 220, 255, 255));
+    ImGui::Checkbox(fx_label((FxId)i), &s.fx[i].enabled);
+    if (in_bank) ImGui::PopStyleColor();
+
+    // Controls appear only while the effect is on, keeping the list scannable.
+    // Strength scales the shader; Mode picks how the audio envelope is driven;
+    // Chance gates how often Auto/Beat modes fire on an eligible musical event.
+    if (s.fx[i].enabled) {
+        ImGui::Indent(16.f);
+        ImGui::SetNextItemWidth(78.f);
+        ImGui::SliderFloat("##str", &s.fx[i].intensity, 0.f, 1.f, "S %.2f");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Strength");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80.f);
+        ImGui::Combo("##mode", &s.fx[i].mode, modes, 4);
+        if (s.fx[i].mode == (int)TriggerMode::Auto ||
+            s.fx[i].mode == (int)TriggerMode::Beat) {
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(78.f);
+            ImGui::SliderFloat("##chc", &s.fx[i].chance, 0.f, 1.f, "C %.2f");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Chance to fire on a beat/accent");
+        }
+        ImGui::Unindent(16.f);
+    }
+    ImGui::PopID();
+}
+
 void RtGui::draw_effects_panel(EngineSettings& s) {
     ImGui::TextUnformatted("EFFECTS");
+    ImGui::SameLine();
+    // Which effects the Q–P keyboard row currently toggles (highlighted blue).
+    int b0 = fx_bank_ * 10;
+    int b1 = std::min(b0 + 9, (int)FxId::COUNT - 1);
+    ImGui::TextDisabled("(Q-P: #%d-%d  \\=bank)", b0 + 1, b1 + 1);
     ImGui::Separator();
-    static const char* labels[] = {
-        "Deriv Warp","Flash","Stutter","Pixel Sort",
-        "Ghost Trails","Scanlines","Bitcrush","Block Glitch",
-        "Negative","Color Bleed","Interlace","Bad Signal",
-        "Zoom Glitch","Mosaic","Phase Shift","Dither",
-        "Feedback","Temporal RGB","Waveshaper","Overlays",
-        "Vortex","Fractal Noise","Self Displace","ASCII"
-    };
-    for (int i = 0; i < (int)FxId::COUNT; ++i) {
-        ImGui::Checkbox(labels[i], &s.fx[i].enabled);
-        if (i % 2 == 0 && i + 1 < (int)FxId::COUNT) ImGui::SameLine(130);
+
+    bool shown[(int)FxId::COUNT] = {};
+
+    // Collapsible category sections in the canonical order. Header shows the
+    // enabled/total count so you can see active effects without expanding.
+    for (int g = 0; g < kFxGroupOrderCount; ++g) {
+        const char* grp = kFxGroupOrder[g];
+        int total = 0, on = 0;
+        for (int i = 0; i < (int)FxId::COUNT; ++i)
+            if (std::strcmp(fx_group((FxId)i), grp) == 0) { total++; if (s.fx[i].enabled) on++; }
+        if (total == 0) continue;
+        char hdr[80];
+        std::snprintf(hdr, sizeof(hdr), "%s  (%d/%d)###grp_%s", grp, on, total, grp);
+        if (ImGui::CollapsingHeader(hdr, ImGuiTreeNodeFlags_DefaultOpen)) {
+            for (int i = 0; i < (int)FxId::COUNT; ++i) {
+                if (std::strcmp(fx_group((FxId)i), grp) != 0) continue;
+                shown[i] = true;
+                draw_effect_row(s, i, b0, b1);
+            }
+        } else {
+            for (int i = 0; i < (int)FxId::COUNT; ++i)
+                if (std::strcmp(fx_group((FxId)i), grp) == 0) shown[i] = true;
+        }
+    }
+
+    // Safety net: any effect whose group isn't in the canonical order still
+    // shows up (so a newly-added group can never become unreachable in the UI).
+    bool any_other = false;
+    for (int i = 0; i < (int)FxId::COUNT; ++i) if (!shown[i]) { any_other = true; break; }
+    if (any_other && ImGui::CollapsingHeader("OTHER###grp_other", ImGuiTreeNodeFlags_DefaultOpen)) {
+        for (int i = 0; i < (int)FxId::COUNT; ++i)
+            if (!shown[i]) draw_effect_row(s, i, b0, b1);
     }
 }
 
@@ -560,6 +640,80 @@ void RtGui::apply_pending_preset(EngineSettings& s) {
         preset_idx_ = pending_preset_idx_;
     }
     pending_preset_idx_ = -1;
+}
+
+void RtGui::request_next_preset() {
+    const auto& paths = presets_.paths();
+    if (paths.empty()) return;
+    pending_preset_idx_ = (preset_idx_ + 1) % (int)paths.size();
+}
+
+void RtGui::gui_tap() {
+    double now = ImGui::GetTime();
+    if (tap_n_ > 0 && now - tap_times_[(tap_n_ - 1) % 8] > 2.0) tap_n_ = 0;
+    tap_times_[tap_n_ % 8] = now;
+    tap_n_++;
+    int have = tap_n_ < 8 ? tap_n_ : 8;
+    if (have >= 2) {
+        double first = tap_times_[(tap_n_ - have) % 8];
+        double last  = tap_times_[(tap_n_ - 1) % 8];
+        double interval = (last - first) / (have - 1);
+        if (interval > 0.001) {
+            engine_->set_bpm((float)(60.0 / interval));
+            engine_->metronome = true;
+        }
+    }
+}
+
+void RtGui::draw_midi_panel() {
+    if (!midi_) return;
+    ImGui::TextUnformatted("MIDI CONTROL");
+    ImGui::Separator();
+
+    auto ports = midi_->list_ports();
+    int  cur   = midi_->current_port();
+    const char* preview = (cur >= 0 && cur < (int)ports.size())
+        ? ports[cur].c_str()
+        : (midi_->is_open() ? "(open)" : "(no device)");
+    ImGui::SetNextItemWidth(160.f);
+    if (ImGui::BeginCombo("Port", preview)) {
+        for (int i = 0; i < (int)ports.size(); ++i) {
+            bool sel = (i == cur);
+            if (ImGui::Selectable(ports[i].c_str(), sel)) midi_->init(i);
+        }
+        if (ports.empty()) ImGui::TextDisabled("(none found)");
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Rescan")) midi_->init(cur < 0 ? 0 : cur);
+
+    struct Row { const char* name; const char* label; bool action; };
+    static const Row rows[] = {
+        {"chaos",        "Chaos",        false},
+        {"intensity",    "Intensity",    false},
+        {"cut_interval", "Cut Interval", false},
+        {"overlay",      "Overlay",      false},
+        {"threshold",    "Threshold",    false},
+        {"audio_toggle", "Start/Stop",   true},
+        {"blackout",     "Blackout",     true},
+        {"freeze",       "Freeze",       true},
+        {"next_preset",  "Next Preset",  true},
+        {"tap",          "Tap",          true},
+    };
+    for (auto& r : rows) {
+        ImGui::PushID(r.name);
+        bool learning = midi_->is_learning() && midi_->learning_target() == r.name;
+        if (ImGui::SmallButton(learning ? "wait.." : "Learn")) {
+            if (r.action) midi_->begin_learn_action(r.name);
+            else          midi_->begin_learn_param(r.name);
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("X")) midi_->clear_binding(r.name);
+        ImGui::SameLine();
+        ImGui::Text("%s: %s", r.label, midi_->binding_label(r.name).c_str());
+        ImGui::PopID();
+    }
+    if (ImGui::Button("Save Map##midi")) midi_->save("midi.json");
 }
 
 void RtGui::render_bare(GLuint display_tex, int win_w, int win_h) {

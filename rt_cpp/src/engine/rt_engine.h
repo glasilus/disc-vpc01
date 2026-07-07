@@ -1,4 +1,5 @@
 #pragma once
+#include <initializer_list>
 #include "../audio/audio_analyzer.h"
 #include "../audio/segment.h"
 #include "../video/video_pool.h"
@@ -24,6 +25,22 @@ struct EngineSettings {
     int   ck_gate_mode      = 0;   // 0=foreground, 1=background
     int   aspect_mode       = 1;   // AspectMode: 0=Contain 1=Cover 2=Stretch 3=Native
     EffectParams fx[(int)FxId::COUNT];
+
+    // Sensible per-effect trigger-mode defaults so the chain looks right out of
+    // the box (and after a preset reset). Continuous "look" filters track audio
+    // smoothly (Sustained); visualizers stay on when enabled (Manual); punchy
+    // glitches keep the default Auto (attack-on-accent, decay). These are only
+    // defaults — the GUI/presets can override any of them.
+    EngineSettings() {
+        auto set_mode = [&](FxId id, TriggerMode m){ fx[(int)id].mode = (int)m; };
+        for (FxId id : { FxId::SCANLINES, FxId::NEGATIVE, FxId::DITHER, FxId::BITCRUSH,
+                         FxId::FISHEYE, FxId::KALI, FxId::RGBSHIFT, FxId::VHSTRACK,
+                         FxId::INTERLACE, FxId::MOSAIC, FxId::ASCII, FxId::COLORBLEED,
+                         FxId::PFRAME_LAG, FxId::MVEC_BLOOM, FxId::SELF_CANNIBALIZE })
+            set_mode(id, TriggerMode::Sustained);
+        for (FxId id : { FxId::VIZ_PLASMA, FxId::VIZ_RADIAL, FxId::VIZ_BARS, FxId::VIZ_ALCHEMY })
+            set_mode(id, TriggerMode::Manual);
+    }
 };
 
 struct CanvasPreset {
@@ -67,6 +84,14 @@ public:
     bool blackout = false;
     bool freeze   = false;
 
+    // ── Tap-tempo metronome ───────────────────────────────────────────────────
+    // When enabled, injects a synthetic beat on the tapped BPM grid (OR'd with
+    // the audio-detected beat) so cuts/effects stay locked to tempo even when
+    // the material has a weak or ambiguous transient.
+    bool  metronome = false;
+    void  set_bpm(float b) { bpm_ = (b < 0.f) ? 0.f : (b > 300.f ? 300.f : b); }
+    float bpm() const { return bpm_; }
+
 private:
     AudioAnalyzer  audio_;
     VideoPool      pool_;
@@ -80,6 +105,8 @@ private:
 
     float  time_since_cut_ = 0.f;
     float  elapsed_time_   = 0.f;
+    float  bpm_            = 0.f;
+    float  beat_phase_    = 0.f;
 
     AudioStats last_stats_   = {};
     Segment    last_segment_ = {};

@@ -18,6 +18,23 @@ find_package(FFTW3f  CONFIG REQUIRED)   # single-precision (libfftw3f)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(glad    CONFIG REQUIRED)
 
+# RtMidi (optional MIDI control). vcpkg exposes different config/target names
+# across versions/ports; probe the common ones and link whichever exists.
+find_package(rtmidi CONFIG QUIET)
+if(NOT rtmidi_FOUND)
+    find_package(unofficial-rtmidi CONFIG QUIET)
+endif()
+set(RTMIDI_TARGET "")
+foreach(cand RtMidi::rtmidi rtmidi::rtmidi unofficial::rtmidi::rtmidi rtmidi)
+    if(TARGET ${cand})
+        set(RTMIDI_TARGET ${cand})
+        break()
+    endif()
+endforeach()
+if(RTMIDI_TARGET STREQUAL "")
+    message(FATAL_ERROR "RtMidi not found — run: vcpkg install rtmidi")
+endif()
+
 
 # FFmpeg: vcpkg exposes FFMPEG_INCLUDE_DIRS / FFMPEG_LIBRARY_DIRS / FFMPEG_LIBRARIES
 find_package(FFMPEG REQUIRED)
@@ -35,8 +52,10 @@ set(SHADER_FILES
     rgb_shift flash zoom_glitch mosaic scanlines negative interlace
     ghost_trails feedback_loop vhs_tracking color_bleed dither fisheye
     kali_mirror phase_shift pixel_drift block_glitch bitcrush bad_signal
-    pixel_sort stutter temporal_rgb waveshaper chroma_key
+    pixel_sort stutter temporal_rgb chroma_key
     deriv_warp vortex fractal_noise self_disp ascii
+    pframe_lag mvec_bloom self_cannibalize
+    viz_plasma viz_radial viz_bars viz_alchemy
 )
 
 set(GENERATED_HEADERS "")
@@ -94,6 +113,7 @@ set(SOURCES
     src/gui/output_window.cpp
     src/gui/win95.cpp
     src/presets/preset_manager.cpp
+    src/control/midi_control.cpp
 )
 
 # Windows: compile the .rc resource into the PE so Explorer / taskbar pick
@@ -150,6 +170,7 @@ target_link_libraries(DiscVPC01-RT PRIVATE
     nlohmann_json::nlohmann_json
     glad::glad
     OpenGL::GL
+    ${RTMIDI_TARGET}
 )
 
 if(WIN32)

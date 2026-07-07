@@ -15,13 +15,14 @@
 // current ANSI code page. WASAPI & WDM-KS are already UTF-8. Convert via
 // CP_ACP → UTF-8 when the string contains high bytes that aren't valid UTF-8.
 static std::string to_utf8(const char* raw) {
-    if (!raw) return "";
+    if (!raw || !*raw) return "";
 #if defined(_WIN32)
-    // Detect whether the string is already valid UTF-8; if so, keep as is.
+    // Detect whether the string is already valid UTF-8. MB_ERR_INVALID_CHARS
+    // makes MultiByteToWideChar return 0 on any invalid sequence, so a positive
+    // result means the bytes are valid UTF-8 and we keep them as-is.
     int len = (int)std::strlen(raw);
-    BOOL invalid = FALSE;
     int wlen = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, raw, len, nullptr, 0);
-    if (wlen > 0 && !invalid) return std::string(raw, len); // valid UTF-8
+    if (wlen > 0) return std::string(raw, len); // valid UTF-8
     // Otherwise decode as system ANSI → wide → UTF-8
     wlen = MultiByteToWideChar(CP_ACP, 0, raw, len, nullptr, 0);
     if (wlen <= 0) return std::string(raw, len);
@@ -78,9 +79,14 @@ AudioAnalyzer::AudioAnalyzer() {
                     info->defaultSampleRate, info->name ? info->name : "?");
         }
     }
-    fft_in_  = fftwf_alloc_real(kChunkSize);
-    fft_out_ = fftwf_alloc_complex(kChunkSize / 2 + 1);
-    fft_plan_ = fftwf_plan_dft_r2c_1d(kChunkSize, fft_in_, fft_out_, FFTW_MEASURE);
+    fft_in_  = fftwf_alloc_real(kFftSize);
+    fft_out_ = fftwf_alloc_complex(kFftSize / 2 + 1);
+    fft_plan_ = fftwf_plan_dft_r2c_1d(kFftSize, fft_in_, fft_out_, FFTW_MEASURE);
+
+    // Precompute a Hann window once — applied to every analysis frame to cut
+    // spectral leakage (raw rectangular windows smear the bass badly).
+    for (int i = 0; i < kFftSize; ++i)
+        hann_[i] = 0.5f * (1.f - std::cos(2.f * 3.14159265358979f * i / (kFftSize - 1)));
 }
 
 int AudioAnalyzer::default_input_device() {
@@ -275,6 +281,16 @@ bool AudioAnalyzer::start(int device_index) {
     rms_hist_count_    = 0;
     std::fill(std::begin(rms_history_), std::end(rms_history_), 0.f);
     callback_count_.store(0);
+    // Sliding-window / detector state.
+    std::fill(std::begin(win_ring_),  std::end(win_ring_),  0.f);
+    std::fill(std::begin(prev_mag_),  std::end(prev_mag_),  0.f);
+    std::fill(std::begin(bin_max_),   std::end(bin_max_),   1e-4f);
+    ring_pos_          = 0;
+    samples_since_hop_ = 0;
+    ring_primed_       = false;
+    flux_mean_         = 0.f;
+    flux_std_          = 0.f;
+    level_max_         = 1e-4f;
 
     PaError err = Pa_StartStream(stream_);
     if (err != paNoError) {
@@ -314,21 +330,27 @@ int AudioAnalyzer::pa_callback(const void* input, void* /*output*/,
     if (!input) return paContinue;   // some WASAPI edge cases pass null briefly
     const float* src = static_cast<const float*>(input);
 
-    // If the stream is multi-channel, downmix to mono into a per-call scratch
-    // buffer. Frame count is bounded by kChunkSize (PortAudio honors our
-    // framesPerBuffer request) so a small stack buffer is fine.
-    if (self->channel_count_ <= 1) {
-        self->process_chunk(src, frames);
+    // Downmix to mono in bounded blocks and feed the sliding window. We do NOT
+    // truncate to a fixed buffer any more — WASAPI shared mode routinely
+    // delivers 448–480 frames; the old code processed only the first 256,
+    // dropping ~half the audio and running the analysis clock ~1.9× slow.
+    const int ch = std::max(1, self->channel_count_);
+    if (ch <= 1) {
+        self->ingest(src, frames);
     } else {
-        float mono[kChunkSize];
-        unsigned long n = std::min<unsigned long>(frames, kChunkSize);
-        int ch = self->channel_count_;
-        for (unsigned long i = 0; i < n; ++i) {
-            float sum = 0.f;
-            for (int c = 0; c < ch; ++c) sum += src[i * ch + c];
-            mono[i] = sum / (float)ch;
+        float mono[512];
+        unsigned long done = 0;
+        while (done < frames) {
+            unsigned long n = std::min<unsigned long>(frames - done, 512);
+            for (unsigned long i = 0; i < n; ++i) {
+                float sum = 0.f;
+                const float* f = src + (done + i) * ch;
+                for (int c = 0; c < ch; ++c) sum += f[c];
+                mono[i] = sum / (float)ch;
+            }
+            self->ingest(mono, n);
+            done += n;
         }
-        self->process_chunk(mono, n);
     }
     return paContinue;
 }
@@ -352,13 +374,30 @@ static float linear_slope(const float* y, int n) {
     return (sx2 > 1e-12f) ? sxy / sx2 : 0.f;
 }
 
-void AudioAnalyzer::process_chunk(const float* samples, unsigned long n) {
+void AudioAnalyzer::ingest(const float* mono, unsigned long n) {
     if (n == 0) return;
-    const float chunk_ms = (float)n / (float)sample_rate_ * 1000.f;
-    elapsed_ms_ += chunk_ms;
+    elapsed_ms_ += (float)n / (float)sample_rate_ * 1000.f;
 
-    // ── RMS ──────────────────────────────────────────────────────────────────
-    float raw_rms = compute_rms(samples, (int)n);
+    for (unsigned long i = 0; i < n; ++i) {
+        win_ring_[ring_pos_] = mono[i];
+        if (++ring_pos_ >= kFftSize) { ring_pos_ = 0; ring_primed_ = true; }
+        if (++samples_since_hop_ >= kHopSize && ring_primed_) {
+            samples_since_hop_ = 0;
+            analyze_window();
+        }
+    }
+}
+
+void AudioAnalyzer::analyze_window() {
+    // Assemble the ordered window (oldest → newest) from the ring; the oldest
+    // sample sits exactly at ring_pos_ (the next write slot). Apply Hann.
+    for (int i = 0; i < kFftSize; ++i) {
+        float s = win_ring_[(ring_pos_ + i) % kFftSize];
+        fft_in_[i] = s * hann_[i];
+    }
+
+    // RMS over the raw (un-windowed) window for a stable loudness estimate.
+    float raw_rms = compute_rms(win_ring_, kFftSize);
     rms_smooth_ = 0.7f * rms_smooth_ + 0.3f * raw_rms;
 
     // ── Calibration (noise floor) ─────────────────────────────────────────────
@@ -370,88 +409,107 @@ void AudioAnalyzer::process_chunk(const float* samples, unsigned long n) {
             for (float v : cal_buf_) mean_cal += v;
             mean_cal /= kCalibChunks;
             noise_floor_ = std::max(mean_cal * 4.f, 0.005f);
-            gate_.store(noise_floor_ * threshold_scale_.load());
             calibrated_ = true;
         }
-        // Update gate while calibrating
         gate_.store(0.005f * threshold_scale_.load());
     } else {
         gate_.store(noise_floor_ * threshold_scale_.load());
     }
 
     // ── FFT ───────────────────────────────────────────────────────────────────
-    std::memcpy(fft_in_, samples, std::min((unsigned long)kChunkSize, n) * sizeof(float));
-    if (n < kChunkSize)
-        std::fill(fft_in_ + n, fft_in_ + kChunkSize, 0.f);
     fftwf_execute(fft_plan_);
+    const int max_bin = kFftSize / 2;
+    const float bin_hz = (float)sample_rate_ / (float)kFftSize;
 
-    // Bin resolution: sr / N Hz/bin
-    float bin_hz = (float)sample_rate_ / kChunkSize;
-    int bass_lo  = (int)(20.f  / bin_hz), bass_hi  = (int)(300.f  / bin_hz);
-    int mid_lo   = (int)(300.f / bin_hz), mid_hi   = (int)(3000.f / bin_hz);
-    int treb_lo  = (int)(3000.f/ bin_hz), treb_hi  = (int)(16000.f/ bin_hz);
-    int max_bin  = kChunkSize / 2;
+    // Magnitude spectrum (also feeds spectral flux + bins).
+    // Reuse fft_in_ is done; compute magnitudes on the fly where needed.
+    auto mag_at = [&](int b) -> float {
+        return std::sqrt(fft_out_[b][0]*fft_out_[b][0] + fft_out_[b][1]*fft_out_[b][1]);
+    };
 
-    auto band_energy = [&](int lo, int hi) {
+    auto band_energy = [&](float lo_hz, float hi_hz) {
+        int lo = std::max(1, (int)(lo_hz / bin_hz));
+        int hi = std::min(max_bin, (int)(hi_hz / bin_hz));
         float e = 0.f;
-        for (int b = std::max(lo, 0); b <= std::min(hi, max_bin); ++b)
+        for (int b = lo; b <= hi; ++b)
             e += fft_out_[b][0]*fft_out_[b][0] + fft_out_[b][1]*fft_out_[b][1];
         return std::sqrt(e);
     };
+    float bass   = band_energy(20.f,   300.f);
+    float mid    = band_energy(300.f,  3000.f);
+    float treble = band_energy(3000.f, 16000.f);
 
-    float bass   = band_energy(bass_lo, bass_hi);
-    float mid    = band_energy(mid_lo,  mid_hi);
-    float treble = band_energy(treb_lo, treb_hi);
-
-    // ── Spectral flatness ─────────────────────────────────────────────────────
+    // ── Spectral flatness + spectral flux (onset) ─────────────────────────────
     float geo_sum = 0.f, arith_sum = 0.f;
     int   nbins = 0;
+    float flux = 0.f;
+    const int flux_hi = std::min(max_bin, (int)(4000.f / bin_hz)); // kick/snare band
     for (int b = 1; b <= max_bin; ++b) {
-        float mag = std::sqrt(fft_out_[b][0]*fft_out_[b][0] + fft_out_[b][1]*fft_out_[b][1]) + 1e-9f;
-        geo_sum   += std::log(mag);
-        arith_sum += mag;
+        float mag = mag_at(b);
+        geo_sum   += std::log(mag + 1e-9f);
+        arith_sum += mag + 1e-9f;
         nbins++;
+        if (b <= flux_hi) {
+            float d = mag - prev_mag_[b];
+            if (d > 0.f) flux += d;
+        }
+        prev_mag_[b] = mag;
     }
     float flatness = 0.f;
-    if (nbins > 0 && arith_sum > 1e-9f) {
-        float geo  = std::exp(geo_sum / nbins);
-        float arith = arith_sum / nbins;
-        flatness = geo / arith;
-    }
+    if (nbins > 0 && arith_sum > 1e-9f)
+        flatness = std::exp(geo_sum / nbins) / (arith_sum / nbins);
     flat_mean_ = 0.9f * flat_mean_ + 0.1f * flatness;
 
     // ── RMS mean + trend ──────────────────────────────────────────────────────
     rms_history_[rms_hist_idx_] = rms_smooth_;
     rms_hist_idx_ = (rms_hist_idx_ + 1) % kTrendWindow;
     if (rms_hist_count_ < kTrendWindow) rms_hist_count_++;
-
-    // Re-order history into chronological order
     float ordered[kTrendWindow];
     int   start = (rms_hist_count_ < kTrendWindow) ? 0 : rms_hist_idx_;
     for (int i = 0; i < rms_hist_count_; ++i)
         ordered[i] = rms_history_[(start + i) % kTrendWindow];
     float slope = linear_slope(ordered, rms_hist_count_);
-
     if (rms_mean_ < 1e-9f) rms_mean_ = rms_smooth_;
     else                   rms_mean_ = 0.99f * rms_mean_ + 0.01f * rms_smooth_;
 
-    // ── Beat detection ────────────────────────────────────────────────────────
-    float ref = (rms_mean_ > 1e-9f) ? rms_mean_ : 1e-9f;
+    // ── Beat detection: adaptive spectral-flux threshold ──────────────────────
+    // Robust to sustained bass (unlike the old RMS-ratio test): a beat is a
+    // *rise* in low-band spectral energy above its recent running statistics.
+    float flux_dev = flux - flux_mean_;
+    flux_mean_ = 0.98f * flux_mean_ + 0.02f * flux;
+    flux_std_  = 0.98f * flux_std_  + 0.02f * std::fabs(flux_dev);
     bool beat = false;
     float cooldown_elapsed = elapsed_ms_ - beat_last_time_ms_;
-    if (cooldown_elapsed >= kBeatCooldownMs) {
-        if (rms_smooth_ / ref > 1.3f) {
-            beat = true;
-            beat_last_time_ms_ = elapsed_ms_;
-        }
+    bool above_gate = rms_smooth_ > gate_.load();
+    if (cooldown_elapsed >= kBeatCooldownMs && above_gate &&
+        flux > flux_mean_ + 1.6f * flux_std_ + 1e-6f) {
+        beat = true;
+        beat_last_time_ms_ = elapsed_ms_;
     }
 
-    // ── Noisy flag ───────────────────────────────────────────────────────────
-    bool is_noisy = (flatness > flat_mean_ * 1.5f) &&
-                    (rms_smooth_ > gate_.load());
+    bool is_noisy = (flatness > flat_mean_ * 1.5f) && above_gate;
+
+    // ── Normalized visualizer spectrum (log-spaced bands + AGC) ───────────────
+    AudioStats s;
+    const float f_lo = 40.f, f_hi = 16000.f;
+    for (int k = 0; k < kVizBins; ++k) {
+        float t0 = (float)k       / kVizBins;
+        float t1 = (float)(k + 1) / kVizBins;
+        float lo_hz = f_lo * std::pow(f_hi / f_lo, t0);
+        float hi_hz = f_lo * std::pow(f_hi / f_lo, t1);
+        int lo = std::max(1, (int)(lo_hz / bin_hz));
+        int hi = std::max(lo, std::min(max_bin, (int)(hi_hz / bin_hz)));
+        float e = 0.f;
+        for (int b = lo; b <= hi; ++b) e += mag_at(b);
+        e /= (float)(hi - lo + 1);
+        // Per-band auto-gain: track a slowly-decaying peak, normalize into 0..1.
+        bin_max_[k] = std::max(e, bin_max_[k] * 0.999f);
+        s.bins[k] = std::clamp(e / (bin_max_[k] + 1e-6f), 0.f, 1.f);
+    }
+    level_max_ = std::max(rms_smooth_, level_max_ * 0.999f);
+    s.level = std::clamp(rms_smooth_ / (level_max_ + 1e-6f), 0.f, 1.f);
 
     // ── Publish ───────────────────────────────────────────────────────────────
-    AudioStats s;
     s.rms         = rms_smooth_;
     s.rms_mean    = rms_mean_;
     s.bass        = bass;

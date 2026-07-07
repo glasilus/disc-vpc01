@@ -4,6 +4,8 @@
 
 // Plain-old-data snapshot written by the audio thread, read lock-free by the render thread.
 // All floats stored as uint32_t via bit_cast to allow std::atomic<uint32_t>.
+static constexpr int kVizBins = 16;   // normalized spectrum bands for visualizers
+
 struct AudioStats {
     float rms         = 0.f;
     float rms_mean    = 0.f;
@@ -14,6 +16,13 @@ struct AudioStats {
     float trend_slope = 0.f;   // positive = build, negative = drop
     bool  beat        = false;
     bool  is_noisy    = false;
+
+    // ── Normalized (AGC'd) analysis for visuals ────────────────────────────
+    // These are auto-gained into a stable 0..1 range so shaders/visualizers
+    // look consistent across quiet and loud material, independent of the raw
+    // (unbounded) bass/mid/treble energies above which older effects rely on.
+    float level                 = 0.f;   // overall loudness, 0..1
+    float bins[kVizBins]        = {};     // log-spaced spectrum, 0..1, low→high
 };
 
 // Atomic wrapper: written fully by audio thread, read by render thread.

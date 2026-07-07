@@ -27,46 +27,78 @@
 #include "dither_frag.h"
 #include "feedback_loop_frag.h"
 #include "temporal_rgb_frag.h"
-#include "waveshaper_frag.h"
 #include "chroma_key_frag.h"
 #include "vortex_frag.h"
 #include "fractal_noise_frag.h"
 #include "self_disp_frag.h"
 #include "ascii_frag.h"
+// Wired-in classics (shaders existed but were never compiled/hooked up).
+#include "rgb_shift_frag.h"
+#include "kali_mirror_frag.h"
+#include "fisheye_frag.h"
+#include "vhs_tracking_frag.h"
+#include "pixel_drift_frag.h"
+// Datamosh family (temporal; feed off the previous chain output).
+#include "pframe_lag_frag.h"
+#include "mvec_bloom_frag.h"
+#include "self_cannibalize_frag.h"
+// Generative visualizers (authored to a fixed audio-uniform contract).
+#include "viz_plasma_frag.h"
+#include "viz_radial_frag.h"
+#include "viz_bars_frag.h"
+#include "viz_alchemy_frag.h"
 
 // ── fx_key mapping ────────────────────────────────────────────────────────────
 
-const char* fx_key(FxId id) {
-    // NOTE: fx_derivwarp replaces the old fx_rgb in the enum.
-    // For preset compat we store it as "fx_derivwarp"; old presets just lack it (→ disabled).
-    static const char* keys[(int)FxId::COUNT] = {
-        "fx_derivwarp",   // 0
-        "fx_flash",       // 1
-        "fx_stutter",     // 2
-        "fx_pixel_sort",  // 3
-        "fx_ghost",       // 4
-        "fx_scanlines",   // 5
-        "fx_bitcrush",    // 6
-        "fx_blockglitch", // 7
-        "fx_negative",    // 8
-        "fx_colorbleed",  // 9
-        "fx_interlace",   // 10
-        "fx_badsignal",   // 11
-        "fx_zoomglitch",  // 12
-        "fx_mosaic",      // 13
-        "fx_phaseshift",  // 14
-        "fx_dither",      // 15
-        "fx_feedback",    // 16
-        "fx_temporalrgb", // 17
-        "fx_waveshaper",  // 18
-        "fx_overlays",    // 19
-        "fx_vortex",      // 20
-        "fx_fractalnoise",// 21
-        "fx_selfdisp",    // 22
-        "fx_ascii",       // 23
-    };
-    return keys[(int)id];
-}
+// SINGLE source of truth for effect metadata. Order MUST match the FxId enum.
+// NOTE: "fx_derivwarp" replaces the old "fx_rgb"; old presets simply lack it.
+struct FxInfo { const char* key; const char* label; const char* group; };
+static const FxInfo kFxInfo[(int)FxId::COUNT] = {
+    { "fx_derivwarp",   "Deriv Warp",       "WARP"       },  // 0
+    { "fx_flash",       "Flash",            "CORE"       },  // 1
+    { "fx_stutter",     "Stutter",          "CORE"       },  // 2
+    { "fx_pixel_sort",  "Pixel Sort",       "GLITCH"     },  // 3
+    { "fx_ghost",       "Ghost Trails",     "CORE"       },  // 4
+    { "fx_scanlines",   "Scanlines",        "DEGRADE"    },  // 5
+    { "fx_bitcrush",    "Bitcrush",         "DEGRADE"    },  // 6
+    { "fx_blockglitch", "Block Glitch",     "GLITCH"     },  // 7
+    { "fx_negative",    "Negative",         "COLOR"      },  // 8
+    { "fx_colorbleed",  "Color Bleed",      "COLOR"      },  // 9
+    { "fx_interlace",   "Interlace",        "DEGRADE"    },  // 10
+    { "fx_badsignal",   "Bad Signal",       "GLITCH"     },  // 11
+    { "fx_zoomglitch",  "Zoom Glitch",      "GLITCH"     },  // 12
+    { "fx_mosaic",      "Mosaic",           "GLITCH"     },  // 13
+    { "fx_phaseshift",  "Phase Shift",      "GLITCH"     },  // 14
+    { "fx_dither",      "Dither",           "DEGRADE"    },  // 15
+    { "fx_feedback",    "Feedback",         "WARP"       },  // 16
+    { "fx_temporalrgb", "Temporal RGB",     "COLOR"      },  // 17
+    { "fx_overlays",    "Overlays",         "OVERLAY"    },  // 18
+    { "fx_vortex",      "Vortex",           "WARP"       },  // 19
+    { "fx_fractalnoise","Fractal Noise",    "WARP"       },  // 20
+    { "fx_selfdisp",    "Self Displace",    "WARP"       },  // 21
+    { "fx_ascii",       "ASCII",            "DEGRADE"    },  // 22
+    { "fx_rgbshift",    "RGB Shift",        "COLOR"      },  // 23
+    { "fx_kali",        "Kaleidoscope",     "WARP"       },  // 24
+    { "fx_fisheye",     "Fisheye",          "WARP"       },  // 25
+    { "fx_vhstrack",    "VHS Tracking",     "DEGRADE"    },  // 26
+    { "fx_pixeldrift",  "Pixel Drift",      "GLITCH"     },  // 27
+    { "fx_pframe_lag",  "P-Frame Lag",      "DATAMOSH"   },  // 28
+    { "fx_mvec_bloom",  "MVec Bloom",       "DATAMOSH"   },  // 29
+    { "fx_self_cannibalize","Self Cannibalize","DATAMOSH" }, // 30
+    { "fx_viz_plasma",  "Plasma",           "VISUALIZER" },  // 31
+    { "fx_viz_radial",  "Radial Spectrum",  "VISUALIZER" },  // 32
+    { "fx_viz_bars",    "Spectrum Bars",    "VISUALIZER" },  // 33
+    { "fx_viz_alchemy", "Alchemy",          "VISUALIZER" },  // 34
+};
+
+const char* fx_key  (FxId id) { return kFxInfo[(int)id].key;   }
+const char* fx_label(FxId id) { return kFxInfo[(int)id].label; }
+const char* fx_group(FxId id) { return kFxInfo[(int)id].group; }
+
+const char* const kFxGroupOrder[] = {
+    "CORE", "GLITCH", "WARP", "DATAMOSH", "COLOR", "DEGRADE", "VISUALIZER", "OVERLAY",
+};
+const int kFxGroupOrderCount = (int)(sizeof(kFxGroupOrder) / sizeof(kFxGroupOrder[0]));
 
 // ── FboPair ───────────────────────────────────────────────────────────────────
 
@@ -340,12 +372,23 @@ bool EffectChain::init(int w, int h) {
     prog_dither_      = compile_program(k_vert, k_dither_frag);
     prog_feedback_    = compile_program(k_vert, k_feedback_loop_frag);
     prog_temporalrgb_ = compile_program(k_vert, k_temporal_rgb_frag);
-    prog_waveshaper_  = compile_program(k_vert, k_waveshaper_frag);
     prog_overlay_     = compile_program(k_vert, k_chroma_key_frag);
     prog_vortex_      = compile_program(k_vert, k_vortex_frag);
     prog_fractalnoise_= compile_program(k_vert, k_fractal_noise_frag);
     prog_selfdisp_    = compile_program(k_vert, k_self_disp_frag);
     prog_ascii_       = compile_program(k_vert, k_ascii_frag);
+    prog_rgbshift_    = compile_program(k_vert, k_rgb_shift_frag);
+    prog_kali_        = compile_program(k_vert, k_kali_mirror_frag);
+    prog_fisheye_     = compile_program(k_vert, k_fisheye_frag);
+    prog_vhstrack_    = compile_program(k_vert, k_vhs_tracking_frag);
+    prog_pixeldrift_  = compile_program(k_vert, k_pixel_drift_frag);
+    prog_pframe_lag_  = compile_program(k_vert, k_pframe_lag_frag);
+    prog_mvec_bloom_  = compile_program(k_vert, k_mvec_bloom_frag);
+    prog_self_cannib_ = compile_program(k_vert, k_self_cannibalize_frag);
+    prog_viz_plasma_  = compile_program(k_vert, k_viz_plasma_frag);
+    prog_viz_radial_  = compile_program(k_vert, k_viz_radial_frag);
+    prog_viz_bars_    = compile_program(k_vert, k_viz_bars_frag);
+    prog_viz_alchemy_ = compile_program(k_vert, k_viz_alchemy_frag);
 
     return true;
 }
@@ -383,9 +426,14 @@ void EffectChain::destroy() {
     del(prog_negative_); del(prog_colorbleed_); del(prog_interlace_);
     del(prog_badsignal_); del(prog_zoomglitch_); del(prog_mosaic_);
     del(prog_phaseshift_); del(prog_dither_); del(prog_feedback_);
-    del(prog_temporalrgb_); del(prog_waveshaper_); del(prog_overlay_);
+    del(prog_temporalrgb_); del(prog_overlay_);
     del(prog_vortex_); del(prog_fractalnoise_); del(prog_selfdisp_);
     del(prog_ascii_);
+    del(prog_rgbshift_); del(prog_kali_); del(prog_fisheye_);
+    del(prog_vhstrack_); del(prog_pixeldrift_);
+    del(prog_pframe_lag_); del(prog_mvec_bloom_); del(prog_self_cannib_);
+    del(prog_viz_plasma_); del(prog_viz_radial_);
+    del(prog_viz_bars_); del(prog_viz_alchemy_);
 
     if (quad_vao_) { glDeleteVertexArrays(1, &quad_vao_); quad_vao_ = 0; }
     if (quad_vbo_) { glDeleteBuffers(1, &quad_vbo_);      quad_vbo_ = 0; }
@@ -456,6 +504,82 @@ static bool fires(float chance) {
     return ((float)rand() / (float)RAND_MAX) < chance;
 }
 
+// Per-effect envelope decay time constant (seconds). Snappy hits (flash) fall
+// fast; smears/feedback linger. Everything else uses a musical ~180 ms tail.
+static float fx_decay_tau(FxId id) {
+    switch (id) {
+        case FxId::FLASH:       return 0.05f;
+        case FxId::STUTTER:     return 0.08f;
+        case FxId::BLOCKGLITCH: return 0.10f;
+        case FxId::BADSIGNAL:   return 0.10f;
+        case FxId::GHOST:       return 0.30f;
+        case FxId::TEMPORALRGB: return 0.25f;
+        case FxId::FEEDBACK:    return 0.45f;
+        // Datamosh compounds over frames — let it linger so the melt builds.
+        case FxId::PFRAME_LAG:
+        case FxId::MVEC_BLOOM:
+        case FxId::SELF_CANNIBALIZE: return 0.40f;
+        default:                return 0.18f;
+    }
+}
+
+// ── Envelope model ──────────────────────────────────────────────────────────
+// Replaces the old per-frame Bernoulli firing (which made effects strobe and
+// depend on frame rate). Each enabled effect gets a 0..1 envelope:
+//   Beat/Auto  → attack to `trig_level` on a musical event (gated by chance),
+//                then exponential decay — a smooth hit that fades, not a flicker.
+//   Sustained  → continuously tracks audio loudness (no strobe).
+//   Manual     → always full-on (VJ holds it), ignores audio.
+void EffectChain::update_envelopes(const Segment& seg, const AudioStats& stats,
+                                   float chaos, float dt, EffectParams params[]) {
+    bool beat_edge = stats.beat && !prev_beat_;
+    prev_beat_ = stats.beat;
+    bool seg_changed = ((int)seg.type != prev_seg_);
+    prev_seg_ = (int)seg.type;
+    bool accent = beat_edge ||
+                  (seg_changed && (seg.type == SegmentType::IMPACT ||
+                                   seg.type == SegmentType::DROP  ||
+                                   seg.type == SegmentType::BUILD));
+    float seg_env    = std::sqrt(std::clamp(seg.intensity, 0.f, 1.f));
+    float trig_level = std::clamp(0.5f + 0.5f * chaos, 0.f, 1.f);
+    dt = std::clamp(dt, 0.f, 0.1f);
+    float attack = 1.f - std::exp(-dt / 0.04f);   // ~40 ms smoothing
+
+    for (int i = 0; i < (int)FxId::COUNT; ++i) {
+        EffectParams& p = params[i];
+        if (!p.enabled) { env_[i] = 0.f; continue; }
+        float decay = std::exp(-dt / std::max(0.01f, fx_decay_tau((FxId)i)));
+        switch ((TriggerMode)p.mode) {
+            case TriggerMode::Manual:
+                env_[i] += (1.f - env_[i]) * attack; break;
+            case TriggerMode::Sustained:
+                env_[i] += (seg_env * trig_level - env_[i]) * attack; break;
+            case TriggerMode::Beat:
+                if (beat_edge && fires(p.chance)) env_[i] = trig_level;
+                else                              env_[i] *= decay;
+                break;
+            case TriggerMode::Auto:
+            default:
+                if (accent && fires(p.chance)) env_[i] = trig_level;
+                else                           env_[i] *= decay;
+                break;
+        }
+        if (env_[i] < 1e-4f) env_[i] = 0.f;
+    }
+}
+
+// Only these effects sample the frame-history ring; when none are enabled we
+// skip the per-frame history blit entirely (a full-canvas copy every frame).
+bool EffectChain::needs_history(EffectParams params[]) const {
+    static const FxId consumers[] = {
+        FxId::GHOST, FxId::STUTTER, FxId::INTERLACE,
+        FxId::TEMPORALRGB, FxId::DERIVWARP, FxId::SELFDISP,
+        FxId::PFRAME_LAG, FxId::MVEC_BLOOM, FxId::SELF_CANNIBALIZE,
+    };
+    for (FxId id : consumers) if (params[(int)id].enabled) return true;
+    return false;
+}
+
 // ── Main apply ────────────────────────────────────────────────────────────────
 
 GLuint EffectChain::apply(
@@ -472,36 +596,38 @@ GLuint EffectChain::apply(
     float               chaos,
     float               master_intensity,
     float               time_sec,
+    float               dt,
     EffectParams        params[(int)FxId::COUNT])
 {
     const int W = main_fbo_.width, H = main_fbo_.height;
+    constexpr float kEps = 0.004f;
 
-    // Effect intensity model (rebalanced):
-    //   - sqrt curve on segment intensity boosts low values: SUSTAIN/NOISE
-    //     passages no longer flatten effects to ~10 % strength.
-    //   - chaos and master_intensity both scale the result so cranking
-    //     either dial visibly increases effect aggression.
-    //   - A floor of 0.25 keeps effects visible during silence/SUSTAIN if
-    //     they fired (their `chance` already gates how often they appear).
-    //   - Scale of 1.4 lets segment+chaos+master saturate to 1.0 well
-    //     before all dials are at max, which matches the "0..1 = fully
-    //     applied" contract that shaders expect.
-    const float seg_boost   = std::sqrt(std::clamp(seg.intensity, 0.f, 1.f));
-    // Decouple the audio-driven term from chaos×master so that chaos=0 or
-    // master=0 doesn't zero everything out — those dials should attenuate,
-    // not gate. `drive` retains the (chaos×master) contribution.
-    const float drive       = std::clamp(0.4f + 0.6f * chaos * (0.5f + 0.5f * master_intensity),
-                                         0.f, 1.f);
-    // Floor of ~0.35 keeps effects clearly visible on quiet/average material —
-    // the previous 0.18 floor passed through to shaders that internally
-    // multiply by 0.4–0.6, leaving the visible result barely perceptible.
-    // 0.35 + 1.2 × drive × seg_boost still saturates to 1.0 at peak.
-    const float fi_base     = std::clamp(0.35f + 1.2f * drive * seg_boost, 0.f, 1.f);
+    // Advance every effect's audio-reactive envelope for this frame. After this,
+    // strength(id) = env_[id] * intensity gives the smooth 0..1 amount to apply.
+    update_envelopes(seg, stats, chaos, dt, params);
+    auto strength = [&](FxId id) -> float {
+        return std::clamp(env_[(int)id] * params[(int)id].intensity, 0.f, 1.f);
+    };
 
-    // Audio gate: only suppress effects in *true* silence (analyzer-marked).
-    // Previously gated on intensity > 0.02 which excluded the SUSTAIN range
-    // we just remapped, leaving the chain visually dead.
-    const bool  audio_active = (seg.type != SegmentType::SILENCE);
+    // Normalized audio aggregates for the generative visualizers (0..1).
+    float vbass = 0.f, vmid = 0.f, vtreb = 0.f;
+    for (int i = 0; i < 4;  ++i) vbass += stats.bins[i];       vbass *= 0.25f;
+    for (int i = 4; i < 10; ++i) vmid  += stats.bins[i];       vmid  /= 6.f;
+    for (int i = 10;i < 16; ++i) vtreb += stats.bins[i];       vtreb /= 6.f;
+    float vbeat = stats.beat ? 1.f : 0.f;
+    auto viz_pass = [&](GLuint prog, float fi){
+        pass(prog, main_fbo_.read_tex(), [&](GLuint p){
+            u2f(p,"uResolution",(float)W,(float)H);
+            u1f(p,"uTime",      time_sec);
+            u1f(p,"uIntensity", fi);
+            u1f(p,"uBass",      vbass);
+            u1f(p,"uMid",       vmid);
+            u1f(p,"uTreble",    vtreb);
+            u1f(p,"uLevel",     stats.level);
+            u1f(p,"uBeat",      vbeat);
+            glUniform1fv(glGetUniformLocation(p,"uBins"), kVizBins, stats.bins);
+        });
+    };
 
     // Place the input onto the canvas with correct aspect handling. If we
     // don't have usable dimensions yet (no decoded frame this tick) or the
@@ -527,12 +653,6 @@ GLuint EffectChain::apply(
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
-    // Helper: fire if enabled + audio is non-silent + probability check.
-    // The audio_active gate is what kills "effects flickering in silence".
-    auto fire = [&](FxId id) -> bool {
-        return params[(int)id].enabled && audio_active && fires(params[(int)id].chance);
-    };
-
     // Grab history references (safe — all pre-allocated)
     GLuint h0 = history_tex(0);  // 1 frame ago
     GLuint h1 = history_tex(1);  // 2 frames ago
@@ -541,78 +661,71 @@ GLuint EffectChain::apply(
 
     // ── Temporal / smear effects ──────────────────────────────────────────────
 
-    if (fire(FxId::GHOST)) {
+    if (float fi = strength(FxId::GHOST); fi > kEps) {
         pass(prog_ghost_, main_fbo_.read_tex(), [&](GLuint p){
             bind_tex(p, 1, h0, "uPrev");
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
         });
     }
 
-    if (fire(FxId::STUTTER)) {
+    if (float fi = strength(FxId::STUTTER); fi > kEps) {
         pass(prog_stutter_, main_fbo_.read_tex(), [&](GLuint p){
             bind_tex(p, 1, h0, "uPrev");
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
         });
     }
 
-    if (fire(FxId::INTERLACE)) {
+    if (float fi = strength(FxId::INTERLACE); fi > kEps) {
         pass(prog_interlace_, main_fbo_.read_tex(), [&](GLuint p){
             bind_tex(p, 1, h0, "uPrev");
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
             u2f(p,"uResolution",(float)W,(float)H);
         });
     }
 
-    if (fire(FxId::TEMPORALRGB)) {
-        // Beat-reactive temporal split decay
-        static float delay_decay = 0.0f;
-        if (stats.beat) {
-            delay_decay = 1.0f;
-        } else {
-            delay_decay = std::max(0.0f, delay_decay - 0.04f); // decay over ~25 frames
-        }
-
-        // Bind older history frames on beats (h2/h3 instead of h0/h1) for stronger split
-        GLuint tex_g = (delay_decay > 0.4f) ? h2 : h0;
-        GLuint tex_r = (delay_decay > 0.4f) ? h3 : h1;
-
+    if (float fi = strength(FxId::TEMPORALRGB); fi > kEps) {
+        // Envelope peaks on the beat, then decays — use older history frames
+        // while it's strong for a wider split that closes back up as it fades.
+        bool strong = env_[(int)FxId::TEMPORALRGB] > 0.5f;
+        GLuint tex_g = strong ? h2 : h0;
+        GLuint tex_r = strong ? h3 : h1;
         pass(prog_temporalrgb_, main_fbo_.read_tex(), [&](GLuint p){
             bind_tex(p, 1, tex_g, "uPrev1");
             bind_tex(p, 2, tex_r, "uPrev2");
-            u1f(p,"uIntensity", fi_base * (0.3f + delay_decay * 0.7f));
+            u1f(p,"uIntensity", fi);
         });
     }
 
-    // ── New datamosh-like effects ─────────────────────────────────────────────
+    // ── Datamosh-like warps ───────────────────────────────────────────────────
 
-    if (fire(FxId::DERIVWARP)) {
+    if (float fi = strength(FxId::DERIVWARP); fi > kEps) {
         pass(prog_derivwarp_, main_fbo_.read_tex(), [&](GLuint p){
             bind_tex(p, 1, h0, "uPrev");
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
             u2f(p,"uResolution",(float)W,(float)H);
         });
     }
 
-    if (fire(FxId::SELFDISP)) {
+    if (float fi = strength(FxId::SELFDISP); fi > kEps) {
         pass(prog_selfdisp_, main_fbo_.read_tex(), [&](GLuint p){
             bind_tex(p, 1, h0, "uPrev");
             bind_tex(p, 2, h1, "uPrev2");
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
             u1f(p,"uTime",      time_sec);
         });
     }
 
-    if (fire(FxId::VORTEX)) {
+    if (float fi = strength(FxId::VORTEX); fi > kEps) {
         pass(prog_vortex_, main_fbo_.read_tex(), [&](GLuint p){
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
             u1f(p,"uTime",      time_sec);
             u1f(p,"uBass",      stats.bass);
         });
     }
 
-    if (fire(FxId::FRACTALNOISE)) {
+    if (float fi = strength(FxId::FRACTALNOISE); fi > kEps) {
         pass(prog_fractalnoise_, main_fbo_.read_tex(), [&](GLuint p){
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
             u1f(p,"uTime",      time_sec);
             u1f(p,"uTreble",    stats.treble);
         });
@@ -620,7 +733,7 @@ GLuint EffectChain::apply(
 
     // ── Feedback accumulator ──────────────────────────────────────────────────
 
-    if (fire(FxId::FEEDBACK)) {
+    if (float fi = strength(FxId::FEEDBACK); fi > kEps) {
         GLuint cur   = main_fbo_.read_tex();
         GLuint prev_accum = accum_fbo_.read_tex();
 
@@ -630,8 +743,8 @@ GLuint EffectChain::apply(
         glUseProgram(prog_feedback_);
         glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, cur);        glUniform1i(glGetUniformLocation(prog_feedback_,"uTex"),  0);
         glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, prev_accum); glUniform1i(glGetUniformLocation(prog_feedback_,"uAccum"),1);
-        u1f(prog_feedback_,"uIntensity", fi_base);
-        
+        u1f(prog_feedback_,"uIntensity", fi);
+
         // Modulate scale and rotation by bass/mid frequencies for analog video feedback
         float scale = 0.98f + stats.bass * 0.04f;   // pulsating zoom around 1.0
         float rot = 0.005f + stats.mid * 0.03f;     // dynamic swirl based on mid hits
@@ -646,38 +759,38 @@ GLuint EffectChain::apply(
 
     // ── Channel / color effects ───────────────────────────────────────────────
 
-    if (fire(FxId::COLORBLEED)) {
+    if (float fi = strength(FxId::COLORBLEED); fi > kEps) {
         pass(prog_colorbleed_, main_fbo_.read_tex(), [&](GLuint p){
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
             u2f(p,"uResolution",(float)W,(float)H);
         });
     }
 
-    if (fire(FxId::BLOCKGLITCH)) {
+    if (float fi = strength(FxId::BLOCKGLITCH); fi > kEps) {
         pass(prog_blockglitch_, main_fbo_.read_tex(), [&](GLuint p){
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
             u1f(p,"uTime",      time_sec);
         });
     }
 
-    if (fire(FxId::BADSIGNAL)) {
+    if (float fi = strength(FxId::BADSIGNAL); fi > kEps) {
         pass(prog_badsignal_, main_fbo_.read_tex(), [&](GLuint p){
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
             u1f(p,"uTime",      time_sec);
             u2f(p,"uResolution",(float)W,(float)H);
         });
     }
 
-    if (fire(FxId::PHASESHIFT)) {
+    if (float fi = strength(FxId::PHASESHIFT); fi > kEps) {
         pass(prog_phaseshift_, main_fbo_.read_tex(), [&](GLuint p){
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
             u1f(p,"uTime",      time_sec);
         });
     }
 
-    if (fire(FxId::PIXEL_SORT)) {
+    if (float fi = strength(FxId::PIXEL_SORT); fi > kEps) {
         pass(prog_pixsort_, main_fbo_.read_tex(), [&](GLuint p){
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
             u2f(p,"uResolution",(float)W,(float)H);
             // Dynamic sort direction based on segment type:
             // Noise -> Horizontal, Impact/Drop -> Vertical
@@ -689,70 +802,135 @@ GLuint EffectChain::apply(
         });
     }
 
-    if (fire(FxId::ZOOMGLITCH)) {
+    if (float fi = strength(FxId::ZOOMGLITCH); fi > kEps) {
         pass(prog_zoomglitch_, main_fbo_.read_tex(), [&](GLuint p){
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
         });
     }
 
-    if (fire(FxId::MOSAIC)) {
+    if (float fi = strength(FxId::MOSAIC); fi > kEps) {
         pass(prog_mosaic_, main_fbo_.read_tex(), [&](GLuint p){
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
         });
     }
 
-    if (fire(FxId::NEGATIVE)) {
+    if (float fi = strength(FxId::NEGATIVE); fi > kEps) {
         pass(prog_negative_, main_fbo_.read_tex(), [&](GLuint p){
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
         });
     }
 
-    if (fire(FxId::SCANLINES)) {
+    if (float fi = strength(FxId::SCANLINES); fi > kEps) {
         pass(prog_scanlines_, main_fbo_.read_tex(), [&](GLuint p){
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
             u2f(p,"uResolution",(float)W,(float)H);
         });
     }
 
-    if (fire(FxId::BITCRUSH)) {
+    if (float fi = strength(FxId::BITCRUSH); fi > kEps) {
         pass(prog_bitcrush_, main_fbo_.read_tex(), [&](GLuint p){
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
         });
     }
 
-    if (fire(FxId::DITHER)) {
+    if (float fi = strength(FxId::DITHER); fi > kEps) {
         pass(prog_dither_, main_fbo_.read_tex(), [&](GLuint p){
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
             u2f(p,"uResolution",(float)W,(float)H);
         });
     }
 
-    if (fire(FxId::WAVESHAPER)) {
-        pass(prog_waveshaper_, main_fbo_.read_tex(), [&](GLuint p){
-            u1f(p,"uIntensity", fi_base);
+    // ── Wired-in classics (kaleidoscope / rgb split / fisheye / vhs / drift) ──
+
+    if (float fi = strength(FxId::RGBSHIFT); fi > kEps) {
+        pass(prog_rgbshift_, main_fbo_.read_tex(), [&](GLuint p){
+            u1f(p,"uIntensity", fi);
         });
     }
 
-    // ── Flash (last of color passes — white/black hit) ────────────────────────
+    if (float fi = strength(FxId::KALI); fi > kEps) {
+        pass(prog_kali_, main_fbo_.read_tex(), [&](GLuint p){
+            u1f(p,"uIntensity", fi);
+        });
+    }
 
-    if (fire(FxId::FLASH)) {
+    if (float fi = strength(FxId::FISHEYE); fi > kEps) {
+        pass(prog_fisheye_, main_fbo_.read_tex(), [&](GLuint p){
+            u1f(p,"uIntensity", fi);
+        });
+    }
+
+    if (float fi = strength(FxId::VHSTRACK); fi > kEps) {
+        pass(prog_vhstrack_, main_fbo_.read_tex(), [&](GLuint p){
+            u1f(p,"uIntensity", fi);
+            u1f(p,"uTime",      time_sec);
+        });
+    }
+
+    if (float fi = strength(FxId::PIXELDRIFT); fi > kEps) {
+        pass(prog_pixeldrift_, main_fbo_.read_tex(), [&](GLuint p){
+            u1f(p,"uIntensity", fi);
+            u1f(p,"uTime",      time_sec);
+        });
+    }
+
+    // ── Datamosh family (feed off the previous chain output via history) ──────
+
+    if (float fi = strength(FxId::PFRAME_LAG); fi > kEps) {
+        pass(prog_pframe_lag_, main_fbo_.read_tex(), [&](GLuint p){
+            bind_tex(p, 1, h0, "uPrev");
+            u1f(p,"uIntensity", fi);
+            u1f(p,"uTime",      time_sec);
+            u2f(p,"uResolution",(float)W,(float)H);
+        });
+    }
+
+    if (float fi = strength(FxId::MVEC_BLOOM); fi > kEps) {
+        pass(prog_mvec_bloom_, main_fbo_.read_tex(), [&](GLuint p){
+            bind_tex(p, 1, h0, "uPrev");
+            u1f(p,"uIntensity", fi);
+            u1f(p,"uTime",      time_sec);
+            u2f(p,"uResolution",(float)W,(float)H);
+        });
+    }
+
+    if (float fi = strength(FxId::SELF_CANNIBALIZE); fi > kEps) {
+        pass(prog_self_cannib_, main_fbo_.read_tex(), [&](GLuint p){
+            bind_tex(p, 1, h0, "uPrev");
+            bind_tex(p, 2, h1, "uPrev2");
+            u1f(p,"uIntensity", fi);
+            u1f(p,"uTime",      time_sec);
+            u2f(p,"uResolution",(float)W,(float)H);
+        });
+    }
+
+    // ── Flash (white/black hit) ───────────────────────────────────────────────
+
+    if (float fi = strength(FxId::FLASH); fi > kEps) {
         float white = (rand() % 2) ? 1.f : 0.f;
         pass(prog_flash_, main_fbo_.read_tex(), [&](GLuint p){
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
             u1f(p,"uWhite",     white);
         });
     }
 
     // ── ASCII (visual transform — runs after all glitch) ─────────────────────
 
-    if (fire(FxId::ASCII)) {
+    if (float fi = strength(FxId::ASCII); fi > kEps) {
         pass(prog_ascii_, main_fbo_.read_tex(), [&](GLuint p){
             bind_tex(p, 1, ascii_font_tex_, "uFontAtlas");
             u2f(p,"uResolution",(float)W,(float)H);
-            u1f(p,"uIntensity", fi_base);
+            u1f(p,"uIntensity", fi);
             u1f(p,"uColor",     1.0f);  // keep original colors
         });
     }
+
+    // ── Generative visualizers (draw imagery FROM audio, over the canvas) ─────
+
+    if (float fi = strength(FxId::VIZ_PLASMA);  fi > kEps) viz_pass(prog_viz_plasma_,  fi);
+    if (float fi = strength(FxId::VIZ_RADIAL);  fi > kEps) viz_pass(prog_viz_radial_,  fi);
+    if (float fi = strength(FxId::VIZ_BARS);    fi > kEps) viz_pass(prog_viz_bars_,    fi);
+    if (float fi = strength(FxId::VIZ_ALCHEMY); fi > kEps) viz_pass(prog_viz_alchemy_, fi);
 
     // ── Overlay composite ─────────────────────────────────────────────────────
 
@@ -803,7 +981,9 @@ GLuint EffectChain::apply(
     }
 
     // ── Push current result into history ring ─────────────────────────────────
-    push_history();
+    // Skip the full-canvas blit entirely unless some enabled effect actually
+    // samples history — otherwise it's ~6 MB/frame of pure waste at 1080p.
+    if (needs_history(params)) push_history();
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     return main_fbo_.read_tex();

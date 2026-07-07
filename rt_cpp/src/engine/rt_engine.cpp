@@ -38,6 +38,13 @@ GLuint RtEngine::process_frame(float dt, EngineSettings& settings) {
 
     // ── Audio ─────────────────────────────────────────────────────────────────
     last_stats_   = audio_.get_stats();
+
+    // Tap-tempo metronome: OR a synthetic beat onto the audio beat on the grid.
+    if (metronome && bpm_ > 1.f) {
+        beat_phase_ += dt * bpm_ / 60.f;
+        if (beat_phase_ >= 1.f) { beat_phase_ -= 1.f; last_stats_.beat = true; }
+    }
+
     float gate    = audio_.get_gate() * settings.sensitivity;
     last_segment_ = classify_segment(last_stats_, gate);
 
@@ -67,13 +74,13 @@ GLuint RtEngine::process_frame(float dt, EngineSettings& settings) {
         // Cut mode: random cuts on beats / impacts / drops. cut_interval
         // gates softer (build / sustain) cuts so they don't feel frantic.
         auto t = last_segment_.type;
-        const float kMinCutMs = 0.030f;  // 30ms hard-trigger anti-spam
+        const float kMinCutSec = 0.030f;  // 30 ms hard-trigger anti-spam (time_since_cut_ is seconds)
         bool hard_trigger = (t == SegmentType::IMPACT || t == SegmentType::DROP ||
                              last_stats_.beat);
         bool soft_trigger = (t == SegmentType::BUILD ||
                              (t == SegmentType::SUSTAIN && last_stats_.beat));
 
-        if (hard_trigger && time_since_cut_ >= kMinCutMs) {
+        if (hard_trigger && time_since_cut_ >= kMinCutSec) {
             time_since_cut_ = 0.f;
             trigger_cut = true;
         } else if (soft_trigger && time_since_cut_ >= settings.cut_interval) {
@@ -148,6 +155,7 @@ GLuint RtEngine::process_frame(float dt, EngineSettings& settings) {
         settings.chaos,
         settings.master_intensity,
         elapsed_time_,
+        dt,
         settings.fx
     );
 }

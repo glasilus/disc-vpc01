@@ -57,7 +57,8 @@
     - [4.10 Effects](#410-effects)
     - [4.11 Presets](#411-presets)
     - [4.12 Keyboard Shortcuts](#412-keyboard-shortcuts)
-    - [4.13 Diagnostic Log](#413-diagnostic-log)
+    - [4.13 Tap Tempo & MIDI Control](#413-tap-tempo--midi-control)
+    - [4.14 Diagnostic Log](#414-diagnostic-log)
   - [5. Segment Types Reference](#5-segment-types-reference)
   - [6. Recommended Workflows](#6-recommended-workflows)
     - [Disc VPC 01 — Iterative editing](#disc-vpc-01--iterative-editing)
@@ -176,7 +177,7 @@ Disc-VPC-01-windows/
 ```
 
 Run `DiscVPC01-RT.exe` directly. A `vpc01rt.log` file is written next to the
-executable on every launch — see §4.13.
+executable on every launch — see §4.14.
 
 ---
 
@@ -1392,18 +1393,17 @@ The control window has a fixed top strip and a four-column control grid below.
 ```
 ┌─────────────────┬────────────────────────────────────────────────────┐
 │                 │   Transport                                        │
-│  Preview        │    [START/STOP]  Freeze  Blackout                  │
-│  thumbnail      │    Mode: Continuous / Cut on beat   FPS            │
+│  Preview        │    [START/STOP]  Freeze  Blackout   Mode   FPS     │
+│  thumbnail      │    [TAP]  Metro  BPM   ·   FX bank N/4             │
 │  320 × 180      │    Bass / Mid / Treble  ─ live meters              │
-│                 │    Segment   ·   Device   ·   Audio cb counter     │
-│                 │    Video: #N of M  /  pool                         │
+│                 │    Segment · Device · Audio cb · Video: #N of M    │
 ├─────────────────┴────────────────────────────────────────────────────┤
-│  [Master]      [Effects]      [Video / Audio]    [Overlays /         │
-│   Chaos         24 toggles     File list with     Presets / Output]  │
-│   Intensity                    [*] active marker  Chroma key sliders │
-│   Threshold                    Audio device       Preset combo       │
-│   Cut Interval                  combo + meters    Monitor selector   │
-│   Canvas + Aspect                                 Open / Close output│
+│  [Master]      [Effects]        [Video / Audio]   [Overlays /        │
+│   Chaos         collapsible      File list with    Presets / Output  │
+│   Intensity     categories,      [*] active mark   / MIDI]           │
+│   Gate Thresh   per-effect       Audio device      Chroma · Preset   │
+│   Cut Interval  Strength/Mode/   combo + meters     combo · Monitor  │
+│   Canvas+Aspect Chance controls                     · MIDI Learn      │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1460,9 +1460,17 @@ specific device.
 **Sample rate & channels**
 
 The engine queries the device's native sample rate (typically 48 kHz on
-WASAPI) and uses it directly. Multi-channel inputs are downmixed to mono in
-the audio callback. The actual sample rate granted by the OS is shown in the
-Transport panel:  `sr=48000 Hz`.
+WASAPI) and uses it directly. Multi-channel inputs are fully downmixed to mono
+in the audio callback (no samples dropped). The actual sample rate granted by
+the OS is shown in the Transport panel:  `sr=48000 Hz`.
+
+**Frequency analysis & beat detection.** Incoming audio feeds a sliding
+analysis window (1024-sample FFT with a Hann window, updated every 256 samples),
+decoupled from the driver's buffer size — this gives solid bass resolution and a
+steady analysis rate. Beats are detected by **spectral flux** in the low band
+(a rise in low-frequency energy above an adaptive threshold), which tracks kicks
+reliably even under a sustained bassline. A 16-band, auto-gained spectrum is
+also derived from the same window and feeds the visualizer effects.
 
 **Calibration**
 
@@ -1591,54 +1599,74 @@ source.
 
 ### 4.10 Effects
 
-24 visual effects, each a checkbox. Tick one on and the program will fire it from time to time when the music gives it an excuse — how often is set by that effect's *chance* slider, and how *strong* it looks is shaped by **Chaos** and **Master Intensity** at the top of the panel.
+35 GPU effects, grouped into **collapsible categories** in the *Effects* panel.
+Each effect is a checkbox; tick it on and a compact control row appears beneath
+it. Each category header shows an `enabled / total` count so you can see what's
+active without expanding it.
 
-You don't have to memorize the table below. The fast way is: pick a preset, then start clicking effects on and off live to taste.
+**Every effect is driven by an audio-reactive envelope.** Instead of blinking
+on and off frame-by-frame (the old behaviour, which strobed), an effect now
+*attacks* on a musical event and then *decays* smoothly — so it swells and fades
+with the track. Three per-effect controls shape this:
 
-**Intensity model** *(the math behind how strong each effect feels — safe to skip)*:
+- **Strength** *(S, 0–1)* — how strong the effect looks at full envelope.
+- **Mode** — how the envelope is driven:
+  - **Auto** — attacks on a musical accent (a beat, or a segment change into
+    Impact / Drop / Build), then decays. Default for punchy glitches.
+  - **Beat** — attacks strictly on detected beats, then decays.
+  - **Sustain** — the envelope continuously tracks loudness, no strobe. Default
+    for "look" filters (scanlines, VHS, kaleidoscope…) and the datamosh family.
+  - **Manual** — always full-on while enabled, ignores audio. Default for the
+    visualizers.
+- **Chance** *(C, 0–1; Auto/Beat only)* — probability the effect fires on each
+  eligible accent/beat. Lower = sparser, more selective hits.
 
-```
-seg_boost = sqrt(segment.intensity)                         (0..1)
-drive     = chaos × (0.6 + 0.4 × master_intensity)          (0..1)
-fi_base   = clamp(0.25 + 1.4 × drive × seg_boost, 0, 1)     (0..1)
-```
+At the top of the **Master** panel, **Chaos** scales how hard triggered effects
+hit, and **Intensity** is the global dry/wet blend of the whole processed image
+back toward the raw video. Sensible Modes are preset per effect, so most look
+right the moment you enable them.
 
-The 0.25 floor keeps fired effects visible during quiet passages. The sqrt
-curve boosts modest segments so SUSTAIN and NOISE are not flattened to ~10 %
-strength. Both **Chaos** and **Master Intensity** sliders modulate effect
-strength.
+> Fast path: pick a preset, expand a category, click effects on/off live. You
+> rarely need to touch Mode/Chance unless you want a specific feel.
 
-The 24 effects:
+**Keyboard banks.** The `Q W E R T Y U I O P` row toggles ten effects at a time.
+Because there are more than ten, `\` cycles the *bank* — the ten effects the row
+currently controls. The panel highlights the active bank in blue and prints its
+range (e.g. `Q-P: #11-20`).
 
-| # | Effect | Behaviour |
-|---|---|---|
-| 0 | **Deriv Warp** | Frame derivative used as displacement map — feedback-like flow that grows with motion. |
-| 1 | **Flash** | Brief white or black flash on the canvas, scaled to intensity. |
-| 2 | **Stutter** | Holds the previous frame and repeats it, giving a glitched freeze. |
-| 3 | **Pixel Sort** | Sorts horizontal stripes of pixels by luminance. |
-| 4 | **Ghost Trails** | Blends previous frames in for a motion-trail/echo. |
-| 5 | **Scanlines** | Darkens every N-th row — CRT look. |
-| 6 | **Bitcrush** | Quantizes colour values to a small palette. |
-| 7 | **Block Glitch** | Random rectangular displacements / replacements. |
-| 8 | **Negative** | Inverts colour for the affected frame. |
-| 9 | **Color Bleed** | Horizontal smear of a single channel — VHS chroma delay. |
-| 10 | **Interlace** | Even rows from current frame, odd rows from a previous frame. |
-| 11 | **Bad Signal** | Vertical noise bars + horizontal row jitter — broadcast loss. |
-| 12 | **Zoom Glitch** | Punch-in zoom on the canvas centre with nearest-neighbour scaling. |
-| 13 | **Mosaic** | Pulsing block mosaic with bass-driven block size. |
-| 14 | **Phase Shift** | Alternating horizontal bands shifted left / right. |
-| 15 | **Dither** | Bayer dither at reduced colour depth. |
-| 16 | **Feedback** | Accumulator-based visual feedback / burn-in. |
-| 17 | **Temporal RGB** | R / G / B channels sampled from different past frames — chromatic temporal aberration. |
-| 18 | **Waveshaper** | tanh soft-clip on pixel values — colour saturation. |
-| 19 | **Overlays** | Composites a random image from the loaded overlay set onto the canvas. |
-| 20 | **Vortex** | Spiral rotation around the canvas centre with chromatic split. |
-| 21 | **Fractal Noise** | Domain-warped fBm distortion — organic "melting" warp. |
-| 22 | **Self Displace** | Previous frame used as a displacement map — closest analogue to true datamosh. |
-| 23 | **ASCII** | GPU ASCII filter rendering the canvas as character-density blocks. |
+**Categories and full effect list**
 
-The first ten effects (rows 0..9 above) are mapped to the **Q W E R T Y U I O P**
-keys for direct toggling during a set.
+| Category | Effects |
+|---|---|
+| **CORE** | Flash · Stutter · Ghost Trails |
+| **GLITCH** | Pixel Sort · Block Glitch · Bad Signal · Zoom Glitch · Mosaic · Phase Shift · Pixel Drift |
+| **WARP** | Deriv Warp · Feedback · Vortex · Fractal Noise · Self Displace · Kaleidoscope · Fisheye |
+| **DATAMOSH** | P-Frame Lag · MVec Bloom · Self Cannibalize |
+| **COLOR** | Negative · Color Bleed · Temporal RGB · RGB Shift |
+| **DEGRADE** | Scanlines · Bitcrush · Interlace · Dither · ASCII · VHS Tracking |
+| **VISUALIZER** | Plasma · Radial Spectrum · Spectrum Bars · Alchemy |
+| **OVERLAY** | Overlays |
+
+Notable behaviours:
+
+- **Datamosh family** — temporal corruption that *compounds over time* because
+  each reads the engine's previous output. **P-Frame Lag** freezes static
+  macroblocks so movement smears the background into a stuck mosaic; **MVec
+  Bloom** drags blocks along bogus motion vectors into swimming streaks;
+  **Self Cannibalize** warps the image by its own content so it flows and eats
+  itself. Best left on **Sustain** so the melt builds.
+- **Visualizers** — draw imagery *from the audio*, over (or instead of) the
+  video, and work even with no clip loaded. **Plasma** (liquid colour field),
+  **Radial Spectrum** (polar "audio sun"), **Spectrum Bars** (16-band bars with
+  reflection), **Alchemy** (kaleidoscopic mandala). Default **Manual** (stay on
+  while enabled).
+- **Kaleidoscope, Fisheye, RGB Shift, VHS Tracking, Pixel Drift** — classic
+  geometric / channel effects; default **Sustain**.
+- **Deriv Warp / Self Displace / Fractal Noise** — datamosh-adjacent warps that
+  use frame history.
+
+*(Waveshaper from earlier builds was removed; its old preset key is ignored on
+load.)*
 
 **Overlays** — load an image folder by dragging it onto the window or via
 *Load Folder* in the *Overlays* panel. **Overlay Intensity** in the GUI
@@ -1655,10 +1683,14 @@ parameter reference.
 ### 4.11 Presets
 
 Presets save the entire `EngineSettings` snapshot — chaos, intensity,
-threshold, cut interval, canvas resolution, aspect mode, all 24 effect enable
-states and their `chance` probabilities, chroma-key configuration, overlay
-intensity. They are JSON files in the `presets/` folder next to the
-executable.
+threshold, cut interval, aspect mode, chroma-key configuration, overlay
+intensity, and for **every effect** its enable state plus **strength, mode and
+chance**. They are JSON files in the `presets/` folder next to the executable.
+
+Loading a preset first **resets everything to defaults**, then applies the
+file — so a preset never leaves stray effects from a previously-loaded one
+enabled. Old presets that stored effects as a plain on/off boolean still load
+(strength/mode/chance fall back to their defaults).
 
 The release bundle ships `presets/rt_blank.json` (loaded automatically at
 launch — it's the neutral starting point with all effects off) along with
@@ -1706,7 +1738,8 @@ inside an ImGui text-input field.
 
 | Key | Action |
 |---|---|
-| `Q W E R T Y U I O P` | Toggle effects 0..9 |
+| `Q W E R T Y U I O P` | Toggle the ten effects in the current bank |
+| `\` | Cycle the effect bank (next ten effects) |
 
 **Parameters**
 
@@ -1714,6 +1747,7 @@ inside an ImGui text-input field.
 |---|---|
 | `[` / `]` | Decrease / increase **Chaos** by 0.02 |
 | `,` / `.` | Decrease / increase **Cut Interval** by 0.02 |
+| `Enter` | Tap tempo (arms the metronome — see §4.13) |
 
 **Output / Presets**
 
@@ -1724,7 +1758,38 @@ inside an ImGui text-input field.
 
 ---
 
-### 4.13 Diagnostic Log
+### 4.13 Tap Tempo & MIDI Control
+
+**Tap Tempo / Metronome.** Tap the **TAP** button (or press `Enter`) a few times
+in time with the music. The program measures your tempo, shows the **BPM** in
+the Transport strip, and arms a **metronome**: a synthetic beat on the tapped
+grid that is combined (OR'd) with the audio-detected beat. This keeps cuts and
+beat-driven effects locked to tempo even when the track's transient is weak or
+ambiguous. Toggle it with the **Metro** checkbox; a `>2 s` gap since your last
+tap restarts the count.
+
+**MIDI Control** *(optional).* The **MIDI** panel (in the *Overlays / Presets /
+Output* column) maps a hardware controller onto the program. It's entirely
+optional — if you have no MIDI device, the panel simply shows *(no device)* and
+nothing else changes.
+
+- **Port** — pick your controller from the dropdown; **Rescan** re-probes.
+- **Learn** — click **Learn** next to a control, then move a knob/fader (for a
+  continuous parameter) or hit a pad (for an action). That control is now bound.
+  **X** clears a binding.
+- Mappable **parameters** (knobs/faders → value): Chaos, Intensity, Cut
+  Interval, Overlay, Threshold. Mappable **actions** (pads → trigger):
+  Start/Stop, Blackout, Freeze, Next Preset, Tap.
+- **Save Map** writes the bindings to `midi.json` next to the executable; they
+  reload automatically on the next launch.
+
+CC values map 0–127 → 0–1; Note-On fires an action. Bindings survive a restart
+and the app never blocks or crashes if the device is unplugged mid-set — it just
+drops to a closed state and you can re-pick the port.
+
+---
+
+### 4.14 Diagnostic Log
 
 On every launch the program writes `vpc01rt.log` to its working directory
 with unbuffered, line-flushed output. The log captures:

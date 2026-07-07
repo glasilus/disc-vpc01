@@ -4,12 +4,19 @@
 #include <string>
 
 struct GLFWwindow;
+class  MidiControl;
 
 class RtGui {
 public:
     bool init(GLFWwindow* window, RtEngine* engine, const std::string& presets_folder);
     void render(EngineSettings& settings, float fps, GLuint display_tex = 0);
     void shutdown();
+
+    // Runtime wiring from main.
+    void set_midi(MidiControl* m) { midi_ = m; }
+    void set_fx_bank(int b)       { fx_bank_ = b; }
+    // Advance to the next preset in the list (used by a MIDI action).
+    void request_next_preset();
 
     bool want_start()      { bool v = want_start_; want_start_ = false; return v; }
     bool want_stop()       { bool v = want_stop_;  want_stop_  = false; return v; }
@@ -40,12 +47,22 @@ public:
 private:
     void draw_master_panel(EngineSettings& s);
     void draw_effects_panel(EngineSettings& s);
+    void draw_effect_row(EngineSettings& s, int i, int bank_lo, int bank_hi);
     void draw_video_panel();
     void draw_audio_panel(EngineSettings& s);
     void draw_overlay_panel(EngineSettings& s);
     void draw_presets_panel(EngineSettings& s);
     void draw_video_preview(GLuint tex, int win_w, int win_h);
     void draw_transport(EngineSettings& s, float fps);
+    void draw_midi_panel();
+
+    MidiControl* midi_    = nullptr;
+    int          fx_bank_ = 0;
+
+    // GUI tap-tempo (independent of the keyboard/MIDI tap in main).
+    double       tap_times_[8] = {};
+    int          tap_n_        = 0;
+    void         gui_tap();
 
     RtEngine*      engine_  = nullptr;
     PresetManager  presets_;

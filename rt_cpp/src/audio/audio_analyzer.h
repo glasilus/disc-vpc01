@@ -6,9 +6,20 @@
 #include <string>
 #include <atomic>
 
+// Audio-callback buffer request. Kept small for low latency; the callback
+// tolerates ANY frame count the driver actually delivers (WASAPI shared mode
+// commonly hands over ~448–480 frames regardless of this request).
 static constexpr int   kChunkSize   = 256;
 static constexpr int   kSampleRateDefault = 48000;  // request; actual stored per-stream
-static constexpr int   kCalibChunks = 256;   // ~1.5s calibration
+
+// FFT is DECOUPLED from the callback buffer: incoming samples feed a sliding
+// window of kFftSize and analysis runs every kHopSize new samples. This fixes
+// two things vs. the old "FFT the raw 256-sample callback" design:
+//   • bass resolution: 1024 @ 48k ⇒ ~47 Hz/bin (was ~187 Hz/bin — bass was 1 bin)
+//   • no sample loss: stereo callbacks are fully downmixed, not truncated.
+static constexpr int   kFftSize     = 1024;
+static constexpr int   kHopSize     = 256;   // analyze every 256 new samples
+static constexpr int   kCalibChunks = 256;   // ~1.4s of analysis frames
 static constexpr int   kTrendWindow = 10;
 static constexpr float kBeatCooldownMs = 80.f;
 
@@ -53,16 +64,34 @@ private:
                            PaStreamCallbackFlags flags,
                            void* user_data);
 
-    void process_chunk(const float* samples, unsigned long n);
-    void calibrate(float rms);
+    // Feed arbitrary-length mono samples from the callback into the sliding
+    // window; runs analyze_window() once per completed hop.
+    void ingest(const float* mono, unsigned long n);
+    void analyze_window();
 
     PaStream*             stream_    = nullptr;
     std::atomic<bool>     running_   = false;
 
-    // FFTW
+    // FFTW (sized kFftSize)
     float*        fft_in_  = nullptr;
     fftwf_complex* fft_out_ = nullptr;
     fftwf_plan    fft_plan_ = nullptr;
+
+    // Sliding analysis window (audio-thread only).
+    float   win_ring_[kFftSize] = {};   // ring holding the last kFftSize samples
+    int     ring_pos_           = 0;    // next write position in the ring
+    int     samples_since_hop_  = 0;    // new samples since last analyze_window()
+    bool    ring_primed_        = false;// true once kFftSize samples seen
+    float   hann_[kFftSize]     = {};   // precomputed Hann window
+
+    // Spectral-flux onset/beat detection state.
+    float   prev_mag_[kFftSize/2 + 1] = {};
+    float   flux_mean_ = 0.f;           // adaptive threshold baseline
+    float   flux_std_  = 0.f;
+
+    // Per-band AGC for normalized visualizer spectrum (0..1).
+    float   bin_max_[kVizBins] = {};
+    float   level_max_ = 1e-4f;
 
     // Audio stats (written in callback, read in render thread)
     mutable AtomicAudioStats atomic_stats_;

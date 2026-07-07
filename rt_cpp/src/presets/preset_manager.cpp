@@ -44,6 +44,12 @@ bool PresetManager::load(const std::string& path, EngineSettings& out) {
     json j;
     try { f >> j; } catch(...) { return false; }
 
+    // Reset to defaults FIRST so keys absent from this preset don't inherit the
+    // previously-loaded preset's state. Without this, loading preset B after A
+    // leaves A's effects (and params) that B never mentions still active — the
+    // exact "phantom effects / wrong result" bug seen on the Python side.
+    out = EngineSettings{};
+
     if (j.contains("chaos"))            out.chaos            = j["chaos"].get<float>();
     if (j.contains("sensitivity"))      out.sensitivity      = j["sensitivity"].get<float>();
     if (j.contains("master_intensity")) out.master_intensity = j["master_intensity"].get<float>();
@@ -69,11 +75,22 @@ bool PresetManager::load(const std::string& path, EngineSettings& out) {
         auto& fx = j["fx_state"];
         for (int i = 0; i < (int)FxId::COUNT; ++i) {
             const char* key = fx_key((FxId)i);
-            if (fx.contains(key))
-                out.fx[i].enabled = fx[key].get<bool>();
+            if (!fx.contains(key)) continue;
+            auto& e = fx[key];
+            // Two on-disk shapes are accepted:
+            //   • legacy bool  → just the enabled flag
+            //   • object       → {enabled,intensity,chance,mode}
+            if (e.is_boolean()) {
+                out.fx[i].enabled = e.get<bool>();
+            } else if (e.is_object()) {
+                if (e.contains("enabled"))   out.fx[i].enabled   = e["enabled"].get<bool>();
+                if (e.contains("intensity")) out.fx[i].intensity = e["intensity"].get<float>();
+                if (e.contains("chance"))    out.fx[i].chance    = e["chance"].get<float>();
+                if (e.contains("mode"))      out.fx[i].mode      = e["mode"].get<int>();
+            }
         }
         // Backward compat: old presets used "fx_rgb" → map to fx_derivwarp
-        if (fx.contains("fx_rgb") && !fx.contains("fx_derivwarp"))
+        if (fx.contains("fx_rgb") && !fx.contains("fx_derivwarp") && fx["fx_rgb"].is_boolean())
             out.fx[(int)FxId::DERIVWARP].enabled = fx["fx_rgb"].get<bool>();
     }
     return true;
@@ -98,8 +115,14 @@ bool PresetManager::save(const std::string& path, const EngineSettings& s) {
     j["ck_gate_mode"]     = s.ck_gate_mode;
 
     json fx;
-    for (int i = 0; i < (int)FxId::COUNT; ++i)
-        fx[fx_key((FxId)i)] = s.fx[i].enabled;
+    for (int i = 0; i < (int)FxId::COUNT; ++i) {
+        json e;
+        e["enabled"]   = s.fx[i].enabled;
+        e["intensity"] = s.fx[i].intensity;
+        e["chance"]    = s.fx[i].chance;
+        e["mode"]      = s.fx[i].mode;
+        fx[fx_key((FxId)i)] = e;
+    }
     j["fx_state"] = fx;
 
     std::ofstream f(path);

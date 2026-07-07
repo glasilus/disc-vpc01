@@ -7,41 +7,80 @@
 #include "../video/overlay_manager.h"
 
 
-// Maps exactly to rt_blank.json fx_state keys (minus fx_datamosh, plus new effects)
+// Effect identifiers. Preset compatibility is keyed by the STRING returned by
+// fx_key() (not by the numeric value), so this list can be reordered/extended
+// freely — old presets simply match by name and default the rest to disabled.
+// NOTE: Waveshaper was removed (low visual value); old "fx_waveshaper" keys are
+// silently ignored on load.
 enum class FxId {
     DERIVWARP   = 0,   // replaces fx_rgb — derivative warp (datamosh-like)
-    FLASH       = 1,
-    STUTTER     = 2,
-    PIXEL_SORT  = 3,
-    GHOST       = 4,
-    SCANLINES   = 5,
-    BITCRUSH    = 6,
-    BLOCKGLITCH = 7,
-    NEGATIVE    = 8,
-    COLORBLEED  = 9,
-    INTERLACE   = 10,
-    BADSIGNAL   = 11,
-    ZOOMGLITCH  = 12,
-    MOSAIC      = 13,
-    PHASESHIFT  = 14,
-    DITHER      = 15,
-    FEEDBACK    = 16,
-    TEMPORALRGB = 17,
-    WAVESHAPER  = 18,
-    OVERLAYS    = 19,
-    VORTEX      = 20,  // new: spiral/twist warp
-    FRACTALNOISE= 21,  // new: domain-warped FBM distortion
-    SELFDISP    = 22,  // new: prev frame as displacement map (closest to datamosh)
-    ASCII       = 23,  // new: GPU ASCII filter
-    COUNT       = 24
+    FLASH,
+    STUTTER,
+    PIXEL_SORT,
+    GHOST,
+    SCANLINES,
+    BITCRUSH,
+    BLOCKGLITCH,
+    NEGATIVE,
+    COLORBLEED,
+    INTERLACE,
+    BADSIGNAL,
+    ZOOMGLITCH,
+    MOSAIC,
+    PHASESHIFT,
+    DITHER,
+    FEEDBACK,
+    TEMPORALRGB,
+    OVERLAYS,
+    VORTEX,          // spiral/twist warp
+    FRACTALNOISE,    // domain-warped FBM distortion
+    SELFDISP,        // prev frame as displacement map (closest to datamosh)
+    ASCII,           // GPU ASCII filter
+    // ── Wired-in classics (shaders existed but were never hooked up) ─────────
+    RGBSHIFT,        // chromatic RGB channel split
+    KALI,            // kaleidoscope / mirror symmetry
+    FISHEYE,         // barrel / fisheye lens
+    VHSTRACK,        // VHS tracking roll
+    PIXELDRIFT,      // per-row horizontal drift
+    // ── Datamosh family (temporal corruption; feed off the previous output) ──
+    PFRAME_LAG,      // P-frame lag / block freeze melt
+    MVEC_BLOOM,      // wrong motion vectors / bloom smear
+    SELF_CANNIBALIZE,// self-consuming displacement
+    // ── Generative visualizers (draw imagery FROM audio, over the canvas) ────
+    VIZ_PLASMA,
+    VIZ_RADIAL,
+    VIZ_BARS,
+    VIZ_ALCHEMY,
+    COUNT
 };
 
-// JSON preset key for each FxId
-const char* fx_key(FxId id);
+// ── Effect metadata: SINGLE source of truth (see kFxInfo in effect_chain.cpp) ─
+// The JSON preset key, the GUI label, and the GUI category for every effect all
+// come from one table, so adding an effect can't leave the key/label/group
+// arrays out of sync. To add an effect: append a row to kFxInfo, add the FxId,
+// wire its shader (include + program + one pass block in apply()). Nothing else
+// reads a parallel list.
+const char* fx_key(FxId id);    // JSON preset key, e.g. "fx_ghost"
+const char* fx_label(FxId id);  // GUI display name, e.g. "Ghost Trails"
+const char* fx_group(FxId id);  // GUI category, e.g. "CORE"
+
+// Category display order for the GUI effects panel (sections rendered in this
+// order; any effect whose group isn't listed falls into a trailing "OTHER").
+extern const char* const kFxGroupOrder[];
+extern const int         kFxGroupOrderCount;
+
+// How an effect's audio-reactive envelope is driven.
+//   Auto      — attack on musical accents (beat OR segment change), then decay.
+//   Beat      — attack strictly on detected beats, then decay.
+//   Sustained — envelope continuously tracks audio loudness (no strobe).
+//   Manual    — always full-on while enabled (VJ holds it); ignores audio.
+enum class TriggerMode { Auto = 0, Beat = 1, Sustained = 2, Manual = 3 };
 
 struct EffectParams {
     bool  enabled   = false;
-    float chance    = 0.5f;
+    float intensity = 1.0f;   // user strength 0..1 (scales the shader effect)
+    float chance    = 0.6f;   // probability to fire on an eligible event (Auto/Beat)
+    int   mode      = (int)TriggerMode::Auto;
 };
 
 enum class AspectMode { Contain = 0, Cover = 1, Stretch = 2, Native = 3 };
@@ -88,6 +127,7 @@ public:
         float               chaos,
         float               master_intensity,
         float               time_sec,
+        float               dt,
         EffectParams        params[(int)FxId::COUNT]
     );
 
@@ -145,12 +185,40 @@ private:
     GLuint prog_dither_      = 0;
     GLuint prog_feedback_    = 0;
     GLuint prog_temporalrgb_ = 0;
-    GLuint prog_waveshaper_  = 0;
     GLuint prog_overlay_     = 0;
     GLuint prog_vortex_      = 0;
     GLuint prog_fractalnoise_= 0;
     GLuint prog_selfdisp_    = 0;
     GLuint prog_ascii_       = 0;
+    // Wired-in classics
+    GLuint prog_rgbshift_    = 0;
+    GLuint prog_kali_        = 0;
+    GLuint prog_fisheye_     = 0;
+    GLuint prog_vhstrack_    = 0;
+    GLuint prog_pixeldrift_  = 0;
+    // Datamosh family
+    GLuint prog_pframe_lag_  = 0;
+    GLuint prog_mvec_bloom_  = 0;
+    GLuint prog_self_cannib_ = 0;
+    // Generative visualizers
+    GLuint prog_viz_plasma_  = 0;
+    GLuint prog_viz_radial_  = 0;
+    GLuint prog_viz_bars_    = 0;
+    GLuint prog_viz_alchemy_ = 0;
+
+    // ── Per-effect envelope state (runtime, not persisted) ────────────────────
+    // Each effect has a 0..1 envelope that attacks on trigger events and decays
+    // over time (or continuously tracks audio for Sustained/Manual modes). The
+    // effect is applied with strength = env * intensity; this replaces the old
+    // per-frame Bernoulli firing that made everything strobe.
+    float env_[(int)FxId::COUNT] = {};
+    bool  prev_beat_ = false;    // rising-edge detect on stats.beat
+    int   prev_seg_  = -1;       // SegmentType of previous frame (change detect)
+    void  update_envelopes(const Segment& seg, const AudioStats& stats,
+                           float chaos, float dt, EffectParams params[]);
+    // True if any enabled effect currently consumes the frame-history ring —
+    // lets us skip the per-frame history blit entirely when nothing needs it.
+    bool  needs_history(EffectParams params[]) const;
 
     GLuint quad_vao_ = 0, quad_vbo_ = 0;
 
