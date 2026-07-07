@@ -21,6 +21,7 @@ env:
     nlohmann-json
     glad
     stb
+    rtmidi
 
 jobs:
 
