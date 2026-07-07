@@ -1,5 +1,5 @@
 #version 330 core
-// Vortex Warp — spiral rotation from center.
+// Vortex Warp - spiral rotation from center.
 // Pixels near center get more rotation than edges → creates a vortex/drain effect.
 // At high intensity looks completely unhinged.
 in  vec2 vUV;

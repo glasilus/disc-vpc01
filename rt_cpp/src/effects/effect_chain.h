@@ -9,11 +9,11 @@
 
 // Effect identifiers. Preset compatibility is keyed by the STRING returned by
 // fx_key() (not by the numeric value), so this list can be reordered/extended
-// freely — old presets simply match by name and default the rest to disabled.
+// freely - old presets simply match by name and default the rest to disabled.
 // NOTE: Waveshaper was removed (low visual value); old "fx_waveshaper" keys are
 // silently ignored on load.
 enum class FxId {
-    DERIVWARP   = 0,   // replaces fx_rgb — derivative warp (datamosh-like)
+    DERIVWARP   = 0,   // replaces fx_rgb - derivative warp (datamosh-like)
     FLASH,
     STUTTER,
     PIXEL_SORT,
@@ -63,6 +63,7 @@ enum class FxId {
 const char* fx_key(FxId id);    // JSON preset key, e.g. "fx_ghost"
 const char* fx_label(FxId id);  // GUI display name, e.g. "Ghost Trails"
 const char* fx_group(FxId id);  // GUI category, e.g. "CORE"
+const char* fx_tip(FxId id);    // GUI hover tooltip: how the effect LOOKS
 
 // Category display order for the GUI effects panel (sections rendered in this
 // order; any effect whose group isn't listed falls into a trailing "OTHER").
@@ -70,10 +71,10 @@ extern const char* const kFxGroupOrder[];
 extern const int         kFxGroupOrderCount;
 
 // How an effect's audio-reactive envelope is driven.
-//   Auto      — attack on musical accents (beat OR segment change), then decay.
-//   Beat      — attack strictly on detected beats, then decay.
-//   Sustained — envelope continuously tracks audio loudness (no strobe).
-//   Manual    — always full-on while enabled (VJ holds it); ignores audio.
+//   Auto      - attack on musical accents (beat OR segment change), then decay.
+//   Beat      - attack strictly on detected beats, then decay.
+//   Sustained - envelope continuously tracks audio loudness (no strobe).
+//   Manual    - always full-on while enabled (VJ holds it); ignores audio.
 enum class TriggerMode { Auto = 0, Beat = 1, Sustained = 2, Manual = 3 };
 
 struct EffectParams {
@@ -216,7 +217,7 @@ private:
     int   prev_seg_  = -1;       // SegmentType of previous frame (change detect)
     void  update_envelopes(const Segment& seg, const AudioStats& stats,
                            float chaos, float dt, EffectParams params[]);
-    // True if any enabled effect currently consumes the frame-history ring —
+    // True if any enabled effect currently consumes the frame-history ring -
     // lets us skip the per-frame history blit entirely when nothing needs it.
     bool  needs_history(EffectParams params[]) const;
 

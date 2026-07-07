@@ -5,16 +5,16 @@
 #include <memory>
 #include <map>
 
-class RtMidiIn;  // fwd decl — keeps <RtMidi.h> out of this header
+class RtMidiIn;  // fwd decl - keeps <RtMidi.h> out of this header
 
-// MidiControl — optional hardware-MIDI mapping layer for the VJ engine.
+// MidiControl - optional hardware-MIDI mapping layer for the VJ engine.
 //
 // Model:
 //   * Continuous params (knobs/faders)  -> MIDI CC        -> on_value(float 0..1)
 //   * Momentary actions (pads/buttons)  -> MIDI Note-On   -> on_trigger()
 //
 // Polling only: the app calls poll() once per render frame from the main
-// thread. No background threads, no RtMidi callbacks — nothing to lock
+// thread. No background threads, no RtMidi callbacks - nothing to lock
 // against the render loop.
 //
 // Fully optional at runtime: if no backend/device exists, init() returns

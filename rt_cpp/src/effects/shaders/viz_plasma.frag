@@ -2,7 +2,7 @@
 in  vec2 vUV;
 out vec4 FragColor;
 // ---------------------------------------------------------------------------
-// VIZ: PLASMA — classic demoscene plasma field.
+// VIZ: PLASMA - classic demoscene plasma field.
 // Four layered sine waves evaluated on a domain-warped plane produce a
 // smooth interference field; the field value drives hue through an HSV
 // ramp that cycles over time, so the result reads as flowing liquid color.

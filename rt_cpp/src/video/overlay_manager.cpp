@@ -17,7 +17,7 @@ void OverlayManager::clear() {
 }
 
 // stb_image's stbi_load() goes through fopen(), which on Windows interprets
-// the path as ANSI — Cyrillic / non-ASCII paths fail to open. Open the file
+// the path as ANSI - Cyrillic / non-ASCII paths fail to open. Open the file
 // ourselves with the wide-char API and hand the FILE* to stb.
 static FILE* fopen_utf8(const fs::path& p) {
 #ifdef _WIN32

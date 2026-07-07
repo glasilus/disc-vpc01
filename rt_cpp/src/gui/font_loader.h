@@ -4,7 +4,7 @@
 namespace FontLoader {
 
 // Load a system font that includes Cyrillic glyphs. Returns the font pointer
-// (already added to ImGui's atlas; safe to ignore the return value — ImGui
+// (already added to ImGui's atlas; safe to ignore the return value - ImGui
 // uses it as default automatically).
 //
 // Lookup order (first existing file wins):
@@ -15,7 +15,7 @@ namespace FontLoader {
 //             /usr/share/fonts/dejavu/DejaVuSans.ttf,
 //             /usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf
 //
-// If nothing is found, falls back to ImGui default (no Cyrillic — logs a
+// If nothing is found, falls back to ImGui default (no Cyrillic - logs a
 // warning to stderr).
 ImFont* load_default(float pixel_size = 14.f);
 

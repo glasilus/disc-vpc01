@@ -6,7 +6,7 @@
 bool RtEngine::init(int w, int h) {
     width_ = w; height_ = h;
 
-    // Black texture (fallback / blackout). Always 1×1 — we never sample from
+    // Black texture (fallback / blackout). Always 1×1 - we never sample from
     // it at a specific resolution, only as a uniform color.
     uint8_t black_px[3] = {0, 0, 0};
     glGenTextures(1, &black_tex_);
@@ -51,7 +51,7 @@ GLuint RtEngine::process_frame(float dt, EngineSettings& settings) {
     if (blackout) return black_tex_;
 
     // ── Video frame selection ─────────────────────────────────────────────────
-    // Skip GPU uploads while frozen — otherwise the decoder keeps overwriting
+    // Skip GPU uploads while frozen - otherwise the decoder keeps overwriting
     // the textures that last_frame_tex_ points to, and the "frozen" image
     // visibly drifts. Decoder thread will block on the queue when its CPU
     // buffer fills (~0.1 sec of slack), which is fine.

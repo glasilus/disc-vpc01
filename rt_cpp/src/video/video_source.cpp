@@ -143,7 +143,7 @@ bool VideoSource::decode_next(DecodedFrame& out, int /*w*/, int /*h*/) {
 
     while (!got_frame && tries < 500) {
         if (av_read_frame(fmt_ctx_, pkt) < 0) {
-            // End of file — loop back
+            // End of file - loop back
             av_seek_frame(fmt_ctx_, video_stream_idx_, 0, AVSEEK_FLAG_BACKWARD);
             avcodec_flush_buffers(codec_ctx_);
             loop_count_.fetch_add(1, std::memory_order_relaxed);
@@ -175,7 +175,7 @@ bool VideoSource::decode_next(DecodedFrame& out, int /*w*/, int /*h*/) {
 void VideoSource::decode_thread_fn() {
     while (!stop_thread_.load()) {
         // Honour pending seek requests at the top of the loop so they pre-empt
-        // any in-flight decode. We drop already-decoded frames from the queue —
+        // any in-flight decode. We drop already-decoded frames from the queue -
         // they belong to the OLD position and would replay over the cut.
         if (seek_request_.exchange(false)) {
             seek_random();

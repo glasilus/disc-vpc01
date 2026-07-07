@@ -1,5 +1,5 @@
 #version 330 core
-// Derivative Warp — datamosh-like smearing without optical flow.
+// Derivative Warp - datamosh-like smearing without optical flow.
 // Computes local luminance gradient from history frame, uses it as
 // a displacement vector to pull current frame pixels. Creates organic
 // smear/bleed that resembles datamosh compression artifacts.
@@ -33,7 +33,7 @@ void main() {
     float scale = uIntensity * 0.13;
     vec2  disp  = grad * scale;
 
-    // Sample current frame with displacement — like motion vectors
+    // Sample current frame with displacement - like motion vectors
     vec4 warped = texture(uTex, vUV + disp);
 
     // Blend in history for smear persistence

@@ -2,7 +2,7 @@
 in  vec2 vUV;
 out vec4 FragColor;
 // ---------------------------------------------------------------------------
-// VIZ: RADIAL — polar spectrum analyzer ("audio sun").
+// VIZ: RADIAL - polar spectrum analyzer ("audio sun").
 // The 16 spectrum bins are laid out as petals around the screen center.
 // For every bin we accumulate an angular-gaussian petal whose radial reach
 // is the bin value, plus a hot glowing tip riding at the petal's outer edge.

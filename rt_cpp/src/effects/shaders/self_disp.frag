@@ -1,5 +1,5 @@
 #version 330 core
-// Self-Displacement — uses the PREVIOUS frame's RGB as a displacement map
+// Self-Displacement - uses the PREVIOUS frame's RGB as a displacement map
 // for the CURRENT frame. The image literally eats itself. With audio-reactive
 // intensity this creates flowing glitch trails indistinguishable from datamosh.
 // High intensity + feedback enabled = complete reality collapse.

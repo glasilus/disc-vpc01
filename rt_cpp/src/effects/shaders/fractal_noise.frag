@@ -1,5 +1,5 @@
 #version 330 core
-// Fractal Noise Warp — domain-warped fBm distortion.
+// Fractal Noise Warp - domain-warped fBm distortion.
 // Uses multi-octave noise to create organic, fractal UV displacement.
 // Looks like the video is breathing / melting through another dimension.
 in  vec2 vUV;
@@ -26,7 +26,7 @@ float noise(vec2 p) {
     return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
 }
 
-// fBm — fractal Brownian motion
+// fBm - fractal Brownian motion
 float fbm(vec2 p) {
     float v = 0.0, a = 0.5;
     mat2  rot = mat2(cos(0.5), sin(0.5), -sin(0.5), cos(0.5));

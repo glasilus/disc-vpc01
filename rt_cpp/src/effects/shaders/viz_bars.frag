@@ -2,7 +2,7 @@
 in  vec2 vUV;
 out vec4 FragColor;
 // ---------------------------------------------------------------------------
-// VIZ: BARS — 16-band spectrum bars with caps and a floor reflection.
+// VIZ: BARS - 16-band spectrum bars with caps and a floor reflection.
 // The screen is split into 16 columns above a baseline. Each bar is drawn
 // with smoothstep-antialiased edges, a heat gradient (cool at the root, hot
 // at the top), a bright cap line at the bin height, and a wide gaussian

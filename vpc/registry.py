@@ -2,18 +2,18 @@
 
 Single source of truth for every effect: id, parameters, defaults, ranges,
 trigger types, GUI labels, tooltips. Engine, GUI and config validation all
-read from this list — adding a new effect means adding one EffectSpec entry.
+read from this list - adding a new effect means adding one EffectSpec entry.
 
 Public API:
-    EFFECTS              — list[EffectSpec], every registered effect
-    GROUP_ORDER          — list[str], display order of groups in GUI
-    find_spec(effect_id) — lookup helper
-    build_chain(cfg)     — turn a flat cfg dict into a list[BaseEffect]
-    iter_cfg_keys()      — yield every cfg key the registry expects
-    default_cfg()        — flat dict of all defaults, GUI-ready
+    EFFECTS              - list[EffectSpec], every registered effect
+    GROUP_ORDER          - list[str], display order of groups in GUI
+    find_spec(effect_id) - lookup helper
+    build_chain(cfg)     - turn a flat cfg dict into a list[BaseEffect]
+    iter_cfg_keys()      - yield every cfg key the registry expects
+    default_cfg()        - flat dict of all defaults, GUI-ready
 
 Backward compatibility: the cfg keys produced (fx_xxx, fx_xxx_chance, ...)
-are identical to those used by the original flat engine — old presets still
+are identical to those used by the original flat engine - old presets still
 load.
 """
 from __future__ import annotations
@@ -57,7 +57,7 @@ class ParamSpec:
 
 @dataclass
 class EffectSpec:
-    """Description of one effect — source of truth for engine + GUI."""
+    """Description of one effect - source of truth for engine + GUI."""
     id: str                                  # stable id, e.g. 'pixel_sort'
     label: str                               # GUI display name
     group: str                               # GUI group, e.g. 'CORE FX'
@@ -146,8 +146,8 @@ GROUP_ORDER: List[str] = [
 
 
 # Display labels for the effect groups. The internal group keys (above and on
-# every EffectSpec.group) stay constant — they drive grouping logic, the
-# accordion's hidden-group filter, and the navbar's jump targets — while these
+# every EffectSpec.group) stay constant - they drive grouping logic, the
+# accordion's hidden-group filter, and the navbar's jump targets - while these
 # strings are what the GUI actually shows. Presets never reference groups
 # (they key on fx_* enable keys), so renaming here is fully preset-safe.
 #
@@ -194,7 +194,7 @@ def bi(en: str, ru: str) -> str:
 
 
 # ──────────────────────────────────────────────────────────────────────────
-#   Overlay extras factory — needs overlay frames + ChromaKey from cfg
+#   Overlay extras factory - needs overlay frames + ChromaKey from cfg
 # ──────────────────────────────────────────────────────────────────────────
 
 
@@ -268,10 +268,10 @@ def _drive_param(ek: str, recommend: str = '') -> 'ParamSpec':
         choices=['segment', 'auto', 'bass', 'mid', 'high'], indent=True, kwarg=None,
         tooltip=bi(
             'What drives this effect\'s intensity per frame: segment (overall '
-            'loudness, the default), auto (loudest of bass/mid/high — always '
+            'loudness, the default), auto (loudest of bass/mid/high - always '
             'reacts on any track), or a specific band.' + rec_en,
             'Что покадрово задаёт интенсивность эффекта: segment (общая громкость, '
-            'по умолчанию), auto (самая громкая из bass/mid/high — реагирует на '
+            'по умолчанию), auto (самая громкая из bass/mid/high - реагирует на '
             'любом треке) или конкретная полоса.' + rec_ru))
 
 
@@ -287,7 +287,7 @@ def _gate_param(ek: str) -> 'ParamSpec':
             'already sit on onsets, so this only adds pulses within long segments.',
             'Срабатывать только на покадровом бите/онсете ВНУТРИ сегмента: off (по '
             'умолчанию), beat (по детектированным битам), onset (любой транзиент). '
-            'Нарезка и так идёт по онсетам — это добавляет пульс лишь внутри длинных '
+            'Нарезка и так идёт по онсетам - это добавляет пульс лишь внутри длинных '
             'сегментов.'))
 
 
@@ -298,7 +298,7 @@ def _react_param(ek: str, what: str, what_ru: str) -> 'ParamSpec':
         choices=['off', 'on'], indent=True, kwarg=None,
         tooltip=bi(
             f'When on, {what} Off (default) keeps the plain, non-reactive behaviour.',
-            f'Когда on, {what_ru} Off (по умолчанию) — обычное, нереактивное поведение.'))
+            f'Когда on, {what_ru} Off (по умолчанию) - обычное, нереактивное поведение.'))
 
 
 def _viz_mode_params(ek: str) -> List['ParamSpec']:
@@ -348,7 +348,7 @@ def _paint_extras(cfg: dict) -> dict:
 
 
 # ──────────────────────────────────────────────────────────────────────────
-#   THE REGISTRY — every tunable effect lives here
+#   THE REGISTRY - every tunable effect lives here
 # ──────────────────────────────────────────────────────────────────────────
 
 
@@ -360,13 +360,13 @@ EFFECTS: List[EffectSpec] = [
         cls=None, chain_kind='special',
         enable_key='fx_stutter', enabled_default=True,
         chance_key=None,
-        note='IMPACT segments — repeats short hits 2/4/8× for drillcore stutter.',
+        note='IMPACT segments - repeats short hits 2/4/8× for drillcore stutter.',
         tooltip=bi(
-            'Triggers when an IMPACT segment is shorter than 0.3 s. Repeats the frame '
-            '2/4/8 times. Higher CHAOS makes it fire more often. Engine-controlled — '
-            'no chance slider.',
-            'Срабатывает на коротких IMPACT-сегментах (<0.3 с). Повторяет кадр 2/4/8 раз. '
-            'Чем выше CHAOS — тем чаще. Управляется движком — без отдельного слайдера шанса.',
+            'The picture judders in place - a short slice freezes and machine-guns 2/4/8 '
+            'times, like a scratched DVD or a drum-and-bass edit. Fires on short IMPACT '
+            'hits; higher CHAOS = more often.',
+            'Картинка дёргается на месте - короткий кусок замирает и «строчит» 2/4/8 раз, '
+            'будто заевший DVD или drill-монтаж. Бьёт на коротких IMPACT-ударах; выше CHAOS - чаще.',
         ),
     ),
 
@@ -375,12 +375,12 @@ EFFECTS: List[EffectSpec] = [
         cls=core.FlashEffect, chain_kind='special',
         enable_key='fx_flash', enabled_default=True,
         chance_key='fx_flash_chance', default_chance=0.8,
-        note='DROP / IMPACT — injects a 1-2 frame full-white/black flash.',
+        note='DROP / IMPACT - injects a 1-2 frame full-white/black flash.',
         tooltip=bi(
-            'On DROP or IMPACT, inserts a black or white frame before the segment plays. '
-            'Higher CHANCE = more flashes. At high values it strobes.',
-            'На DROP или IMPACT вставляет чёрный или белый кадр перед сегментом. '
-            'Выше CHANCE — больше вспышек. На высоких значениях — стробоскоп.',
+            'A hard black or white frame punches in on drops and hits - a camera-flash '
+            'blink over the video. Higher CHANCE = more blinks; cranked up it becomes a strobe.',
+            'На дропах и ударах вбивается жёсткий чёрный или белый кадр - моргание как от '
+            'фотовспышки поверх видео. Выше CHANCE - больше морганий; на максимуме - стробоскоп.',
         ),
     ),
 
@@ -394,15 +394,16 @@ EFFECTS: List[EffectSpec] = [
                           tooltip=bi(
                               'Higher = more bleed from the previous frame; <0.3 a subtle smear, '
                               '>0.7 a heavy ghost echo.',
-                              'Выше — сильнее просвечивает предыдущий кадр; <0.3 — лёгкий смаз, '
-                              '>0.7 — выраженное «эхо».',
+                              'Выше - сильнее просвечивает предыдущий кадр; <0.3 - лёгкий смаз, '
+                              '>0.7 - выраженное «эхо».',
                           ))],
         intensity_max_kwarg='intensity_max',
-        note='SUSTAIN / BUILD — always on when enabled.',
+        note='SUSTAIN / BUILD - always on when enabled.',
         tooltip=bi(
-            'Cross-fades the current frame with the previous frame. Combine with FEEDBACK '
-            'for compounding smear.',
-            'Смешивает текущий кадр с предыдущим. В паре с FEEDBACK даёт нарастающий смаз.',
+            'Motion leaves a translucent trail - moving objects smear into a soft echo '
+            'behind themselves. Pair with FEEDBACK for long comet tails.',
+            'Движение оставляет полупрозрачный след - объекты размазываются в мягкое «эхо» '
+            'позади себя. В паре с FEEDBACK - длинные кометные хвосты.',
         ),
     ),
 
@@ -417,7 +418,7 @@ EFFECTS: List[EffectSpec] = [
                       tooltip=bi(
                           'Higher = more strips, taller strips. >0.7 turns the frame into '
                           'colour bars.',
-                          'Выше — больше полос и они шире. >0.7 — кадр превращается в цветные '
+                          'Выше - больше полос и они шире. >0.7 - кадр превращается в цветные '
                           'столбцы.',
                       )),
             ParamSpec('fx_psort_axis', 'Sort Axis', 'luminance', kind='choice',
@@ -447,16 +448,18 @@ EFFECTS: List[EffectSpec] = [
             ParamSpec('fx_psort_threshold', 'Streaks Threshold', 0.3, 0.0, 1.0, indent=True,
                        tooltip=bi(
                            'Luminance threshold for streaks mode. Higher = only brighter pixels are sorted.',
-                           'Порог яркости для режима streaks. Выше — сортируются только самые яркие пиксели.',
+                           'Порог яркости для режима streaks. Выше - сортируются только самые яркие пиксели.',
                        )),
         ],
         extra_factory=_psort_extras,
-        note='NOISE / IMPACT / DROP — sorts horizontal/vertical strips of pixels.',
+        note='NOISE / IMPACT / DROP - sorts horizontal/vertical strips of pixels.',
         tooltip=bi(
-            'Picks N horizontal/vertical strips per frame and sorts pixels inside them. '
-            'Supports original global block melting, AE threshold streaks, and legacy columns shifting.',
-            'Выбирает N горизонтальных/вертикальных полос и сортирует пиксели внутри них. '
-            'Поддерживает оригинальное плавление блоков, AE-подобные пороговые шлейфы и старый сдвиг колонок.',
+            'Pixels melt into long streaks - bright (or vivid) pixels bleed and drag into '
+            'smooth colour bands, the classic glitch-art smear. High intensity turns whole '
+            'regions into colour bars.',
+            'Пиксели растекаются в длинные полосы - яркие (или насыщенные) пиксели «текут» в '
+            'гладкие цветовые ленты, классический glitch-art смаз. На высокой интенсивности '
+            'целые области превращаются в цветные столбцы.',
         ),
     ),
 
@@ -465,15 +468,14 @@ EFFECTS: List[EffectSpec] = [
         cls=core.DatamoshEffect,
         enable_key='fx_datamosh', enabled_default=False,
         chance_key='fx_datamosh_chance', default_chance=0.5,
-        note='NOISE — optical-flow smear, plus real I-frame drop in Final mode.',
+        note='NOISE - optical-flow smear, plus real I-frame drop in Final mode.',
         tooltip=bi(
-            'Computes the optical flow between current and previous frame and uses it to drag '
-            'the previous one across the current. In Final render the engine ALSO pre-bakes a '
-            'P-frame-only source and uses it on NOISE segments — that gives the "real" datamosh '
-            'look.',
-            'Считает оптический поток между текущим и предыдущим кадрами и тянет предыдущий по '
-            'этому полю. В режиме Final движок также пред-собирает источник без ключевых кадров '
-            'и применяет его на NOISE — это и есть «настоящий» datamosh.',
+            'The classic "melting video" look - moving areas bloom and smear as the image '
+            'fails to redraw, dragging the previous frame across the new one in soupy, flowing '
+            'blocks. In Final render the NOISE segments get the "real" I-frame-drop mosh.',
+            'Классический вид «плавящегося видео» - движущиеся зоны цветут и размазываются, '
+            'будто картинка не успевает перерисоваться, таща предыдущий кадр по новому текучими '
+            'блоками. В режиме Final на NOISE - «настоящий» мош без ключевых кадров.',
         ),
     ),
 
@@ -488,22 +490,22 @@ EFFECTS: List[EffectSpec] = [
                       tooltip=bi(
                           'Cell height in pixels. Smaller = more detail, slower. >20 looks chunky '
                           'terminal.',
-                          'Высота ячейки в пикселях. Меньше — больше деталей и медленнее. >20 — '
+                          'Высота ячейки в пикселях. Меньше - больше деталей и медленнее. >20 - '
                           'грубый терминальный вид.',
                       )),
             ParamSpec('fx_ascii_blend', 'Blend (0=ASCII, 1=overlay)', 0.0, 0.0, 1.0,
                       kwarg='blend',
                       tooltip=bi(
                           '0 = pure ASCII, 1 = original frame visible, in-between mixes them.',
-                          '0 — чистый ASCII, 1 — виден исходный кадр, между — смешение.',
+                          '0 - чистый ASCII, 1 - виден исходный кадр, между - смешение.',
                       )),
             ParamSpec('fx_ascii_color_mode', 'Color Mode', 'fixed', kind='choice',
                       choices=['fixed', 'original', 'inverted'], indent=True,
                       tooltip=bi(
                           'fixed = fg/bg colours; original = character coloured by source pixel; '
                           'inverted = 255 − source.',
-                          'fixed — заданные fg/bg; original — символ цвета исходного пикселя; '
-                          'inverted — инвертированный исходный.',
+                          'fixed - заданные fg/bg; original - символ цвета исходного пикселя; '
+                          'inverted - инвертированный исходный.',
                       )),
             ParamSpec('fx_ascii_fg_r', 'FG Red', 0, 0, 255, kind='int', indent=True, tooltip=''),
             ParamSpec('fx_ascii_fg_g', 'FG Green', 255, 0, 255, kind='int', indent=True, tooltip=''),
@@ -513,12 +515,14 @@ EFFECTS: List[EffectSpec] = [
             ParamSpec('fx_ascii_bg_b', 'BG Blue', 0, 0, 255, kind='int', indent=True, tooltip=''),
         ],
         extra_factory=_ascii_extras,
-        note='SUSTAIN / SILENCE / BUILD — full-frame ASCII art.',
+        note='SUSTAIN / SILENCE / BUILD - full-frame ASCII art.',
         tooltip=bi(
-            'Replaces every CHAR_SIZE×CHAR_SIZE block with a character whose density matches '
-            'block brightness. fg/bg colours and BLEND control the look.',
-            'Заменяет каждый блок CHAR_SIZE×CHAR_SIZE символом, плотность которого соответствует '
-            'яркости блока. Внешний вид задают цвета fg/bg и BLEND.',
+            'The whole frame is rebuilt out of text characters - dense glyphs fill the dark '
+            'areas, sparse ones the bright, like a terminal / green-screen render of the video. '
+            'fg/bg colours and BLEND set the look.',
+            'Весь кадр пересобран из текстовых символов - плотные глифы в тёмных зонах, '
+            'разреженные в светлых, как терминальный / «зелёный экран» вывод видео. '
+            'Внешний вид задают цвета fg/bg и BLEND.',
         ),
     ),
 
@@ -529,12 +533,12 @@ EFFECTS: List[EffectSpec] = [
         enable_key='fx_rgb', enabled_default=True,
         chance_key='fx_rgb_chance', default_chance=0.7,
         params=[_drive_param('fx_rgb', 'high')],
-        note='IMPACT / BUILD / NOISE / DROP — colour fringing.',
+        note='IMPACT / BUILD / NOISE / DROP - colour fringing.',
         tooltip=bi(
-            'Shifts R right and B left by an intensity-driven amount. Higher CHANCE = '
-            'more affected frames.',
-            'Сдвигает канал R вправо и B влево на величину, зависящую от интенсивности. '
-            'Выше CHANCE — больше затронутых кадров.',
+            'Colours split apart - red and blue fringes peel off the edges, the classic '
+            '3D-glasses / chromatic-aberration glitch. Stronger on hits; higher CHANCE = more frames.',
+            'Цвета расходятся - по краям отслаиваются красная и синяя каёмки, классический '
+            'вид «3D-очки» / хроматическая аберрация. Сильнее на ударах; выше CHANCE - больше кадров.',
         ),
     ),
     EffectSpec(
@@ -543,12 +547,12 @@ EFFECTS: List[EffectSpec] = [
         enable_key='fx_block_glitch', enabled_default=False,
         chance_key='fx_block_glitch_chance', default_chance=0.5,
         params=[_drive_param('fx_block_glitch', 'high')],
-        note='IMPACT / DROP / NOISE — random 16px blocks corrupted.',
+        note='IMPACT / DROP / NOISE - random 16px blocks corrupted.',
         tooltip=bi(
-            'Replaces random 16×16 blocks with pixels copied from elsewhere in the frame or '
-            'a flat colour. Looks like macroblock corruption.',
-            'Заменяет случайные блоки 16×16 либо пикселями из другого места кадра, либо '
-            'однотонным цветом. Похоже на повреждение макроблоков.',
+            'Rectangular chunks of the image jump to the wrong place or go flat-coloured - '
+            'looks like a corrupted video stream, with broken macroblocks scattered over the frame.',
+            'Прямоугольные куски картинки прыгают не на своё место или заливаются плоским '
+            'цветом - как повреждённый видеопоток, битые макроблоки по всему кадру.',
         ),
     ),
     EffectSpec(
@@ -556,12 +560,12 @@ EFFECTS: List[EffectSpec] = [
         cls=glitch.PixelDriftEffect,
         enable_key='fx_pixel_drift', enabled_default=False,
         chance_key='fx_pixel_drift_chance', default_chance=0.5,
-        note='NOISE / IMPACT — rows slide using simplex noise.',
+        note='NOISE / IMPACT - rows slide using simplex noise.',
         tooltip=bi(
-            'Each row is rolled left/right by an opensimplex-noise value. Smooth, organic '
-            'horizontal slicing.',
-            'Каждая строка сдвигается влево/вправо на величину opensimplex-шума. Плавный '
-            'органичный горизонтальный «слайс».',
+            'Rows slide sideways by smoothly-varying amounts, so the image ripples and shears '
+            'horizontally like a reflection on moving water.',
+            'Строки плавно съезжают вбок на разную величину - изображение волнисто «плывёт» и '
+            'срезается по горизонтали, как отражение на воде.',
         ),
     ),
     EffectSpec(
@@ -569,11 +573,12 @@ EFFECTS: List[EffectSpec] = [
         cls=glitch.ColorBleedEffect,
         enable_key='fx_colorbleed', enabled_default=False,
         chance_key='fx_colorbleed_chance', default_chance=0.5,
-        note='NOISE / SUSTAIN — horizontal colour smear on one channel.',
+        note='NOISE / SUSTAIN - horizontal colour smear on one channel.',
         tooltip=bi(
-            'Picks one channel at random and box-blurs it horizontally — VHS-tape colour bleed.',
-            'Случайно выбирает один цветовой канал и горизонтально размывает его — «цветной '
-            'смаз» VHS-плёнки.',
+            'One colour channel smears sideways and bleeds past its edges - the watery VHS '
+            '"colour running off the picture" look.',
+            'Один цветовой канал размазывается вбок и вытекает за края - водянистый VHS-эффект '
+            '«цвет уползает с картинки».',
         ),
     ),
     EffectSpec(
@@ -581,12 +586,12 @@ EFFECTS: List[EffectSpec] = [
         cls=glitch.FreezeCorruptEffect,
         enable_key='fx_freeze_corrupt', enabled_default=False,
         chance_key='fx_freeze_corrupt_chance', default_chance=0.3,
-        note='DROP — freezes frame for a few ticks and corrupts it.',
+        note='DROP - freezes frame for a few ticks and corrupts it.',
         tooltip=bi(
-            'Holds a single frame for several ticks and runs Block Glitch on the held image. '
-            'Strong DROP punctuation.',
-            'Удерживает один кадр на несколько тактов и применяет к нему Block Glitch. Резкий '
-            'акцент на DROP.',
+            'The image freezes for a beat and rots in place - the held frame breaks up into '
+            'corrupted blocks. A hard stop-and-shatter accent on drops.',
+            'Картинка замирает на миг и «гниёт» на месте - застывший кадр рассыпается на битые '
+            'блоки. Жёсткий акцент «стоп-и-осыпание» на дропах.',
         ),
     ),
     EffectSpec(
@@ -595,11 +600,12 @@ EFFECTS: List[EffectSpec] = [
         enable_key='fx_negative', enabled_default=False,
         chance_key='fx_negative_chance', default_chance=0.2,
         params=[_gate_param('fx_negative')],
-        note='IMPACT / DROP / NOISE — full colour invert.',
+        note='IMPACT / DROP / NOISE - full colour invert.',
         tooltip=bi(
-            '255 − pixel for every channel. Use sparingly — at high CHANCE it strobes.',
-            '255 − значение пикселя по каждому каналу. Используйте умеренно — на высоком CHANCE '
-            'превращается в стробоскоп.',
+            'Colours flip to their photographic negative - a jarring inverted-film blink. '
+            'Use sparingly; at high CHANCE it strobes.',
+            'Цвета переворачиваются в фотонегатив - резкое моргание «инвертированная плёнка». '
+            'Используйте умеренно; на высоком CHANCE - стробоскоп.',
         ),
     ),
 
@@ -609,10 +615,12 @@ EFFECTS: List[EffectSpec] = [
         cls=degradation.ScanLinesEffect,
         enable_key='fx_scanlines', enabled_default=False,
         chance_key='fx_scanlines_chance', default_chance=0.8,
-        note='SUSTAIN / NOISE — CRT scanline darkening.',
+        note='SUSTAIN / NOISE - CRT scanline darkening.',
         tooltip=bi(
-            'Darkens every Nth row. Higher intensity = darker and denser lines.',
-            'Затемняет каждую N-ю строку. Выше интенсивность — темнее и плотнее линии.',
+            'Thin dark horizontal lines lie over the picture - an old CRT / broadcast-monitor '
+            'look. Higher intensity = darker, denser lines.',
+            'Поверх картинки - тонкие тёмные горизонтальные линии, вид старого CRT / эфирного '
+            'монитора. Выше интенсивность - темнее и плотнее линии.',
         ),
     ),
     EffectSpec(
@@ -620,12 +628,12 @@ EFFECTS: List[EffectSpec] = [
         cls=degradation.BitcrushEffect,
         enable_key='fx_bitcrush', enabled_default=False,
         chance_key='fx_bitcrush_chance', default_chance=0.5,
-        note='Any segment — reduces colour depth.',
+        note='Any segment - reduces colour depth.',
         tooltip=bi(
-            'Drops the lowest bits per channel — maps 8-bit colour to 1-7 levels. Extreme '
-            'posterise look.',
-            'Отбрасывает младшие биты в каждом канале — 8-битный цвет превращается в 1-7 '
-            'уровней. Резкая постеризация.',
+            'Colour collapses into a few flat bands - smooth gradients turn into hard '
+            'posterised steps, a cheap-LCD / retro-console palette look.',
+            'Цвет схлопывается в несколько плоских полос - плавные градиенты становятся '
+            'резкими постеризованными ступенями, вид дешёвого LCD / ретро-консоли.',
         ),
     ),
     EffectSpec(
@@ -633,12 +641,12 @@ EFFECTS: List[EffectSpec] = [
         cls=degradation.JPEGCrushEffect,
         enable_key='fx_jpeg_crush', enabled_default=False,
         chance_key='fx_jpeg_crush_chance', default_chance=0.5,
-        note='IMPACT / NOISE — heavy JPEG re-encode artefacts.',
+        note='IMPACT / NOISE - heavy JPEG re-encode artefacts.',
         tooltip=bi(
-            'Re-encodes the frame as JPEG at quality 1-40 (intensity-driven) and decodes back. '
-            'Block-edge artefacts everywhere.',
-            'Перекодирует кадр в JPEG c качеством 1-40 (зависит от интенсивности) и декодирует '
-            'обратно. По всем границам блоков — артефакты.',
+            'The frame looks like a JPEG saved at the lowest quality - blocky 8×8 artefacts '
+            'and smeared "mosquito" colour crawling around every edge.',
+            'Кадр выглядит как JPEG на минимальном качестве - блочные 8×8 артефакты и '
+            'замыленный «москитный» цвет вокруг каждого края.',
         ),
     ),
     EffectSpec(
@@ -646,10 +654,12 @@ EFFECTS: List[EffectSpec] = [
         cls=degradation.FisheyeEffect,
         enable_key='fx_fisheye', enabled_default=False,
         chance_key='fx_fisheye_chance', default_chance=0.3,
-        note='BUILD / SUSTAIN — barrel lens distortion.',
+        note='BUILD / SUSTAIN - barrel lens distortion.',
         tooltip=bi(
-            'Bulges the image outward from the centre. Keep CHANCE low — visually heavy.',
-            'Выпучивает изображение от центра. Держите CHANCE низким — эффект тяжёлый визуально.',
+            'The image bulges outward through a rounded lens - a peephole / GoPro barrel warp. '
+            'Keep CHANCE low; it is visually heavy.',
+            'Картинка выпучивается наружу через круглую линзу - искажение «дверной глазок» / '
+            'GoPro. Держите CHANCE низким - эффект тяжёлый.',
         ),
     ),
     EffectSpec(
@@ -665,7 +675,7 @@ EFFECTS: List[EffectSpec] = [
                           'Master VHS-wear knob. 0 = pristine, 1 = heavy generation loss '
                           '(blurred chroma, tape grain, contrast crush, head-switch noise '
                           'at the bottom).',
-                          'Главный ползунок «изношенности VHS». 0 — чистый источник, 1 — '
+                          'Главный ползунок «изношенности VHS». 0 - чистый источник, 1 - '
                           'тяжёлая потеря качества (размытая цветность, плёночный шум, '
                           'сжатие контраста, head-switch шум по низу кадра).',
                       )),
@@ -673,12 +683,12 @@ EFFECTS: List[EffectSpec] = [
                       choices=['off', 'on'], kwarg=None,
                       tooltip=bi(
                           'Adds rare 1-px vertical scratches to imitate physical tape dust.',
-                          'Добавляет редкие вертикальные царапины 1-px — имитация пыли на плёнке.',
+                          'Добавляет редкие вертикальные царапины 1-px - имитация пыли на плёнке.',
                       )),
         ],
         intensity_max_kwarg='intensity_max',
         extra_factory=lambda cfg: dict(dust=(cfg.get('fx_vhstape_dust', 'off') == 'on')),
-        note='BUILD / SUSTAIN — slow tape wear that accumulates over time.',
+        note='BUILD / SUSTAIN - slow tape wear that accumulates over time.',
         tooltip=bi(
             'A full VHS-look pipeline in a single effect: Y/C separation with chroma blur '
             '(the canonical "luma sharp, colour smeared" tape signature), low-frequency '
@@ -686,7 +696,7 @@ EFFECTS: List[EffectSpec] = [
             'wow & flutter, generation-loss contrast crush + additive noise, and '
             'head-switch noise on the bottom rows. One slider tunes everything.',
             'Полный VHS-look в одном эффекте: Y/C-разделение с размытием цветности '
-            '(канонический VHS-признак — резкая яркость и расплывшийся цвет), '
+            '(канонический VHS-признак - резкая яркость и расплывшийся цвет), '
             'низкочастотный плёночный шум с пятнами, субпиксельный wow & flutter, '
             'compression-loss + аддитивный шум, head-switch шум по нижним строкам. '
             'Один слайдер на всё.',
@@ -697,11 +707,12 @@ EFFECTS: List[EffectSpec] = [
         cls=degradation.VHSTrackingEffect,
         enable_key='fx_vhs', enabled_default=False,
         chance_key='fx_vhs_chance', default_chance=0.5,
-        note='NOISE / DROP — tape tracking error: shifted strips + luminance noise.',
+        note='NOISE / DROP - tape tracking error: shifted strips + luminance noise.',
         tooltip=bi(
-            'Shifts horizontal strips by simplex-noise amounts and adds per-pixel luminance '
-            'noise. Authentic VHS tracking glitch.',
-            'Сдвигает горизонтальные полосы на величины opensimplex-шума и добавляет точечный '
+            'The picture tears into horizontally-shifted bands with a strip of hissing noise '
+            'rolling through - a tape losing tracking, wobbling and breaking up.',
+            'Картинка рвётся на горизонтально смещённые полосы, сквозь которые катится полоса '
+            'шипящего шума - плёнка теряет трекинг, дрожит и рассыпается; добавляется точечный '
             'шум яркости. Аутентичный «съезд» VHS-трекинга.',
         ),
     ),
@@ -710,11 +721,12 @@ EFFECTS: List[EffectSpec] = [
         cls=degradation.InterlaceEffect,
         enable_key='fx_interlace', enabled_default=False,
         chance_key='fx_interlace_chance', default_chance=0.4,
-        note='SUSTAIN — odd rows from previous frame.',
+        note='SUSTAIN - odd rows from previous frame.',
         tooltip=bi(
-            'Even rows = current frame, odd rows = previous frame. Authentic 50i look on motion.',
-            'Чётные строки — текущий кадр, нечётные — предыдущий. Похоже на чересстрочный 50i на '
-            'движении.',
+            'Fast motion splits into a fine horizontal comb - moving edges tear into '
+            'interlaced teeth, the classic 50i broadcast / deinterlacing artefact.',
+            'Быстрое движение распадается на мелкую горизонтальную «гребёнку» - края рвутся на '
+            'чересстрочные зубцы, классический артефакт 50i / деинтерлейса.',
         ),
     ),
     EffectSpec(
@@ -723,12 +735,12 @@ EFFECTS: List[EffectSpec] = [
         enable_key='fx_bad_signal', enabled_default=False,
         chance_key='fx_bad_signal_chance', default_chance=0.3,
         params=[_drive_param('fx_bad_signal', 'high')],
-        note='DROP / NOISE — vertical noise bars + row shifts.',
+        note='DROP / NOISE - vertical noise bars + row shifts.',
         tooltip=bi(
-            'Sprays random-coloured vertical bars and rolls random rows horizontally. Digital '
-            'signal breakup.',
-            'Раскидывает случайно окрашенные вертикальные полосы и горизонтально смещает '
-            'случайные строки. Срыв цифрового сигнала.',
+            'The signal breaks up - random coloured vertical bars flicker across the frame and '
+            'whole rows jump sideways, like a dying digital broadcast.',
+            'Сигнал срывается - по кадру мелькают случайно окрашенные вертикальные полосы, а '
+            'целые строки прыгают вбок, как умирающий цифровой эфир.',
         ),
     ),
     EffectSpec(
@@ -736,12 +748,12 @@ EFFECTS: List[EffectSpec] = [
         cls=degradation.DitheringEffect,
         enable_key='fx_dither', enabled_default=False,
         chance_key='fx_dither_chance', default_chance=0.4,
-        note='SILENCE / SUSTAIN — Bayer 4×4 ordered dither.',
+        note='SILENCE / SUSTAIN - Bayer 4×4 ordered dither.',
         tooltip=bi(
-            'Quantises to 2-16 levels per channel through a 4×4 Bayer matrix. Pixel-art / '
-            'GameBoy palette feel.',
-            'Квантует к 2-16 уровням на канал через матрицу Bayer 4×4. Атмосфера pixel-art / '
-            'палитры GameBoy.',
+            'Smooth shading breaks into a fine stipple of dots - the retro 1-bit / GameBoy look '
+            'where gradients become cross-hatched pixel patterns.',
+            'Плавные тени рассыпаются в мелкую «крапчатую» сетку точек - ретро-вид 1-бит / '
+            'GameBoy, где градиенты превращаются в штриховку из пикселей.',
         ),
     ),
     EffectSpec(
@@ -754,19 +766,17 @@ EFFECTS: List[EffectSpec] = [
                           tooltip=bi(
                               'How many frames the elastic return takes. Shorter = sharper '
                               'whip; longer = visible breathing.',
-                              'За сколько кадров эффект упруго возвращается. Меньше — резче '
-                              'хлыст; больше — заметное «дыхание».',
+                              'За сколько кадров эффект упруго возвращается. Меньше - резче '
+                              'хлыст; больше - заметное «дыхание».',
                           )),
                 _drive_param('fx_zoom_glitch', 'bass'),
                 _gate_param('fx_zoom_glitch')],
-        note='IMPACT / DROP — anisotropic squash/stretch with curved return.',
+        note='IMPACT / DROP - anisotropic squash/stretch with curved return.',
         tooltip=bi(
-            'On trigger picks one axis (X or Y) and either stretches it strongly (≈1.4–2×) or '
-            'squashes it (≈0.45–0.7×). Over the next several frames the scale eases back to '
-            '1.0 along an ease-out cubic — sharp yank on the hit, elastic settle.',
-            'На триггере выбирает ось (X или Y) и либо сильно растягивает её (≈1.4–2×), либо '
-            'сжимает (≈0.45–0.7×). За несколько следующих кадров масштаб упруго возвращается к '
-            '1.0 по кривой ease-out — резкий рывок на ударе, мягкий откат.',
+            'The frame gets yanked - snapped taller or wider on one axis on the hit, then '
+            'springs elastically back to normal over a few frames. A rubber-band punch.',
+            'Кадр дёргает - на ударе резко растягивает выше или шире по одной оси, затем он '
+            'упруго отскакивает к норме за пару кадров. «Резиновый» рывок.',
         ),
     ),
     EffectSpec(
@@ -780,24 +790,24 @@ EFFECTS: List[EffectSpec] = [
                       tooltip=bi(
                           'Strength of the high-pass overshoot. 0.5 polite crispness, 2 hard '
                           'halo, 4 edge-glow.',
-                          'Сила усиления высоких частот. 0.5 — лёгкая резкость, 2 — жёсткие '
-                          'ореолы, 4 — «свечение» по контурам.',
+                          'Сила усиления высоких частот. 0.5 - лёгкая резкость, 2 - жёсткие '
+                          'ореолы, 4 - «свечение» по контурам.',
                       )),
             ParamSpec('fx_sharpen_radius', 'Radius (px)', 2.0, 1.0, 9.0,
                       kwarg='radius',
                       tooltip=bi(
                           'Gaussian blur radius for the low-pass component. Larger = thicker '
                           'halo around edges.',
-                          'Радиус гауссова низкочастотного компонента. Больше — толще «ореолы» '
+                          'Радиус гауссова низкочастотного компонента. Больше - толще «ореолы» '
                           'вокруг контуров.',
                       )),
         ],
-        note='IMPACT / DROP / SUSTAIN / BUILD — unsharp-mask high-pass overshoot.',
+        note='IMPACT / DROP / SUSTAIN / BUILD - unsharp-mask high-pass overshoot.',
         tooltip=bi(
-            'frame + amount · (frame − blur(frame)). Hard sharpening that punches edges and '
-            'high-frequency detail. Combine with COLOR BLEED for a "neon-edge" look.',
-            'frame + amount · (frame − blur(frame)). Жёсткая резкость, выпячивающая контуры и '
-            'мелкие детали. В паре с COLOR BLEED даёт «неоновую» окантовку.',
+            'Edges get hard, glowing outlines - detail is over-crisped into bright halos. '
+            'Combine with COLOR BLEED for a neon-edge look.',
+            'Контуры становятся жёсткими, светящимися - детали переточены в яркие ореолы. '
+            'В паре с COLOR BLEED - «неоновая» окантовка.',
         ),
     ),
 
@@ -812,15 +822,15 @@ EFFECTS: List[EffectSpec] = [
             _react_param('fx_feedback',
                          'the accumulator is cleared on each detected beat, so trails '
                          'reset on the kick instead of only on IMPACT segments.',
-                         'аккумулятор сбрасывается на каждый детектированный бит — '
+                         'аккумулятор сбрасывается на каждый детектированный бит - '
                          'шлейфы обнуляются на кике, а не только на IMPACT-сегментах.'),
         ],
-        note='SUSTAIN / BUILD — accumulates frames recursively.',
+        note='SUSTAIN / BUILD - accumulates frames recursively.',
         tooltip=bi(
-            'accumulator = current·(1−w) + accumulator·w. IMPACT clears it. Builds wash-style '
-            'trails on sustained energy.',
-            'аккумулятор = текущий·(1−w) + аккумулятор·w. IMPACT обнуляет. На устойчивой '
-            'энергии нарастают «шлейфы».',
+            'The image smears into itself, leaving long glowing wash-trails that pile up on '
+            'sustained energy and wipe clean on the kick - a video-feedback / long-exposure look.',
+            'Картинка размазывается сама в себя, оставляя длинные светящиеся шлейфы, которые '
+            'копятся на устойчивой энергии и стираются на кике - вид видео-фидбэка / длинной выдержки.',
         ),
     ),
     EffectSpec(
@@ -828,12 +838,12 @@ EFFECTS: List[EffectSpec] = [
         cls=complex_fx.PhaseShiftEffect,
         enable_key='fx_phase_shift', enabled_default=False,
         chance_key='fx_phase_shift_chance', default_chance=0.4,
-        note='NOISE / DROP — alternating bands shift left/right.',
+        note='NOISE / DROP - alternating bands shift left/right.',
         tooltip=bi(
-            'Splits the frame into horizontal bands; even bands roll left, odd bands roll right '
-            'by intensity·width.',
-            'Делит кадр на горизонтальные полосы; чётные сдвигаются влево, нечётные — вправо на '
-            'величину интенсивность·ширина.',
+            'The frame splits into horizontal bands that slide opposite ways - every other '
+            'strip shoves left or right, shearing the picture into offset ribbons.',
+            'Кадр делится на горизонтальные полосы, съезжающие в разные стороны - через одну '
+            'влево/вправо, картинка режется на смещённые ленты.',
         ),
     ),
     EffectSpec(
@@ -842,12 +852,12 @@ EFFECTS: List[EffectSpec] = [
         enable_key='fx_mosaic', enabled_default=False,
         chance_key='fx_mosaic_chance', default_chance=0.5,
         params=[_drive_param('fx_mosaic', 'bass')],
-        note='IMPACT / BUILD — pixelation pulse.',
+        note='IMPACT / BUILD - pixelation pulse.',
         tooltip=bi(
-            'Down-up resampling produces blocky pixelation. Block size scales with intensity '
-            '(4-44 px).',
-            'Down-up ресемплинг даёт квадратную пикселизацию. Размер блока зависит от '
-            'интенсивности (4-44 px).',
+            'The picture pixelates into chunky blocks that pump with the bass - big squares on '
+            'the hit, fine again between, a censor-bar / mosaic pulse.',
+            'Картинка пикселизуется в крупные блоки, пульсирующие с басом - большие квадраты на '
+            'ударе, мельче между, «мозаика-цензура» в такт.',
         ),
     ),
     EffectSpec(
@@ -855,12 +865,12 @@ EFFECTS: List[EffectSpec] = [
         cls=complex_fx.EchoCompoundEffect,
         enable_key='fx_echo', enabled_default=False,
         chance_key='fx_echo_chance', default_chance=0.4,
-        note='SUSTAIN / BUILD — layered colour echoes from the past.',
+        note='SUSTAIN / BUILD - layered colour echoes from the past.',
         tooltip=bi(
-            'Blends current·0.5 + frame_N_ago·0.3 + frame_2N_ago_hue+30°·0.2. Triple-exposure '
-            'feel with a colour shift.',
-            'Смешивает текущий·0.5 + кадр_N_назад·0.3 + кадр_2N_назад_hue+30°·0.2. Похоже на '
-            'тройную экспозицию со сдвигом цвета.',
+            'Ghostly colour-shifted copies of past frames layer over the present - a triple-'
+            'exposure smear with a rainbow tint drifting behind motion.',
+            'Поверх настоящего наслаиваются призрачные копии прошлых кадров со сдвигом цвета - '
+            'тройная экспозиция с радужным «хвостом» за движением.',
         ),
     ),
     EffectSpec(
@@ -868,12 +878,12 @@ EFFECTS: List[EffectSpec] = [
         cls=complex_fx.KaliMirrorEffect,
         enable_key='fx_kali', enabled_default=False,
         chance_key='fx_kali_chance', default_chance=0.3,
-        note='BUILD / SUSTAIN — kaleidoscopic mirror+rotate.',
+        note='BUILD / SUSTAIN - kaleidoscopic mirror+rotate.',
         tooltip=bi(
-            'hstack(frame, frame[:,::-1]) → vstack(_, 255-_) → rotate by intensity·180°. '
-            'Symmetry mandala.',
-            'hstack(кадр, отражённый) → vstack с инверсией → поворот на интенсивность·180°. '
-            'Симметричная мандала.',
+            'The frame folds into a mirror-symmetric kaleidoscope mandala - the video '
+            'reflected and rotated into a shifting symmetrical pattern.',
+            'Кадр складывается в зеркально-симметричную калейдоскоп-мандалу - видео, отражённое '
+            'и повёрнутое в меняющийся симметричный узор.',
         ),
     ),
     EffectSpec(
@@ -881,12 +891,12 @@ EFFECTS: List[EffectSpec] = [
         cls=complex_fx.GlitchCascadeEffect,
         enable_key='fx_cascade', enabled_default=False,
         chance_key='fx_cascade_chance', default_chance=0.4,
-        note='IMPACT / DROP / NOISE — chains random glitch effects.',
+        note='IMPACT / DROP / NOISE - chains random glitch effects.',
         tooltip=bi(
-            'Picks N random effects from {RGB, Block, Drift, Bitcrush}, N = intensity·4, '
-            'applies them in sequence.',
-            'Берёт N случайных эффектов из {RGB, Block, Drift, Bitcrush}, где N = '
-            'интенсивность·4, и применяет их подряд.',
+            'A pile-up of glitches at once - several random corruption effects stack on one '
+            'frame for a chaotic "everything breaks" burst on the hit.',
+            'Куча глитчей разом - несколько случайных эффектов порчи наслаиваются на один кадр, '
+            'хаотичный взрыв «всё сломалось» на ударе.',
         ),
     ),
 
@@ -902,8 +912,8 @@ EFFECTS: List[EffectSpec] = [
                       tooltip=bi(
                           'Centre frequency of the IIR bandpass. Lower = wider rings; higher = '
                           'tight micro-detail ringing.',
-                          'Центральная частота IIR-полосового фильтра. Ниже — шире «волны»; выше '
-                          '— плотный «звон» по микродеталям.',
+                          'Центральная частота IIR-полосового фильтра. Ниже - шире «волны»; выше '
+                          '- плотный «звон» по микродеталям.',
                       )),
             ParamSpec('fx_resonant_q', 'Q factor (sharpness)', 12.0, 2.0, 30.0,
                       kwarg='q',
@@ -917,15 +927,15 @@ EFFECTS: List[EffectSpec] = [
                          'centroid, so the visual ringing rises and falls with the pitch '
                          'of the track (a rising synth raises the resonance).',
                          'центральная частота резонанса следует за спектральным центроидом '
-                         'музыки — визуальный «звон» поднимается и опускается вместе с '
-                         'высотой трека (растёт синт — растёт резонанс).'),
+                         'музыки - визуальный «звон» поднимается и опускается вместе с '
+                         'высотой трека (растёт синт - растёт резонанс).'),
         ],
-        note='IIR bandpass along pixel rows — spatial ringing at edges.',
+        note='IIR bandpass along pixel rows - spatial ringing at edges.',
         tooltip=bi(
-            'Treats each row as audio and runs a 2nd-order bandpass filter. The output adds '
-            'ringing to luminance edges.',
-            'Каждая строка обрабатывается как аудио — IIR-полосовой фильтр второго порядка. '
-            'Вокруг яркостных контуров появляется «звон».',
+            'Bright edges ring and echo into fine ripples - thin resonant bands shimmer '
+            'alongside contours, as if the picture were vibrating.',
+            'Яркие края «звенят» и отдаются мелкой рябью - тонкие резонансные полосы дрожат '
+            'вдоль контуров, будто картинка вибрирует.',
         ),
     ),
     EffectSpec(
@@ -941,12 +951,12 @@ EFFECTS: List[EffectSpec] = [
                               'Максимальный разрыв в кадрах между R, G и B. >10 даёт заметный '
                               'хроматический «шлейф» на движении.',
                           ))],
-        note='R/G/B from different time offsets — chromatic time ghost.',
+        note='R/G/B from different time offsets - chromatic time ghost.',
         tooltip=bi(
-            'Reads each colour channel from a different past frame. Static scenes are '
-            'unaffected; motion gets a rainbow trail.',
-            'Каждый цветовой канал читается из своего прошлого кадра. На статике эффекта нет; '
-            'на движении — радужный «след».',
+            'Colours lag behind motion at different speeds - moving objects trail red, green '
+            'and blue ghosts, while static scenes stay clean.',
+            'Цвета отстают от движения с разной скоростью - за объектами тянутся красный, '
+            'зелёный и синий призраки, а на статике чисто.',
         ),
     ),
     EffectSpec(
@@ -960,21 +970,21 @@ EFFECTS: List[EffectSpec] = [
                               'Adds noise to FFT phase but keeps magnitude. Image scrambles into '
                               'wave-interference patterns; >0.7 fully ungrounds it.',
                               'Подмешивает шум в фазу FFT, сохраняя амплитуду. Кадр превращается '
-                              'в волновую интерференцию; >0.7 — изображение полностью «расходится».',
+                              'в волновую интерференцию; >0.7 - изображение полностью «расходится».',
                           )),
                 _react_param('fx_fft_phase',
                              'the audio spectrum is mapped onto the radial frequency rings of '
                              'the frame\'s 2-D FFT, so phase noise hits the image at exactly the '
                              'spatial frequencies where the music currently has energy.',
                              'аудио-спектр накладывается на радиальные частотные кольца 2D-FFT '
-                             'кадра — фазовый шум бьёт по изображению именно на тех '
+                             'кадра - фазовый шум бьёт по изображению именно на тех '
                              'пространственных частотах, где у музыки сейчас энергия.')],
-        note='Scrambles 2-D FFT phase, preserves magnitude — wave interference.',
+        note='Scrambles 2-D FFT phase, preserves magnitude - wave interference.',
         tooltip=bi(
-            'Forward FFT, randomly shift phase, inverse FFT. Looks like a hologram corrupted '
-            'in transit.',
-            'Прямое FFT, случайный сдвиг фазы, обратное FFT. Похоже на голограмму, повреждённую '
-            'при передаче.',
+            'The image dissolves into rippling wave-interference - recognisable shapes smear '
+            'into a shimmering "hologram corrupted in transit" pattern.',
+            'Изображение растворяется в рябь волновой интерференции - узнаваемые формы '
+            'расплываются в мерцающий узор «голограмма, повреждённая при передаче».',
         ),
     ),
     EffectSpec(
@@ -987,15 +997,15 @@ EFFECTS: List[EffectSpec] = [
                           tooltip=bi(
                               'tanh saturation amount. 1 = neutral, 3 = warm, >5 = hard clip / '
                               'cartoon colours.',
-                              'Сила tanh-сатурации. 1 — нейтрально, 3 — «тёплый» окрас, >5 — '
+                              'Сила tanh-сатурации. 1 - нейтрально, 3 - «тёплый» окрас, >5 - '
                               'жёсткий клип / мультяшные цвета.',
                           ))],
         note='Tube-amplifier saturation on pixel values.',
         tooltip=bi(
-            'Maps pixels through tanh(drive · pixel)/tanh(drive). Soft-clip colour distortion '
-            'that retains shape but punches saturation.',
-            'Прогоняет пиксели через tanh(drive · pixel)/tanh(drive). Мягкая клиппинг-окраска: '
-            'форма сохраняется, насыщенность взрывается.',
+            'Colours get pushed into thick, saturated, cartoon-poster tones - shapes stay but '
+            'hues bloom and hard-clip like an over-driven tube amp.',
+            'Цвета уходят в густые, насыщенные, «мультяшно-плакатные» тона - формы остаются, но '
+            'оттенки взрываются и жёстко клиппируются, как перегруженный ламповый усилитель.',
         ),
     ),
     EffectSpec(
@@ -1009,14 +1019,14 @@ EFFECTS: List[EffectSpec] = [
                               'Match the histogram of the current frame to a frame N frames in the '
                               'past. Big values = palette feels stuck in time.',
                               'Подстраивает гистограмму текущего кадра под кадр N кадров назад. '
-                              'Большие значения — палитра «застряла в прошлом».',
+                              'Большие значения - палитра «застряла в прошлом».',
                           ))],
-        note='Match palette to a frame from N back — colour memory.',
+        note='Match palette to a frame from N back - colour memory.',
         tooltip=bi(
-            'Histogram-matching against a delayed buffer. The composition stays current, the '
-            'palette is from the past.',
-            'Согласование гистограмм по задержанному буферу. Композиция — актуальная, палитра — '
-            'из прошлого.',
+            'The scene is current but wears an old palette - colours feel time-lagged and '
+            'stuck, as if the picture is remembering how it looked seconds ago.',
+            'Сцена актуальная, но в старой палитре - цвета словно «застряли во времени», будто '
+            'картинка помнит, как выглядела секунды назад.',
         ),
     ),
     EffectSpec(
@@ -1030,14 +1040,14 @@ EFFECTS: List[EffectSpec] = [
                               'How aggressively to downsample chroma vs luma. 2 = mild, 8 = '
                               'colour blocks visibly bleed past edges.',
                               'Насколько агрессивно даунсэмплить цветность относительно яркости. '
-                              '2 — мягко, 8 — цветные блоки заметно «вытекают» за контуры.',
+                              '2 - мягко, 8 - цветные блоки заметно «вытекают» за контуры.',
                           ))],
-        note='Chroma subsampling abuse — colour blocks bleed over sharp edges.',
+        note='Chroma subsampling abuse - colour blocks bleed over sharp edges.',
         tooltip=bi(
-            'Downsamples Cr and Cb planes by FACTOR via INTER_AREA, upsamples back by '
-            'INTER_NEAREST. Luma stays sharp.',
-            'Даунсэмплит Cr и Cb плоскости в FACTOR раз через INTER_AREA и апсэмплит обратно '
-            'INTER_NEAREST. Яркость остаётся резкой.',
+            'Colour smears in blocky patches that bleed past the sharp outlines - like a badly-'
+            'compressed clip where the colour and the detail no longer line up.',
+            'Цвет размазывается блочными пятнами, вытекающими за чёткие контуры - как плохо '
+            'сжатый клип, где цвет и детали больше не совпадают.',
         ),
     ),
     EffectSpec(
@@ -1051,14 +1061,14 @@ EFFECTS: List[EffectSpec] = [
                               'How many Conway steps to evolve the binarised mask. 1 = subtle, '
                               '5 = mask becomes alien.',
                               'Сколько шагов Conway-эволюции применить к бинаризованной маске. '
-                              '1 — едва заметно, 5 — маска становится «инопланетной».',
+                              '1 - едва заметно, 5 - маска становится «инопланетной».',
                           ))],
-        note='Conway automaton on frame as corruption mask — organic glitch.',
+        note='Conway automaton on frame as corruption mask - organic glitch.',
         tooltip=bi(
-            'Binarise (>128), evolve N steps of Game of Life, XOR random noise into living '
-            'cells. Bio-glitch overlay.',
-            'Бинаризация (>128), N шагов Conway, XOR шума в живых клетках. «Био-глитч» поверх '
-            'кадра.',
+            'A crawling cellular pattern eats into the frame - living cells sparkle and mutate '
+            'over the image like a spreading organic corruption.',
+            'По кадру ползёт клеточный узор - живые клетки искрят и мутируют поверх изображения, '
+            'как расползающаяся органическая порча.',
         ),
     ),
     EffectSpec(
@@ -1071,15 +1081,15 @@ EFFECTS: List[EffectSpec] = [
                           tooltip=bi(
                               '0 = full forensic heat-map, 1 = fully off. ~0.4 gives glow on '
                               'edges over the original.',
-                              '0 — полная «криминалистическая» тепло-карта, 1 — выключено. ~0.4 '
-                              '— свечение по контурам поверх оригинала.',
+                              '0 - полная «криминалистическая» тепло-карта, 1 - выключено. ~0.4 '
+                              '- свечение по контурам поверх оригинала.',
                           ))],
-        note='JPEG compression error map — forensic edge glow.',
+        note='JPEG compression error map - forensic edge glow.',
         tooltip=bi(
-            'Re-compresses frame at quality 75, takes |diff|·amplify. Edges and high-frequency '
-            'areas glow.',
-            'Перекодирует кадр в JPEG q=75, считает |разность|·amplify. Контуры и '
-            'высокочастотные зоны светятся.',
+            'Only the edges and textured areas light up in a glowing forensic heat-map, while '
+            'flat regions go dark - an X-ray outline of the picture.',
+            'Светятся только края и текстурные зоны - «криминалистическая» тепло-карта, а ровные '
+            'области темнеют; рентгеновский контур картинки.',
         ),
     ),
     EffectSpec(
@@ -1092,15 +1102,15 @@ EFFECTS: List[EffectSpec] = [
                           tooltip=bi(
                               'How hard to perturb the float16 view of the bytes. 0.05 = clean '
                               'VRAM-glitch; 0.3 = total visual death.',
-                              'Сила возмущения float16-вида байтов. 0.05 — чистый VRAM-глитч; '
-                              '0.3 — полное визуальное «уничтожение».',
+                              'Сила возмущения float16-вида байтов. 0.05 - чистый VRAM-глитч; '
+                              '0.3 - полное визуальное «уничтожение».',
                           ))],
-        note='Frame bytes reread as float16 — VRAM-corruption look.',
+        note='Frame bytes reread as float16 - VRAM-corruption look.',
         tooltip=bi(
-            'Reinterprets the byte buffer as float16, adds Gaussian noise, views back as '
-            'uint8. Looks like a corrupted GPU framebuffer.',
-            'Переинтерпретирует байтовый буфер как float16, добавляет гауссовский шум и '
-            'возвращает в uint8. Похоже на повреждённый кадровый буфер GPU.',
+            'The image shatters into harsh coloured static and torn bands - looks like a '
+            'corrupted GPU framebuffer / dumped VRAM.',
+            'Изображение рассыпается в резкий цветной «снег» и рваные полосы - как повреждённый '
+            'кадровый буфер GPU / дамп VRAM.',
         ),
     ),
     EffectSpec(
@@ -1113,19 +1123,19 @@ EFFECTS: List[EffectSpec] = [
                           tooltip=bi(
                               'Reflection strength. Higher = more pronounced echo trails along '
                               'each row.',
-                              'Сила отражений. Выше — заметнее «эхо-шлейфы» вдоль каждой строки.',
+                              'Сила отражений. Выше - заметнее «эхо-шлейфы» вдоль каждой строки.',
                           )),
                 _react_param('fx_spatial_reverb',
                              'the echo tail follows onset density: busy percussion gives short, '
                              'tight echoes while sparse passages open up into long tails.',
                              'хвост эха следует за плотностью онсетов: плотная перкуссия даёт '
                              'короткое тугое эхо, а разреженные места раскрываются в длинные хвосты.')],
-        note='Decaying horizontal echo — acoustic reverb on light.',
+        note='Decaying horizontal echo - acoustic reverb on light.',
         tooltip=bi(
-            'FFT-convolves each row with a sparse impulse response (6 reflections, '
-            'decay-shaped). Light echoes laterally.',
-            'FFT-свёртка каждой строки с разреженной импульсной характеристикой (6 отражений '
-            'с затуханием). Свет «эхом» расходится по горизонтали.',
+            'Light smears sideways into soft repeating echoes - bright shapes leave a fading '
+            'horizontal reverb tail, as if the image had an acoustic space.',
+            'Свет размазывается вбок в мягкие повторяющиеся отголоски - яркие формы оставляют '
+            'затухающий горизонтальный «реверберационный» хвост, будто у картинки есть акустика.',
         ),
     ),
 
@@ -1140,15 +1150,15 @@ EFFECTS: List[EffectSpec] = [
                           tooltip=bi(
                               'How much of the previous frame ghosts through. 0 = pure '
                               'displacement; 0.6 = heavy smear.',
-                              'Насколько просвечивает предыдущий кадр. 0 — чистое смещение; '
-                              '0.6 — сильный смаз.',
+                              'Насколько просвечивает предыдущий кадр. 0 - чистое смещение; '
+                              '0.6 - сильный смаз.',
                           ))],
-        note='IMPACT / NOISE / DROP / SUSTAIN — Sobel of prev frame as motion field.',
+        note='IMPACT / NOISE / DROP / SUSTAIN - Sobel of prev frame as motion field.',
         tooltip=bi(
-            'Closest CPU analogue to datamosh. Computes a gradient of the previous frame and '
-            'uses it as an optical-flow-like vector field to displace the current frame.',
-            'Ближайший CPU-аналог датамоша. Считает градиент предыдущего кадра и использует '
-            'его как векторное поле оптического потока для смещения текущего.',
+            'The closest CPU take on datamosh - the picture flows and tears along its own '
+            'motion, smearing moving areas into liquid displacement.',
+            'Ближайший CPU-датамош - картинка течёт и рвётся вдоль собственного движения, '
+            'размазывая движущиеся области в текучее смещение.',
         ),
     ),
     EffectSpec(
@@ -1156,12 +1166,12 @@ EFFECTS: List[EffectSpec] = [
         cls=warp.VortexWarpEffect,
         enable_key='fx_vortex_warp', enabled_default=False,
         chance_key='fx_vortex_warp_chance', default_chance=0.4,
-        note='BUILD / IMPACT / SUSTAIN / DROP — Gaussian-falloff spiral.',
+        note='BUILD / IMPACT / SUSTAIN / DROP - Gaussian-falloff spiral.',
         tooltip=bi(
-            'Rotates pixels around the centre with angle = intensity · gaussian-falloff(radius). '
-            'Subtle swirl at low intensity, full collapse at high.',
-            'Вращает пиксели вокруг центра — угол = интенсивность · гауссово-затухание(радиус). '
-            'На малой интенсивности — лёгкий завиток, на большой — полный «коллапс» в спираль.',
+            'Pixels swirl around the centre into a spiral - a gentle twist at low intensity, '
+            'a full whirlpool collapse at high.',
+            'Пиксели закручиваются вокруг центра в спираль - лёгкий завиток на малой '
+            'интенсивности, полный «водоворот» на большой.',
         ),
     ),
     EffectSpec(
@@ -1174,15 +1184,15 @@ EFFECTS: List[EffectSpec] = [
                           tooltip=bi(
                               'Number of noise scales summed. 2 = smooth blobs, 5 = jagged '
                               'fractal.',
-                              'Сколько октав шума суммируется. 2 — плавные «капли», 5 — рваный '
+                              'Сколько октав шума суммируется. 2 - плавные «капли», 5 - рваный '
                               'фрактал.',
                           ))],
-        note='Any segment — fBm noise displacement field.',
+        note='Any segment - fBm noise displacement field.',
         tooltip=bi(
-            'Builds a multi-octave noise field and uses it as XY displacement. Field is '
-            'reseeded per audio segment so it constantly evolves.',
-            'Строит многооктавное шумовое поле и использует его как XY-смещение. Поле '
-            'перерождается на каждом аудио-сегменте — постоянно меняется.',
+            'The image ripples through an organic, ever-shifting noise field - soft billowing '
+            'blobs at low octaves, jagged fractal churn at high.',
+            'Изображение волнуется в органическом, постоянно меняющемся шумовом поле - мягкие '
+            'клубящиеся «капли» на малых октавах, рваная фрактальная толча на больших.',
         ),
     ),
     EffectSpec(
@@ -1196,16 +1206,15 @@ EFFECTS: List[EffectSpec] = [
                               'How many frames back the displacement source is taken from. '
                               'Larger = more pronounced lag-induced tearing.',
                               'Из какого по глубине прошлого кадра берётся источник смещения. '
-                              'Больше — заметнее «разрыв» из-за задержки.',
+                              'Больше - заметнее «разрыв» из-за задержки.',
                           ))],
-        note='IMPACT / NOISE / DROP / BUILD / SUSTAIN — past frame is the warp map.',
+        note='IMPACT / NOISE / DROP / BUILD / SUSTAIN - past frame is the warp map.',
         tooltip=bi(
-            "Past frame's R channel = X offset, G channel = Y offset. Image literally uses its "
-            'own colour to tear itself apart. With FEEDBACK active, cascades into '
-            'datamosh-grade smear.',
-            'Канал R прошлого кадра — смещение по X, канал G — по Y. Изображение буквально '
-            'разрывает само себя своими же цветами. В паре с FEEDBACK — каскадный смаз уровня '
-            'датамоша.',
+            'The image tears itself apart using its own colours as a warp map - flowing, '
+            'self-eating distortion that cascades into full datamosh smear with FEEDBACK on.',
+            'Изображение разрывает само себя, используя собственные цвета как карту деформации - '
+            'текучее, самопожирающее искажение, переходящее в полный датамош-смаз при '
+            'включённом FEEDBACK.',
         ),
     ),
 
@@ -1227,27 +1236,27 @@ EFFECTS: List[EffectSpec] = [
                       kwarg='blend',
                       tooltip=bi(
                           '0 = pure formula output, 1 = original frame. In-between cross-fades.',
-                          '0 — чистый результат формулы, 1 — исходный кадр. Между — кроссфейд.',
+                          '0 - чистый результат формулы, 1 - исходный кадр. Между - кроссфейд.',
                       )),
             ParamSpec('fx_formula_a', 'a', 0.5, 0.0, 1.0,
                       tooltip=bi(
-                          'Live slider — referenced as `a` inside the formula.',
-                          'Живой слайдер — обращайтесь к нему в формуле как к переменной `a`.',
+                          'Live slider - referenced as `a` inside the formula.',
+                          'Живой слайдер - обращайтесь к нему в формуле как к переменной `a`.',
                       )),
             ParamSpec('fx_formula_b', 'b', 0.5, 0.0, 1.0,
                       tooltip=bi(
-                          'Live slider — referenced as `b` inside the formula.',
-                          'Живой слайдер — обращайтесь к нему в формуле как к переменной `b`.',
+                          'Live slider - referenced as `b` inside the formula.',
+                          'Живой слайдер - обращайтесь к нему в формуле как к переменной `b`.',
                       )),
             ParamSpec('fx_formula_c', 'c', 0.5, 0.0, 1.0,
                       tooltip=bi(
-                          'Live slider — referenced as `c` inside the formula.',
-                          'Живой слайдер — обращайтесь к нему в формуле как к переменной `c`.',
+                          'Live slider - referenced as `c` inside the formula.',
+                          'Живой слайдер - обращайтесь к нему в формуле как к переменной `c`.',
                       )),
             ParamSpec('fx_formula_d', 'd', 0.5, 0.0, 1.0,
                       tooltip=bi(
-                          'Live slider — referenced as `d` inside the formula.',
-                          'Живой слайдер — обращайтесь к нему в формуле как к переменной `d`.',
+                          'Live slider - referenced as `d` inside the formula.',
+                          'Живой слайдер - обращайтесь к нему в формуле как к переменной `d`.',
                       )),
         ],
         extra_factory=_formula_extras,
@@ -1274,13 +1283,13 @@ EFFECTS: List[EffectSpec] = [
                           'How fast the seam crawls and how thick it is. '
                           'Low = slow gentle roll with a hairline tear. '
                           'High = fast scroll with a wide black tear band.',
-                          'Скорость движения шва и его толщина. Низко — медленная мягкая '
-                          'прокрутка с тонким разрывом. Высоко — быстрый скролл с широкой '
+                          'Скорость движения шва и его толщина. Низко - медленная мягкая '
+                          'прокрутка с тонким разрывом. Высоко - быстрый скролл с широкой '
                           'чёрной разрывной полосой.',
                       )),
         ],
         intensity_max_kwarg='intensity_max',
-        note='BUILD / DROP — sync loss as a metaphor for "system gives way at peaks".',
+        note='BUILD / DROP - sync loss as a metaphor for "system gives way at peaks".',
         tooltip=bi(
             'The frame is split horizontally and the two halves are stacked in the wrong '
             'order; the cut position drifts up the frame so the seam crawls. A black tear '
@@ -1288,7 +1297,7 @@ EFFECTS: List[EffectSpec] = [
             'the vertical retrace pulse when it lost vsync lock.',
             'Кадр разрезается по горизонтали и две половины ставятся в обратном порядке; '
             'место разреза дрейфует вверх по кадру, шов «ползёт». Чёрная разрывная полоса '
-            '(толщина растёт с интенсивностью) отмечает разрез — как на старом CRT, '
+            '(толщина растёт с интенсивностью) отмечает разрез - как на старом CRT, '
             'когда тот терял vsync-синхронизацию.',
         ),
     ),
@@ -1305,22 +1314,20 @@ EFFECTS: List[EffectSpec] = [
                           'How much the picture trails behind the live source. Low = slight '
                           'motion blur. High = heavy "decoder is two frames behind" smear, '
                           'compounding across frames.',
-                          'Насколько изображение отстаёт от источника. Низко — лёгкий motion '
-                          'blur. Высоко — тяжёлый смаз «декодер отстаёт на два кадра», '
+                          'Насколько изображение отстаёт от источника. Низко - лёгкий motion '
+                          'blur. Высоко - тяжёлый смаз «декодер отстаёт на два кадра», '
                           'накапливающийся между кадрами.',
                       )),
         ],
         intensity_max_kwarg='intensity_max',
-        note='IMPACT / BUILD / DROP — lag is visible only when motion changes.',
+        note='IMPACT / BUILD / DROP - lag is visible only when motion changes.',
         tooltip=bi(
-            'Stateful: outputs `prev + alpha*(current - prev)` and feeds that blended '
-            'output back as the next prev. Motion only partially resolves each frame, like '
-            'a video stream where the decoder is dropping P-frames and the picture lags '
-            'behind. State is kept fresh on chance-failed frames so the lag does not snap.',
-            'Stateful-эффект: выводит `prev + alpha*(current - prev)` и подаёт этот '
-            'смешанный кадр как следующий prev. Движение лишь частично разрешается за кадр '
-            '— как в видеопотоке, где декодер теряет P-кадры. Буфер обновляется и на '
-            'кадрах, где chance не сработал, чтобы лаг не сбрасывался скачком.',
+            'The picture lags behind the action and only half-catches-up each frame - moving '
+            'objects leave a heavy, compounding motion smear, like a decoder that keeps '
+            'dropping frames and never quite redraws.',
+            'Картинка отстаёт от происходящего и лишь наполовину «догоняет» каждый кадр - за '
+            'движущимися объектами тянется тяжёлый нарастающий смаз, как у декодера, который '
+            'теряет кадры и не успевает перерисоваться.',
         ),
     ),
     EffectSpec(
@@ -1336,25 +1343,19 @@ EFFECTS: List[EffectSpec] = [
                           'Density of bit-flips and which bit-plane is hit. Low = sparse '
                           'LSB jitter (subtle dithering). High = dense MSB flips '
                           '(catastrophic colour shifts in plateaus of solid colour).',
-                          'Плотность бит-флипов и в какой бит-плоскости они идут. Низко — '
-                          'редкие LSB-флипы (мягкое дрожание). Высоко — частые MSB-флипы '
+                          'Плотность бит-флипов и в какой бит-плоскости они идут. Низко - '
+                          'редкие LSB-флипы (мягкое дрожание). Высоко - частые MSB-флипы '
                           '(катастрофические цветовые сдвиги по плоским цветовым областям).',
                       )),
             _drive_param('fx_bit_flip', 'high'),
         ],
         intensity_max_kwarg='intensity_max',
-        note='SUSTAIN / NOISE — quiet bit rot during steady passages, masked by noise.',
+        note='SUSTAIN / NOISE - quiet bit rot during steady passages, masked by noise.',
         tooltip=bi(
-            'Sparse boolean mask of density `intensity * 0.05` is generated; an '
-            'intensity-driven bit-plane (LSB ... MSB) is selected, and every byte where '
-            'the mask is True has that bit toggled. The result has the exact "bit rot" '
-            'signature of failing flash storage: solid-colour plateaus picking up '
-            'quantised XOR shifts.',
-            'Генерируется разреженная булева маска плотностью `интенсивность * 0.05`; '
-            'выбирается бит-плоскость (LSB ... MSB) в зависимости от интенсивности, и '
-            'каждый байт, где маска True, имеет этот бит инвертированным. Результат точно '
-            'воспроизводит «bit rot» отказывающей флэш-памяти: плоские цветовые области '
-            'покрываются квантованными XOR-сдвигами.',
+            'Flat areas of solid colour suddenly break out in sparse wrong-coloured speckles '
+            'and blocky colour jumps - the "bit rot" look of failing memory eating the image.',
+            'Ровные области сплошного цвета внезапно покрываются редкими «не теми» крапинами и '
+            'блочными скачками цвета - вид «bit rot» отказывающей памяти, разъедающей картинку.',
         ),
     ),
     EffectSpec(
@@ -1370,22 +1371,18 @@ EFFECTS: List[EffectSpec] = [
                           'Fraction of 16x16 macroblocks corrupted. Low = a few stray '
                           'blocks at random. High = up to 30 percent of the grid replaced '
                           'with displaced content from elsewhere in the frame.',
-                          'Доля 16x16 макроблоков, попадающих под порчу. Низко — пара '
-                          'случайных блоков. Высоко — до 30 процентов решётки замещены '
+                          'Доля 16x16 макроблоков, попадающих под порчу. Низко - пара '
+                          'случайных блоков. Высоко - до 30 процентов решётки замещены '
                           'смещённым содержимым из других мест кадра.',
                       )),
         ],
         intensity_max_kwarg='intensity_max',
-        note='IMPACT / NOISE — codec confusion is purely about motion.',
+        note='IMPACT / NOISE - codec confusion is purely about motion.',
         tooltip=bi(
-            'A random fraction of 16x16 macroblocks is overwritten with the contents of '
-            'another 16x16 region of the same frame, located 32-64 px away with random '
-            'sign per axis. Reads exactly like an H.264 stream where the motion-vector '
-            'field is corrupt: chunks of the image surface in places they do not belong.',
-            'Случайная доля 16x16 макроблоков перезаписывается содержимым другой 16x16 '
-            'области того же кадра со смещением 32-64 px и случайным знаком по каждой '
-            'оси. Выглядит точно как H.264-поток с повреждённым motion-vector полем: '
-            'куски изображения «всплывают» не на своих местах.',
+            'Blocky chunks of the image pop up in the wrong places, pulled from elsewhere in '
+            'the frame - exactly like an H.264 stream with a corrupt motion-vector field.',
+            'Блочные куски изображения всплывают не на своих местах, стянутые из других частей '
+            'кадра - точь-в-точь H.264-поток с повреждённым motion-vector полем.',
         ),
     ),
     EffectSpec(
@@ -1402,23 +1399,17 @@ EFFECTS: List[EffectSpec] = [
                           'Low values: subtle 1-2 picture-in-picture inserts. High values: '
                           'frame fills with nested self-similar copies.',
                           'Сколько прямоугольников-каннибалов на кадр и насколько рекурсивно. '
-                          'Малые значения — едва заметные 1-2 «картинки-в-картинке». Высокие '
-                          '— кадр забит вложенными самоподобными копиями.',
+                          'Малые значения - едва заметные 1-2 «картинки-в-картинке». Высокие '
+                          '- кадр забит вложенными самоподобными копиями.',
                       )),
         ],
         intensity_max_kwarg='intensity_max',
-        note='BUILD / NOISE — recursion grows with energy; nothing on quiet/steady.',
+        note='BUILD / NOISE - recursion grows with energy; nothing on quiet/steady.',
         tooltip=bi(
-            'The decoder appears to keep reading from the same source pointer. Random '
-            'rectangles in the frame are painted with a downscaled copy of the *whole '
-            'current frame*; at high intensity those copies recurse so each rectangle '
-            'contains a smaller copy that contains an even smaller copy. Memory-corruption '
-            'aesthetic, distinct from feedback loop or block-glitch.',
-            'Декодер словно читает данные по одному указателю. Случайные прямоугольники '
-            'в кадре заполняются уменьшенной копией ВСЕГО текущего кадра; на высокой '
-            'интенсивности копии рекурсивно вкладываются — каждый прямоугольник содержит '
-            'меньшую копию, та — ещё меньшую. Эстетика повреждения памяти, не путать с '
-            'feedback loop или block-glitch.',
+            'Rectangles across the frame fill with shrunken copies of the whole picture, '
+            'nesting into itself picture-in-picture - a recursive memory-corruption collapse.',
+            'Прямоугольники по кадру заполняются уменьшенными копиями всей картинки, вкладываясь '
+            'сами в себя «картинка-в-картинке» - рекурсивный коллапс повреждённой памяти.',
         ),
     ),
 
@@ -1437,20 +1428,20 @@ EFFECTS: List[EffectSpec] = [
                           'how wildly they move. Low: a couple of pointers drifting. '
                           'High: a full infestation of 12+ cursors with jittery trails.',
                           'Сколько fake Win95-курсоров ползает по кадру и насколько резко '
-                          'они двигаются. Низко — пара курсоров плывёт. Высоко — рой из '
+                          'они двигаются. Низко - пара курсоров плывёт. Высоко - рой из '
                           '12+ курсоров со рваными следами.',
                       )),
         ],
         intensity_max_kwarg='intensity_max',
-        note='SILENCE / SUSTAIN — eerie infestation; loudest in quiet passages.',
+        note='SILENCE / SUSTAIN - eerie infestation; loudest in quiet passages.',
         tooltip=bi(
             'A swarm of authentic 16x22 Win95 arrow cursors is overlaid on every frame, '
             'each pointer following its own brownian-motion path with a short fading '
             'trail. Pointer state is stateful across frames so motion is continuous. '
             'Reads as a 90s machine under malware infestation.',
-            'Поверх каждого кадра — рой подлинных Win95-курсоров (16x22), каждый идёт '
+            'Поверх каждого кадра - рой подлинных Win95-курсоров (16x22), каждый идёт '
             'своей броуновской траекторией с коротким затухающим следом. Состояние '
-            'курсоров хранится между кадрами — движение непрерывное. Похоже на '
+            'курсоров хранится между кадрами - движение непрерывное. Похоже на '
             'заражённую вирусом машину 90-х.',
         ),
     ),
@@ -1468,20 +1459,20 @@ EFFECTS: List[EffectSpec] = [
                           'how tall each band is. Low: a single thin band per hit. High: '
                           '5+ thick bands of bluescreen text crowding the picture.',
                           'Сколько синеэкранных полос врезается в кадр за срабатывание и '
-                          'насколько они толстые. Низко — одна тонкая полоса на удар. '
-                          'Высоко — 5+ толстых полос BSOD-текста забивают картинку.',
+                          'насколько они толстые. Низко - одна тонкая полоса на удар. '
+                          'Высоко - 5+ толстых полос BSOD-текста забивают картинку.',
                       )),
         ],
         intensity_max_kwarg='intensity_max',
-        note='IMPACT / DROP — pure system-crash punctuation on hits.',
+        note='IMPACT / DROP - pure system-crash punctuation on hits.',
         tooltip=bi(
             'Authentic NT-bluescreen palette (RGB 0,0,168) and a vocabulary of real STOP '
             'codes, hex addresses and dump-prose lines are painted into random horizontal '
-            'bands of the frame. Stateless per-frame — every frame picks fresh bands so '
+            'bands of the frame. Stateless per-frame - every frame picks fresh bands so '
             'the effect strobes / shreds.',
             'Канонический фон NT-синего экрана (RGB 0,0,168) и набор реальных STOP-кодов, '
             'hex-адресов и фраз dump-вывода врезаются в случайные горизонтальные полосы '
-            'кадра. Без состояния между кадрами — каждый кадр выбирает новые полосы, '
+            'кадра. Без состояния между кадрами - каждый кадр выбирает новые полосы, '
             'поэтому эффект стробит и «шинкует».',
         ),
     ),
@@ -1496,13 +1487,13 @@ EFFECTS: List[EffectSpec] = [
             ParamSpec('fx_overlay_opacity', 'Opacity', 0.85, 0.0, 1.0, indent=False,
                       tooltip=bi(
                           'Final alpha multiplier. 0.85 looks like a translucent decal.',
-                          'Итоговый коэффициент альфы. 0.85 — полупрозрачная «наклейка».',
+                          'Итоговый коэффициент альфы. 0.85 - полупрозрачная «наклейка».',
                       )),
             ParamSpec('fx_overlay_scale', 'Scale Max', 0.4, 0.05, 1.0, indent=False,
                       tooltip=bi(
                           'Maximum size as a fraction of frame height. Intensity interpolates '
                           'between min and max.',
-                          'Максимальный размер — доля высоты кадра. Интенсивность '
+                          'Максимальный размер - доля высоты кадра. Интенсивность '
                           'интерполирует между min и max.',
                       )),
             ParamSpec('fx_overlay_scale_min', 'Scale Min', 0.15, 0.05, 1.0, indent=False,
@@ -1514,7 +1505,7 @@ EFFECTS: List[EffectSpec] = [
                       choices=['screen', 'normal', 'multiply'], indent=False,
                       tooltip=bi(
                           'screen brightens; multiply darkens; normal replaces.',
-                          'screen — высветляет; multiply — затемняет; normal — заменяет.',
+                          'screen - высветляет; multiply - затемняет; normal - заменяет.',
                       )),
             ParamSpec('fx_overlay_position', 'Position', 'random', kind='choice',
                       choices=['random', 'center', 'random_corner'], indent=False,
@@ -1527,19 +1518,19 @@ EFFECTS: List[EffectSpec] = [
                       tooltip=bi(
                           'dominant = auto-key the most common hue; secondary = the second most '
                           'common; manual = use the RGB below.',
-                          'dominant — авто-ключ по самому частому оттенку; secondary — по '
-                          'второму по частоте; manual — по RGB ниже.',
+                          'dominant - авто-ключ по самому частому оттенку; secondary - по '
+                          'второму по частоте; manual - по RGB ниже.',
                       )),
             ParamSpec('fx_overlay_ck_tolerance', 'CK Tolerance', 30, 5, 60, kind='int',
                       tooltip=bi(
                           'How wide the keyed hue range is. Higher = more pixels removed.',
-                          'Ширина диапазона по оттенку, который вырезается. Больше — больше '
+                          'Ширина диапазона по оттенку, который вырезается. Больше - больше '
                           'удалённых пикселей.',
                       )),
             ParamSpec('fx_overlay_ck_softness', 'CK Edge Softness', 5, 1, 21, kind='int',
                       tooltip=bi(
                           'Gaussian blur applied to the key mask. Higher = softer edges.',
-                          'Гауссово размытие маски ключа. Больше — мягче края.',
+                          'Гауссово размытие маски ключа. Больше - мягче края.',
                       )),
             ParamSpec('fx_overlay_ck_r', 'Manual Key R', 0, 0, 255, kind='int',
                       tooltip=bi('Manual key colour red component.',
@@ -1575,8 +1566,8 @@ EFFECTS: List[EffectSpec] = [
                       tooltip=bi(
                           'overlay = draw the strokes; lag = frame delay in strokes; '
                           'warp_video = distort video along outlines; lag_warp = lag + warped strokes',
-                          'overlay — рисовать линии; lag — задержка кадра в линиях; '
-                          'warp_video — искажение видео по контурам; lag_warp — задержка + искажение линий'
+                          'overlay - рисовать линии; lag - задержка кадра в линиях; '
+                          'warp_video - искажение видео по контурам; lag_warp - задержка + искажение линий'
                       )),
             ParamSpec('fx_paint_delay', 'Lag Frames', 10, 2, 30, kind='int',
                       kwarg='delay_frames',
@@ -1603,7 +1594,7 @@ EFFECTS: List[EffectSpec] = [
         ),
     ),
 
-    # ── VISUALIZER (WINDOWS MEDIA PLAYER — audio-reactive) ──────────────
+    # ── VISUALIZER (WINDOWS MEDIA PLAYER - audio-reactive) ──────────────
     # Each renderer draws a visual from the per-frame audio bands (seg.live)
     # and the shared Composite Mode decides how it meets the source frame.
     EffectSpec(
@@ -1624,7 +1615,7 @@ EFFECTS: List[EffectSpec] = [
             n_bands=int(cfg.get('fx_viz_bars_bands', 24)),
             mirror=(cfg.get('fx_viz_bars_mirror', 'off') == 'on'),
         ),
-        note='Audio-reactive — classic equalizer bars driven by the spectrum.',
+        note='Audio-reactive - classic equalizer bars driven by the spectrum.',
         tooltip=bi(
             'Classic WMP equalizer: per-band bars with peak-hold smoothing. Use Composite '
             'Mode to overlay or warp the source instead of replacing it.',
@@ -1645,7 +1636,7 @@ EFFECTS: List[EffectSpec] = [
             **_viz_extras_base(cfg, 'fx_viz_radial'),
             rays=int(cfg.get('fx_viz_radial_rays', 48)),
         ),
-        note='Audio-reactive — spectrum bars wrapped into a pulsing corona.',
+        note='Audio-reactive - spectrum bars wrapped into a pulsing corona.',
         tooltip=bi(
             'The equalizer wrapped around a circle: each ray length tracks a frequency band, '
             'the whole corona rotates slowly. Strong as a full-screen replace or a warp map.',
@@ -1666,7 +1657,7 @@ EFFECTS: List[EffectSpec] = [
             **_viz_extras_base(cfg, 'fx_viz_scope'),
             thickness=int(cfg.get('fx_viz_scope_thick', 2)),
         ),
-        note='Audio-reactive — waveform scope line.',
+        note='Audio-reactive - waveform scope line.',
         tooltip=bi(
             'A horizontal scope line whose amplitude follows the spectrum, scrolling in phase '
             'with time. Cleanest as an over-blend on top of the video.',
@@ -1687,7 +1678,7 @@ EFFECTS: List[EffectSpec] = [
             **_viz_extras_base(cfg, 'fx_viz_lissajous'),
             ratio=float(cfg.get('fx_viz_lissajous_ratio', 3.0)),
         ),
-        note='Audio-reactive — XY Lissajous figures.',
+        note='Audio-reactive - XY Lissajous figures.',
         tooltip=bi(
             'XY oscilloscope figures: bass and high steer the two axis frequencies while time '
             'drifts the phase, drawing evolving loops. A retro lab-scope look.',
@@ -1702,18 +1693,18 @@ EFFECTS: List[EffectSpec] = [
             ParamSpec('fx_viz_plasma_scale', 'Scale', 0.04, 0.01, 0.15, indent=True,
                       kwarg=None,
                       tooltip=bi('Spatial frequency of the plasma. Higher = finer ripples.',
-                                 'Пространственная частота плазмы. Выше — мельче рябь.')),
+                                 'Пространственная частота плазмы. Выше - мельче рябь.')),
         ],
         extra_factory=lambda cfg: dict(
             **_viz_extras_base(cfg, 'fx_viz_plasma'),
             scale=float(cfg.get('fx_viz_plasma_scale', 0.04)),
         ),
-        note='Audio-reactive — procedural plasma; colour & speed from the bands.',
+        note='Audio-reactive - procedural plasma; colour & speed from the bands.',
         tooltip=bi(
             'Demoscene plasma built from summed sine fields. Bass shifts the palette, mids '
             'drive the speed, highs the brightness. Use warp mode to ripple the source.',
             'Demoscene-плазма из суммы синусоид. Бас сдвигает палитру, середина задаёт '
-            'скорость, верх — яркость. В режиме warp создаёт рябь по источнику.'),
+            'скорость, верх - яркость. В режиме warp создаёт рябь по источнику.'),
     ),
     EffectSpec(
         id='viz_particles', label='Beat Particles', group='VISUALIZER',
@@ -1734,7 +1725,7 @@ EFFECTS: List[EffectSpec] = [
             count=int(cfg.get('fx_viz_particles_count', 120)),
             gravity=float(cfg.get('fx_viz_particles_grav', 0.3)),
         ),
-        note='Audio-reactive — particle bursts thrown on the beat.',
+        note='Audio-reactive - particle bursts thrown on the beat.',
         tooltip=bi(
             'A particle system emitting from the centre: each detected beat throws a burst '
             'whose size scales with bass, then gravity pulls them down. Great over the video.',
@@ -1749,20 +1740,20 @@ EFFECTS: List[EffectSpec] = [
             ParamSpec('fx_viz_flow_noise', 'Flow Scale', 0.02, 0.005, 0.08, indent=True,
                       kwarg=None,
                       tooltip=bi('Spatial scale of the flow turbulence. Higher = tighter swirls.',
-                                 'Пространственный масштаб турбулентности потока. Выше — туже завитки.')),
+                                 'Пространственный масштаб турбулентности потока. Выше - туже завитки.')),
         ],
         extra_factory=lambda cfg: dict(
             **_viz_extras_base(cfg, 'fx_viz_flow'),
             noise_scale=float(cfg.get('fx_viz_flow_noise', 0.02)),
         ),
-        note='Audio-reactive — thousands of particles tracing a turbulent flow field.',
+        note='Audio-reactive - thousands of particles tracing a turbulent flow field.',
         tooltip=bi(
             'A cloud of particles advected along a slowly evolving turbulent vector field, each '
             'leaving a fading trail so the streamlines reveal the flow. Mids and bass drive the '
             'flow speed; the current bands tint the ink. Flow Scale sets the swirl tightness.',
             'Облако частиц, переносимых по медленно эволюционирующему турбулентному векторному '
             'полю; каждая оставляет затухающий след, и линии тока проявляют форму потока. '
-            'Середина и бас задают скорость; полосы окрашивают «чернила». Flow Scale — плотность завитков.'),
+            'Середина и бас задают скорость; полосы окрашивают «чернила». Flow Scale - плотность завитков.'),
     ),
     EffectSpec(
         id='viz_alchemy', label='Alchemy', group='VISUALIZER',
@@ -1776,7 +1767,7 @@ EFFECTS: List[EffectSpec] = [
             ParamSpec('fx_viz_alchemy_zoom', 'Feedback Zoom', 1.035, 1.0, 1.09, indent=True,
                       kwarg=None,
                       tooltip=bi('Per-frame zoom of the feedback tunnel. Higher = faster outward rush.',
-                                 'Покадровый зум feedback-тоннеля. Выше — быстрее «наплыв» наружу.')),
+                                 'Покадровый зум feedback-тоннеля. Выше - быстрее «наплыв» наружу.')),
             ParamSpec('fx_viz_alchemy_spin', 'Feedback Spin', 2.0, 0.0, 6.0, indent=True,
                       kwarg=None,
                       tooltip=bi('Per-frame rotation of the tunnel, in degrees. Drives the spiral twist.',
@@ -1788,7 +1779,7 @@ EFFECTS: List[EffectSpec] = [
             zoom=float(cfg.get('fx_viz_alchemy_zoom', 1.035)),
             spin=float(cfg.get('fx_viz_alchemy_spin', 2.0)),
         ),
-        note='Audio-reactive — WMP "Alchemy" feedback spiral tunnel with a spectrum rose.',
+        note='Audio-reactive - WMP "Alchemy" feedback spiral tunnel with a spectrum rose.',
         tooltip=bi(
             'A video-feedback "liquid light" field: each frame the previous image is rotated, '
             'zoomed and dimmed, then a radially symmetric rose whose petals track the spectrum is '
@@ -1842,7 +1833,7 @@ def iter_cfg_keys() -> Iterable[Tuple[str, Any]]:
 def build_chain(cfg: dict) -> List[BaseEffect]:
     """Construct the ordered effect chain for a render from a flat cfg dict.
 
-    Mirrors the original engine order — effects appear in the same order as
+    Mirrors the original engine order - effects appear in the same order as
     EFFECTS so any preset chained behaviour (e.g. Cascade after individual
     glitches) is preserved.
 
@@ -1850,11 +1841,11 @@ def build_chain(cfg: dict) -> List[BaseEffect]:
     engine (`base * (0.3 + 0.7 * chaos)`) for every effect that opted in.
 
     Per-effect always-on (backlog #1):
-        cfg[fx_xxx_always]      — when True, this effect:
+        cfg[fx_xxx_always]      - when True, this effect:
                                   · ignores its trigger_types (fires on every segment),
                                   · ignores its chance slider (chance = 1.0),
                                   · uses a fixed intensity (no audio scaling).
-        cfg[fx_xxx_always_int]  — that fixed intensity, in [0, 1].
+        cfg[fx_xxx_always_int]  - that fixed intensity, in [0, 1].
         Other effects in the chain remain unaffected by this override.
     """
     chaos = float(cfg.get('chaos_level', 0.5))
@@ -1922,7 +1913,7 @@ def default_cfg() -> dict:
     cfg: dict = {}
     for k, v in iter_cfg_keys():
         cfg[k] = v
-    # Composite RGB defaults — stored in cfg as lists (matches old format)
+    # Composite RGB defaults - stored in cfg as lists (matches old format)
     cfg['fx_ascii_fg'] = [
         cfg.get('fx_ascii_fg_r', 0), cfg.get('fx_ascii_fg_g', 255), cfg.get('fx_ascii_fg_b', 0)]
     cfg['fx_ascii_bg'] = [

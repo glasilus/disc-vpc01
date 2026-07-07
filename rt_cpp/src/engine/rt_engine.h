@@ -13,8 +13,8 @@ struct EngineSettings {
     float cut_interval      = 0.3f;
     float overlay_intensity = 0.0f;
     // Frame-selection policy:
-    //   0 = Continuous — linear playback through one source, effects only.
-    //   1 = Cut        — random cuts on beats / impacts / drops.
+    //   0 = Continuous - linear playback through one source, effects only.
+    //   1 = Cut        - random cuts on beats / impacts / drops.
     int   cut_mode          = 1;
     bool  sequential        = false;  // legacy; preserved for old presets
     float ck_tolerance      = 30.f;
@@ -30,7 +30,7 @@ struct EngineSettings {
     // the box (and after a preset reset). Continuous "look" filters track audio
     // smoothly (Sustained); visualizers stay on when enabled (Manual); punchy
     // glitches keep the default Auto (attack-on-accent, decay). These are only
-    // defaults — the GUI/presets can override any of them.
+    // defaults - the GUI/presets can override any of them.
     EngineSettings() {
         auto set_mode = [&](FxId id, TriggerMode m){ fx[(int)id].mode = (int)m; };
         for (FxId id : { FxId::SCANLINES, FxId::NEGATIVE, FxId::DITHER, FxId::BITCRUSH,
@@ -65,7 +65,7 @@ public:
     void destroy();
 
     // Reconfigure the internal canvas (FBO) resolution. Safe to call at any
-    // time from the render thread — recreates all ping-pong / history FBOs.
+    // time from the render thread - recreates all ping-pong / history FBOs.
     void set_canvas_size(int w, int h);
 
     int canvas_width()  const { return width_; }

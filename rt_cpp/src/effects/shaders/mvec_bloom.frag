@@ -1,7 +1,7 @@
 #version 330 core
 in  vec2 vUV;
 out vec4 FragColor;
-// Wrong Motion Vector — "bloom smear" datamosh. Emulates a decoder applying
+// Wrong Motion Vector - "bloom smear" datamosh. Emulates a decoder applying
 // corrupted motion vectors: each macroblock drags a chunk of the PREVIOUS
 // output in a bogus, slowly-drifting direction. Because uPrev is the engine's
 // last output, the displaced smear is re-displaced every frame and blooms into

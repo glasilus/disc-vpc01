@@ -52,48 +52,51 @@
 
 // SINGLE source of truth for effect metadata. Order MUST match the FxId enum.
 // NOTE: "fx_derivwarp" replaces the old "fx_rgb"; old presets simply lack it.
-struct FxInfo { const char* key; const char* label; const char* group; };
+// tip = a short, plain description of how the effect LOOKS (shown as a GUI
+// tooltip on hover), not how it works internally.
+struct FxInfo { const char* key; const char* label; const char* group; const char* tip; };
 static const FxInfo kFxInfo[(int)FxId::COUNT] = {
-    { "fx_derivwarp",   "Deriv Warp",       "WARP"       },  // 0
-    { "fx_flash",       "Flash",            "CORE"       },  // 1
-    { "fx_stutter",     "Stutter",          "CORE"       },  // 2
-    { "fx_pixel_sort",  "Pixel Sort",       "GLITCH"     },  // 3
-    { "fx_ghost",       "Ghost Trails",     "CORE"       },  // 4
-    { "fx_scanlines",   "Scanlines",        "DEGRADE"    },  // 5
-    { "fx_bitcrush",    "Bitcrush",         "DEGRADE"    },  // 6
-    { "fx_blockglitch", "Block Glitch",     "GLITCH"     },  // 7
-    { "fx_negative",    "Negative",         "COLOR"      },  // 8
-    { "fx_colorbleed",  "Color Bleed",      "COLOR"      },  // 9
-    { "fx_interlace",   "Interlace",        "DEGRADE"    },  // 10
-    { "fx_badsignal",   "Bad Signal",       "GLITCH"     },  // 11
-    { "fx_zoomglitch",  "Zoom Glitch",      "GLITCH"     },  // 12
-    { "fx_mosaic",      "Mosaic",           "GLITCH"     },  // 13
-    { "fx_phaseshift",  "Phase Shift",      "GLITCH"     },  // 14
-    { "fx_dither",      "Dither",           "DEGRADE"    },  // 15
-    { "fx_feedback",    "Feedback",         "WARP"       },  // 16
-    { "fx_temporalrgb", "Temporal RGB",     "COLOR"      },  // 17
-    { "fx_overlays",    "Overlays",         "OVERLAY"    },  // 18
-    { "fx_vortex",      "Vortex",           "WARP"       },  // 19
-    { "fx_fractalnoise","Fractal Noise",    "WARP"       },  // 20
-    { "fx_selfdisp",    "Self Displace",    "WARP"       },  // 21
-    { "fx_ascii",       "ASCII",            "DEGRADE"    },  // 22
-    { "fx_rgbshift",    "RGB Shift",        "COLOR"      },  // 23
-    { "fx_kali",        "Kaleidoscope",     "WARP"       },  // 24
-    { "fx_fisheye",     "Fisheye",          "WARP"       },  // 25
-    { "fx_vhstrack",    "VHS Tracking",     "DEGRADE"    },  // 26
-    { "fx_pixeldrift",  "Pixel Drift",      "GLITCH"     },  // 27
-    { "fx_pframe_lag",  "P-Frame Lag",      "DATAMOSH"   },  // 28
-    { "fx_mvec_bloom",  "MVec Bloom",       "DATAMOSH"   },  // 29
-    { "fx_self_cannibalize","Self Cannibalize","DATAMOSH" }, // 30
-    { "fx_viz_plasma",  "Plasma",           "VISUALIZER" },  // 31
-    { "fx_viz_radial",  "Radial Spectrum",  "VISUALIZER" },  // 32
-    { "fx_viz_bars",    "Spectrum Bars",    "VISUALIZER" },  // 33
-    { "fx_viz_alchemy", "Alchemy",          "VISUALIZER" },  // 34
+    { "fx_derivwarp",   "Deriv Warp",       "WARP",       "Picture flows and tears along its own motion, a liquid datamosh-style warp." },  // 0
+    { "fx_flash",       "Flash",            "CORE",       "A hard white or black frame blinks over the video, like a camera flash." },  // 1
+    { "fx_stutter",     "Stutter",          "CORE",       "The image judders in place, machine-gunning a frozen slice." },  // 2
+    { "fx_pixel_sort",  "Pixel Sort",       "GLITCH",     "Bright pixels melt into long smooth colour streaks." },  // 3
+    { "fx_ghost",       "Ghost Trails",     "CORE",       "Motion leaves a soft translucent echo trailing behind it." },  // 4
+    { "fx_scanlines",   "Scanlines",        "DEGRADE",    "Thin dark horizontal lines lie over the picture, an old CRT look." },  // 5
+    { "fx_bitcrush",    "Bitcrush",         "DEGRADE",    "Colour collapses into a few flat posterised bands." },  // 6
+    { "fx_blockglitch", "Block Glitch",     "GLITCH",     "Rectangular chunks jump to the wrong place, like a corrupted stream." },  // 7
+    { "fx_negative",    "Negative",         "COLOR",      "Colours flip to photographic negative, a jarring inverted blink." },  // 8
+    { "fx_colorbleed",  "Color Bleed",      "COLOR",      "One colour channel smears sideways and bleeds off the picture (VHS)." },  // 9
+    { "fx_interlace",   "Interlace",        "DEGRADE",    "Fast motion tears into a fine horizontal comb of interlaced teeth." },  // 10
+    { "fx_badsignal",   "Bad Signal",       "GLITCH",     "Coloured noise bars flicker and rows jump, a dying broadcast." },  // 11
+    { "fx_zoomglitch",  "Zoom Glitch",      "GLITCH",     "The frame gets yanked bigger on a hit, then springs elastically back." },  // 12
+    { "fx_mosaic",      "Mosaic",           "GLITCH",     "The picture pixelates into chunky blocks that pump with the bass." },  // 13
+    { "fx_phaseshift",  "Phase Shift",      "GLITCH",     "Horizontal bands slide opposite ways, shearing into offset ribbons." },  // 14
+    { "fx_dither",      "Dither",           "DEGRADE",    "Smooth shading breaks into a fine stipple of dots, a 1-bit look." },  // 15
+    { "fx_feedback",    "Feedback",         "WARP",       "Long glowing wash-trails smear the image into itself (video feedback)." },  // 16
+    { "fx_temporalrgb", "Temporal RGB",     "COLOR",      "Colours lag behind motion, trailing red, green and blue ghosts." },  // 17
+    { "fx_overlays",    "Overlays",         "OVERLAY",    "Composites overlay images from your folder on top of the canvas." },  // 18
+    { "fx_vortex",      "Vortex",           "WARP",       "Pixels swirl around the centre into a spiral whirlpool." },  // 19
+    { "fx_fractalnoise","Fractal Noise",    "WARP",       "The image ripples through an organic, ever-shifting noise field." },  // 20
+    { "fx_selfdisp",    "Self Displace",    "WARP",       "The image warps by its own colours, a flowing self-eating distortion." },  // 21
+    { "fx_ascii",       "ASCII",            "DEGRADE",    "The frame is rebuilt out of text characters, a terminal render." },  // 22
+    { "fx_rgbshift",    "RGB Shift",        "COLOR",      "Colours split into red and blue fringes, a 3D-glasses glitch." },  // 23
+    { "fx_kali",        "Kaleidoscope",     "WARP",       "The frame folds into a mirror-symmetric kaleidoscope mandala." },  // 24
+    { "fx_fisheye",     "Fisheye",          "WARP",       "The image bulges outward through a rounded fisheye lens." },  // 25
+    { "fx_vhstrack",    "VHS Tracking",     "DEGRADE",    "The picture tears into shifted bands with a rolling strip of hiss." },  // 26
+    { "fx_pixeldrift",  "Pixel Drift",      "GLITCH",     "Rows slide sideways so the image ripples like water." },  // 27
+    { "fx_pframe_lag",  "P-Frame Lag",      "DATAMOSH",   "Static blocks freeze, so movement smears the background into a stuck mosaic." },  // 28
+    { "fx_mvec_bloom",  "MVec Bloom",       "DATAMOSH",   "Blocks drag along fake motion vectors into swimming, blooming streaks." },  // 29
+    { "fx_self_cannibalize","Self Cannibalize","DATAMOSH","The image warps by its own content, flowing and eating itself." }, // 30
+    { "fx_viz_plasma",  "Plasma",           "VISUALIZER", "Liquid demoscene plasma colour field driven by the audio." },  // 31
+    { "fx_viz_radial",  "Radial Spectrum",  "VISUALIZER", "A polar audio-sun: spectrum petals radiating from a pulsing core." },  // 32
+    { "fx_viz_bars",    "Spectrum Bars",    "VISUALIZER", "Glowing 16-band spectrum bars with a mirrored reflection." },  // 33
+    { "fx_viz_alchemy", "Alchemy",          "VISUALIZER", "A kaleidoscopic glowing mandala that pulses with the music." },  // 34
 };
 
 const char* fx_key  (FxId id) { return kFxInfo[(int)id].key;   }
 const char* fx_label(FxId id) { return kFxInfo[(int)id].label; }
 const char* fx_group(FxId id) { return kFxInfo[(int)id].group; }
+const char* fx_tip  (FxId id) { return kFxInfo[(int)id].tip;   }
 
 const char* const kFxGroupOrder[] = {
     "CORE", "GLITCH", "WARP", "DATAMOSH", "COLOR", "DEGRADE", "VISUALIZER", "OVERLAY",
@@ -238,7 +241,7 @@ static const uint8_t kFontData[16][8][8] = {
     // 14: `
     {{0,0,1,0,0,0,0,0},{0,0,0,1,0,0,0,0},{0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0},
      {0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0}},
-    // 15: (space) — completely empty
+    // 15: (space) - completely empty
     {{0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0},
      {0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0}},
 };
@@ -515,7 +518,7 @@ static float fx_decay_tau(FxId id) {
         case FxId::GHOST:       return 0.30f;
         case FxId::TEMPORALRGB: return 0.25f;
         case FxId::FEEDBACK:    return 0.45f;
-        // Datamosh compounds over frames — let it linger so the melt builds.
+        // Datamosh compounds over frames - let it linger so the melt builds.
         case FxId::PFRAME_LAG:
         case FxId::MVEC_BLOOM:
         case FxId::SELF_CANNIBALIZE: return 0.40f;
@@ -527,7 +530,7 @@ static float fx_decay_tau(FxId id) {
 // Replaces the old per-frame Bernoulli firing (which made effects strobe and
 // depend on frame rate). Each enabled effect gets a 0..1 envelope:
 //   Beat/Auto  → attack to `trig_level` on a musical event (gated by chance),
-//                then exponential decay — a smooth hit that fades, not a flicker.
+//                then exponential decay - a smooth hit that fades, not a flicker.
 //   Sustained  → continuously tracks audio loudness (no strobe).
 //   Manual     → always full-on (VJ holds it), ignores audio.
 void EffectChain::update_envelopes(const Segment& seg, const AudioStats& stats,
@@ -653,7 +656,7 @@ GLuint EffectChain::apply(
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
-    // Grab history references (safe — all pre-allocated)
+    // Grab history references (safe - all pre-allocated)
     GLuint h0 = history_tex(0);  // 1 frame ago
     GLuint h1 = history_tex(1);  // 2 frames ago
     GLuint h2 = history_tex(2);  // 3 frames ago
@@ -684,7 +687,7 @@ GLuint EffectChain::apply(
     }
 
     if (float fi = strength(FxId::TEMPORALRGB); fi > kEps) {
-        // Envelope peaks on the beat, then decays — use older history frames
+        // Envelope peaks on the beat, then decays - use older history frames
         // while it's strong for a wider split that closes back up as it fades.
         bool strong = env_[(int)FxId::TEMPORALRGB] > 0.5f;
         GLuint tex_g = strong ? h2 : h0;
@@ -914,7 +917,7 @@ GLuint EffectChain::apply(
         });
     }
 
-    // ── ASCII (visual transform — runs after all glitch) ─────────────────────
+    // ── ASCII (visual transform - runs after all glitch) ─────────────────────
 
     if (float fi = strength(FxId::ASCII); fi > kEps) {
         pass(prog_ascii_, main_fbo_.read_tex(), [&](GLuint p){
@@ -982,7 +985,7 @@ GLuint EffectChain::apply(
 
     // ── Push current result into history ring ─────────────────────────────────
     // Skip the full-canvas blit entirely unless some enabled effect actually
-    // samples history — otherwise it's ~6 MB/frame of pure waste at 1080p.
+    // samples history - otherwise it's ~6 MB/frame of pure waste at 1080p.
     if (needs_history(params)) push_history();
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);

@@ -1,12 +1,12 @@
 #version 330 core
 in  vec2 vUV;
 out vec4 FragColor;
-// P-Frame Lag — "block freeze" datamosh. Emulates a decoder that lost its
+// P-Frame Lag - "block freeze" datamosh. Emulates a decoder that lost its
 // P-frames: the image only refreshes where local motion is detected. Per
 // macroblock we compare the luma of uTex vs uPrev; blocks whose change is
 // below a (breathing) threshold output uPrev instead of uTex. Because uPrev
 // is the engine's previous OUTPUT, a frozen block keeps outputting its own
-// stale pixels frame after frame — the freeze compounds, so moving subjects
+// stale pixels frame after frame - the freeze compounds, so moving subjects
 // smear the still background into a stuck mosaic behind them.
 uniform sampler2D uTex;
 uniform sampler2D uPrev;

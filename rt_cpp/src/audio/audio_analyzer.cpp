@@ -37,7 +37,7 @@ static std::string to_utf8(const char* raw) {
 #endif
 }
 
-// Priority of host APIs for dedup — higher value wins when names collide.
+// Priority of host APIs for dedup - higher value wins when names collide.
 // Lower latency + better stability → higher score.
 static int host_api_priority(PaHostApiTypeId t) {
     switch (t) {
@@ -83,7 +83,7 @@ AudioAnalyzer::AudioAnalyzer() {
     fft_out_ = fftwf_alloc_complex(kFftSize / 2 + 1);
     fft_plan_ = fftwf_plan_dft_r2c_1d(kFftSize, fft_in_, fft_out_, FFTW_MEASURE);
 
-    // Precompute a Hann window once — applied to every analysis frame to cut
+    // Precompute a Hann window once - applied to every analysis frame to cut
     // spectral leakage (raw rectangular windows smear the bass badly).
     for (int i = 0; i < kFftSize; ++i)
         hann_[i] = 0.5f * (1.f - std::cos(2.f * 3.14159265358979f * i / (kFftSize - 1)));
@@ -221,7 +221,7 @@ bool AudioAnalyzer::start(int device_index) {
     // \"supported\" for things that fail at OpenStream time and vice versa),
     // so we just try OpenStream directly. paFramesPerBufferUnspecified
     // (= 0) lets PortAudio pick a buffer size compatible with the driver,
-    // which some WASAPI drivers REQUIRE — they reject any fixed buffer
+    // which some WASAPI drivers REQUIRE - they reject any fixed buffer
     // size we'd choose ourselves.
     struct Attempt { int ch; unsigned long fpb; double lat; const char* tag; };
     const Attempt attempts[] = {
@@ -331,8 +331,8 @@ int AudioAnalyzer::pa_callback(const void* input, void* /*output*/,
     const float* src = static_cast<const float*>(input);
 
     // Downmix to mono in bounded blocks and feed the sliding window. We do NOT
-    // truncate to a fixed buffer any more — WASAPI shared mode routinely
-    // delivers 448–480 frames; the old code processed only the first 256,
+    // truncate to a fixed buffer any more - WASAPI shared mode routinely
+    // delivers 448-480 frames; the old code processed only the first 256,
     // dropping ~half the audio and running the analysis clock ~1.9× slow.
     const int ch = std::max(1, self->channel_count_);
     if (ch <= 1) {

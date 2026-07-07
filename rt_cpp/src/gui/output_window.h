@@ -5,7 +5,7 @@
 struct GLFWwindow;
 struct GLFWmonitor;
 
-// A second, borderless window dedicated to clean video output — no GUI chrome,
+// A second, borderless window dedicated to clean video output - no GUI chrome,
 // no controls. Shares its OpenGL context with the control window so the
 // canvas FBO texture can be sampled from either side without copying.
 //

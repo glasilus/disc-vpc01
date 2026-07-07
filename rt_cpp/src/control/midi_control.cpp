@@ -1,17 +1,17 @@
-// midi_control.cpp — hardware MIDI mapping (knobs -> params, pads -> actions)
+// midi_control.cpp - hardware MIDI mapping (knobs -> params, pads -> actions)
 // with runtime MIDI-Learn and JSON persistence.
 //
 // Dependency: RtMidi (vcpkg package: `rtmidi`). CMake integration (done in a
-// separate step — do NOT duplicate here):
+// separate step - do NOT duplicate here):
 //     find_package(unofficial-rtmidi CONFIG REQUIRED)
 //     target_link_libraries(<app_target> PRIVATE unofficial::rtmidi::rtmidi)
 // JSON persistence uses nlohmann/json, already a project dependency.
 //
 // Design notes:
-//   * Polling model only — the app calls poll() once per render frame. RtMidi
+//   * Polling model only - the app calls poll() once per render frame. RtMidi
 //     queues incoming messages internally (queue size set below); we drain the
 //     queue each frame. No callbacks, no threads, no locks.
-//   * Every RtMidi call is wrapped in try/catch — RtMidi throws RtMidiError
+//   * Every RtMidi call is wrapped in try/catch - RtMidi throws RtMidiError
 //     (e.g. no backend compiled in, device unplugged mid-session). A missing
 //     device must never crash the app; failed calls degrade to no-ops.
 
@@ -25,7 +25,7 @@
 #elif __has_include(<RtMidi.h>)
 #  include <RtMidi.h>
 #else
-#  error "RtMidi.h not found — ensure the 'rtmidi' vcpkg port is installed"
+#  error "RtMidi.h not found - ensure the 'rtmidi' vcpkg port is installed"
 #endif
 #include <nlohmann/json.hpp>
 
@@ -41,7 +41,7 @@ constexpr unsigned int kQueueSize = 1024;
 
 // Silence RtMidi's default behavior of printing warnings to std::cerr
 // (e.g. transient port glitches). Errors we care about surface as thrown
-// RtMidiError from the calls we wrap. Stateless — safe with many instances.
+// RtMidiError from the calls we wrap. Stateless - safe with many instances.
 void rtmidi_silent_error_cb(RtMidiError::Type /*type*/,
                             const std::string& /*text*/,
                             void* /*user*/) {}
@@ -69,11 +69,11 @@ bool MidiControl::init(int port_index) {
         const unsigned int count = in->getPortCount();
         if (count == 0 || port_index < 0 ||
             static_cast<unsigned int>(port_index) >= count) {
-            return false;  // no device / bad index — stay closed, no throw
+            return false;  // no device / bad index - stay closed, no throw
         }
 
         in->openPort(static_cast<unsigned int>(port_index), "Disc VPC 01 RT In");
-        // Ignore SysEx, MIDI timing clock and active sensing — we only want
+        // Ignore SysEx, MIDI timing clock and active sensing - we only want
         // channel voice messages (CC / notes); clock alone can be 24 msgs/beat.
         in->ignoreTypes(true, true, true);
 
@@ -81,7 +81,7 @@ bool MidiControl::init(int port_index) {
         current_port_ = port_index;
         return true;
     } catch (const RtMidiError&) {
-        // No backend compiled in / driver failure — module stays inert.
+        // No backend compiled in / driver failure - module stays inert.
     } catch (...) {
         // Never let anything escape a public method.
     }
@@ -104,7 +104,7 @@ void MidiControl::close() {
         try {
             midi_in_->closePort();
         } catch (...) {
-            // Ignore — we're tearing down anyway.
+            // Ignore - we're tearing down anyway.
         }
         midi_in_.reset();
     }
@@ -134,7 +134,7 @@ std::vector<std::string> MidiControl::list_ports() const {
             }
         }
     } catch (...) {
-        names.clear();  // no backend — empty list, caller shows "no devices"
+        names.clear();  // no backend - empty list, caller shows "no devices"
     }
     return names;
 }
@@ -181,7 +181,7 @@ void MidiControl::register_action(const std::string& name,
 // ---------------------------------------------------------------------------
 // States: None -> Param(name) or Action(name) via begin_learn_*; back to None
 // when (a) the first matching message arrives (CC for Param, Note-On for
-// Action — the message is *consumed*, i.e. binds but does not fire any
+// Action - the message is *consumed*, i.e. binds but does not fire any
 // callback), (b) begin_learn_*("") cancels, or (c) begin_learn_* is called
 // with another name (rebind: the newer request simply wins).
 
@@ -256,7 +256,7 @@ void MidiControl::poll() {
         // state; the app can re-init from the device dropdown.
         close();
     } catch (...) {
-        // Never propagate — a user callback misbehaving must not kill poll's
+        // Never propagate - a user callback misbehaving must not kill poll's
         // caller (the render loop). Remaining queue is retried next frame.
     }
 }
@@ -295,7 +295,7 @@ void MidiControl::handle_message(const std::vector<unsigned char>& msg) {
         }
         for (auto& fn : to_fire) fn(norm);
     } else if (type == 0x90) {  // Note-On
-        // Velocity 0 is Note-Off in disguise (running status) — never triggers.
+        // Velocity 0 is Note-Off in disguise (running status) - never triggers.
         if (value == 0) return;
         if (learn_mode_ == LearnMode::Action) {
             bindings_[learn_target_] = { BindType::Note, channel, number };
@@ -317,7 +317,7 @@ void MidiControl::handle_message(const std::vector<unsigned char>& msg) {
 }
 
 // ---------------------------------------------------------------------------
-// Persistence — name -> { type, channel (1-based), number }
+// Persistence - name -> { type, channel (1-based), number }
 // ---------------------------------------------------------------------------
 
 bool MidiControl::save(const std::string& path) const {
@@ -370,7 +370,7 @@ bool MidiControl::load(const std::string& path) {
             BindType type;
             if      (type_s == "cc")   type = BindType::CC;
             else if (type_s == "note") type = BindType::Note;
-            else continue;  // unknown type — skip, don't fail the whole file
+            else continue;  // unknown type - skip, don't fail the whole file
 
             const int channel = entry.value("channel", 1) - 1;  // disk is 1-based
             const int number  = entry.value("number", -1);

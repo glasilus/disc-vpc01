@@ -14,7 +14,7 @@ static const char* k_vert =
 
 // Same four aspect modes as canvas_place: Contain / Cover / Stretch / Native.
 // Without this, a 4:3 canvas on a 16:9 monitor was always letterboxed even
-// when the user picked Cover at the master level — output had its own
+// when the user picked Cover at the master level - output had its own
 // hardcoded Contain that overrode the inner choice.
 static const char* k_frag =
     "#version 330 core\n"
@@ -32,7 +32,7 @@ static const char* k_frag =
     "  if (uMode == 3) {\n"
     "      frac = uCanvasSize / uWindowSize;\n"
     "  } else if (uMode == 1) {\n"
-    "      // Cover: crop to fill — never any black bars.\n"
+    "      // Cover: crop to fill - never any black bars.\n"
     "      frac = (cA > wA) ? vec2(cA / wA, 1.0) : vec2(1.0, wA / cA);\n"
     "  } else {\n"
     "      // Contain: letterbox/pillarbox.\n"
@@ -139,7 +139,7 @@ bool OutputWindow::open(int monitor_index) {
 #endif
 
     window_ = glfwCreateWindow(mode->width, mode->height,
-                               "Disc VPC 01 — Output", nullptr, share_);
+                               "Disc VPC 01 - Output", nullptr, share_);
     // Reset hints so they don't leak into any future window creation.
     glfwDefaultWindowHints();
     if (!window_) { fprintf(stderr, "[output] glfwCreateWindow failed\n"); return false; }
@@ -173,7 +173,7 @@ void OutputWindow::close() {
     if (vao_)  { glDeleteVertexArrays(1, &vao_); vao_ = 0; }
     if (vbo_)  { glDeleteBuffers(1, &vbo_);      vbo_ = 0; }
     if (prog_) { glDeleteProgram(prog_);         prog_ = 0; }
-    // Restore context BEFORE destroying the window — otherwise `prev`
+    // Restore context BEFORE destroying the window - otherwise `prev`
     // becomes invalid if it was the one we just deleted.
     glfwMakeContextCurrent(prev == window_ ? nullptr : prev);
     glfwDestroyWindow(window_);

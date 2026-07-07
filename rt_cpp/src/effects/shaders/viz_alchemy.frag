@@ -2,11 +2,11 @@
 in  vec2 vUV;
 out vec4 FragColor;
 // ---------------------------------------------------------------------------
-// VIZ: ALCHEMY — procedural kaleidoscopic mandala (single pass, no feedback).
+// VIZ: ALCHEMY - procedural kaleidoscopic mandala (single pass, no feedback).
 // The plane is folded into 6-fold mirror symmetry, then domain-warped with
 // cheap fBm. Inside the folded space, three families of thin glowing lines
 // are drawn with exp(-|sin|) filigree: concentric rings, radial harmonic
-// spokes, and a woven lattice — layered into an ornate illuminated sigil.
+// spokes, and a woven lattice - layered into an ornate illuminated sigil.
 //   uTime  -> slow rotation + hue cycling      uBass -> radius breathing
 //   uMid   -> warp depth / detail agitation    uTreble -> outer sparkle ring
 //   uBins  -> per-ring energy (rings light up at the radius of their band)

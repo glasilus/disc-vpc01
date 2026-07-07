@@ -3,7 +3,7 @@
 
 // Classic Windows 95 widget helpers: 3D beveled buttons, sunken frames,
 // raised panels, and blue-gradient title bars. These complement Theme's
-// color palette — without the 3D bevels the flat colors look dated but
+// color palette - without the 3D bevels the flat colors look dated but
 // not authentic. A real Win95 button has, in order from outside in:
 //   - 1 px black outer border
 //   - 1 px dark-gray shadow on the bottom + right

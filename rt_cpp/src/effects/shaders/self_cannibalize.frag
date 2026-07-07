@@ -1,7 +1,7 @@
 #version 330 core
 in  vec2 vUV;
 out vec4 FragColor;
-// Self Cannibalize — the image eats itself. A displacement field is built from
+// Self Cannibalize - the image eats itself. A displacement field is built from
 // the PREVIOUS output's own content (its luma gradient) and used to warp the
 // frame by its own shapes; because uPrev is the last output, the warp compounds
 // every frame into flowing, self-consuming trails. uPrev2 adds a second,

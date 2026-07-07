@@ -46,7 +46,7 @@ bool PresetManager::load(const std::string& path, EngineSettings& out) {
 
     // Reset to defaults FIRST so keys absent from this preset don't inherit the
     // previously-loaded preset's state. Without this, loading preset B after A
-    // leaves A's effects (and params) that B never mentions still active — the
+    // leaves A's effects (and params) that B never mentions still active - the
     // exact "phantom effects / wrong result" bug seen on the Python side.
     out = EngineSettings{};
 

@@ -14,7 +14,7 @@ static FILE* g_file = nullptr;
 
 #if defined(_WIN32)
 // Re-open stderr & stdout to the log file. After this, every fprintf(stderr,...)
-// call in the program goes into vpc01rt.log automatically — no need to touch
+// call in the program goes into vpc01rt.log automatically - no need to touch
 // existing call sites.
 static void redirect_streams_to_file(const char* path) {
     FILE* f = nullptr;
@@ -28,7 +28,7 @@ static void redirect_streams_to_file(const char* path) {
     if (fo) setvbuf(fo, nullptr, _IONBF, 0);
 }
 
-// SEH handler — writes crash address into the log so users can send it to us.
+// SEH handler - writes crash address into the log so users can send it to us.
 static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep) {
     if (g_file && ep && ep->ExceptionRecord) {
         fprintf(g_file,
@@ -55,7 +55,7 @@ void init() {
 
 void shutdown() {
     if (g_file) { std::fflush(g_file); }
-    // Don't fclose — that would also close stderr's underlying handle.
+    // Don't fclose - that would also close stderr's underlying handle.
 }
 
 } // namespace Log

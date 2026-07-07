@@ -1,5 +1,5 @@
 #version 330 core
-// GPU ASCII — true bitmap-font ASCII art entirely on GPU.
+// GPU ASCII - true bitmap-font ASCII art entirely on GPU.
 // Font atlas uploaded as a tiny GL_RED texture (see effect_chain.cpp).
 // Zero CPU overhead, zero latency. One shader pass.
 in  vec2 vUV;

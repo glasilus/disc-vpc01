@@ -11,10 +11,10 @@
 #  include <string>
 #endif
 
-#define STB_IMAGE_IMPLEMENTATION_NOT_NEEDED  // marker — stb_image.h is
+#define STB_IMAGE_IMPLEMENTATION_NOT_NEEDED  // marker - stb_image.h is
 // already implemented elsewhere in the build (effects/overlay manager
 // uses STB_IMAGE_IMPLEMENTATION). Including stb_image.h here without a
-// fresh implementation macro is intentional — we only need the decoder
+// fresh implementation macro is intentional - we only need the decoder
 // declaration so we can call stbi_load_from_memory() to turn the embedded
 // AUDIO.png bytes into raw RGBA for glfwSetWindowIcon().
 #include <stb_image.h>
@@ -141,7 +141,7 @@ static void key_callback(GLFWwindow* w, int key, int /*sc*/, int action, int mod
     App* app = static_cast<App*>(glfwGetWindowUserPointer(w));
     if (!app) return;
 
-    // Ignore keys while ImGui has keyboard focus (text inputs, etc.) — except
+    // Ignore keys while ImGui has keyboard focus (text inputs, etc.) - except
     // for Tab (GUI toggle) and Esc (universal exit/close).
     // Note: ImGui WantCaptureKeyboard is only valid after NewFrame. We read
     // the raw GLFW event but consult ImGui. When Tab/Esc are pressed we
@@ -254,7 +254,7 @@ int main() {
     // which is read-only. All our relative paths (presets/, midi.json, the log)
     // would then fail to load or save. Move to a writable per-user location so
     // the app behaves the same as the Windows/Linux binaries (which run with
-    // their CWD next to the executable). Best-effort — if anything fails we just
+    // their CWD next to the executable). Best-effort - if anything fails we just
     // stay in the original CWD.
     {
         const char* home = std::getenv("HOME");
@@ -272,7 +272,7 @@ int main() {
     // (including ones written before any console can be attached) is
     // recoverable after a crash. Logs go next to the working directory.
     Log::init();
-    fprintf(stderr, "Disc VPC 01 — Realtime  (C++ edition)\n");
+    fprintf(stderr, "Disc VPC 01 - Realtime  (C++ edition)\n");
     fprintf(stderr, "Keybindings: Space=start/stop  B=blackout  F=freeze  M=mode  Tab=gui  F11=fullscreen\n");
     fprintf(stderr, "  1..9,0 = active video (` = release)   Shift+1..0 = load preset\n");
     fprintf(stderr, "  Q..P = toggle fx in current bank   \\ = next fx bank   Enter = tap tempo\n");
@@ -289,7 +289,7 @@ int main() {
 #endif
 
     GLFWwindow* window = glfwCreateWindow(kDefaultW, kDefaultH,
-        "Disc VPC 01 — RT", nullptr, nullptr);
+        "Disc VPC 01 - RT", nullptr, nullptr);
     if (!window) { fprintf(stderr, "Window creation failed\n"); glfwTerminate(); return 1; }
 
     install_window_icon(window);
@@ -371,7 +371,7 @@ int main() {
         glfwPollEvents();
         midi.poll();
 
-        // Output-window close via its own ESC / X — detected here so we can
+        // Output-window close via its own ESC / X - detected here so we can
         // release the window on the main thread.
         if (output.consume_close_request()) output.close();
 
@@ -398,7 +398,7 @@ int main() {
             fps_frames = 0;
         }
 
-        // GUI-initiated audio start/stop (button) — keyboard-initiated uses
+        // GUI-initiated audio start/stop (button) - keyboard-initiated uses
         // the Space shortcut which hits engine.audio() directly.
         if (gui.want_start()) {
             // Pass -1 through so AudioAnalyzer::start auto-selects the

@@ -20,8 +20,8 @@ public:
     GLuint get_cut_frame(bool trigger_cut, int w, int h, int* out_w = nullptr, int* out_h = nullptr);
 
     // VJ-style "active clip" focus. When active_idx_ is in [0, size()-1],
-    // every frame request — random or sequential, in cut or continuous
-    // mode — is served from exactly that source. Set to -1 to fall back
+    // every frame request - random or sequential, in cut or continuous
+    // mode - is served from exactly that source. Set to -1 to fall back
     // to the full-pool behaviour (round-robin sequential / random across
     // all sources). The caller is responsible for clamping the index;
     // an out-of-range value resets to -1.
@@ -36,7 +36,7 @@ private:
     int                                       cut_source_idx_ = 0;
     // Loop-count snapshot of the current round-robin source. When the live
     // counter exceeds this, the source has played through once and we hop to
-    // the next entry in the pool — giving "play A fully, then B, then C"
+    // the next entry in the pool - giving "play A fully, then B, then C"
     // semantics without focus, instead of switching every render frame.
     int                                       rr_loop_baseline_ = 0;
 };

@@ -1,6 +1,6 @@
 // Cocoa file/folder pickers for the macOS build. Compiled as Objective-C++
 // (.mm) and linked against the Cocoa framework. NSOpenPanel must run on the
-// main thread — the GUI calls these from the render/main thread, which is
+// main thread - the GUI calls these from the render/main thread, which is
 // where GLFW already lives, so that requirement is satisfied.
 //
 // We deliberately do NOT restrict file types: filtering via the deprecated

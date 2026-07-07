@@ -95,7 +95,7 @@ bool RtGui::init(GLFWwindow* window, RtEngine* engine, const std::string& preset
     io.IniFilename = nullptr;
 
     // Load a system font with full Cyrillic glyph coverage BEFORE the GL backend
-    // builds the atlas — otherwise Cyrillic shows as '?'.
+    // builds the atlas - otherwise Cyrillic shows as '?'.
     FontLoader::load_default(14.f);
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
@@ -140,7 +140,7 @@ void RtGui::handle_drop(int count, const char** paths) {
 
     // Filesystem iteration over dropped paths may throw on permission errors
     // or invalid paths, especially on Windows. A throw inside a GLFW callback
-    // will tear down the whole process — wrap the entire scan.
+    // will tear down the whole process - wrap the entire scan.
     try {
         bool any_image_folder = false;
         for (int i = 0; i < count; ++i) {
@@ -337,7 +337,7 @@ void RtGui::draw_transport(EngineSettings& s, float fps) {
     const char* dev_label = (selected_device_ >= 0 &&
                              selected_device_ < (int)devices_.size())
                           ? devices_[selected_device_].name.c_str()
-                          : "(no device selected — will auto-pick on Start)";
+                          : "(no device selected - will auto-pick on Start)";
     ImGui::TextDisabled("Device: %s", dev_label);
 
     // Diagnostic: live audio-callback counter. If running_ but this stays
@@ -423,6 +423,7 @@ void RtGui::draw_effect_row(EngineSettings& s, int i, int b0, int b1) {
     if (in_bank) ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 220, 255, 255));
     ImGui::Checkbox(fx_label((FxId)i), &s.fx[i].enabled);
     if (in_bank) ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", fx_tip((FxId)i));
 
     // Controls appear only while the effect is on, keeping the list scannable.
     // Strength scales the shader; Mode picks how the audio envelope is driven;
@@ -450,7 +451,7 @@ void RtGui::draw_effect_row(EngineSettings& s, int i, int b0, int b1) {
 void RtGui::draw_effects_panel(EngineSettings& s) {
     ImGui::TextUnformatted("EFFECTS");
     ImGui::SameLine();
-    // Which effects the Q–P keyboard row currently toggles (highlighted blue).
+    // Which effects the Q-P keyboard row currently toggles (highlighted blue).
     int b0 = fx_bank_ * 10;
     int b1 = std::min(b0 + 9, (int)FxId::COUNT - 1);
     ImGui::TextDisabled("(Q-P: #%d-%d  \\=bank)", b0 + 1, b1 + 1);
@@ -586,7 +587,7 @@ void RtGui::draw_overlay_panel(EngineSettings& s) {
 
     if (ImGui::SliderFloat("OvIntensity", &s.overlay_intensity, 0.f, 1.f, "%.2f")) {
         // The overlay composite pass also requires the OVERLAYS effect toggle
-        // to be on. Auto-flip it as the user dials intensity up — without this
+        // to be on. Auto-flip it as the user dials intensity up - without this
         // the slider silently does nothing, which is the surprise we hit in
         // earlier sessions.
         if (s.overlay_intensity > 0.01f)
@@ -725,7 +726,7 @@ void RtGui::render_bare(GLuint display_tex, int win_w, int win_h) {
     // Even in bare mode we need to run an ImGui frame (otherwise the GLFW
     // callbacks installed by imgui_impl_glfw can assert on missing state).
     // We draw a transparent fullscreen window whose sole content is the
-    // canvas image — no chrome, no buttons.
+    // canvas image - no chrome, no buttons.
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();

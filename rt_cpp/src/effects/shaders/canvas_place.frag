@@ -4,10 +4,10 @@
 // Pixels outside the source region are rendered as solid black (letterbox /
 // pillarbox). All coordinate math is in normalized canvas UV.
 //
-//   uMode = 0  Contain — fit entirely inside canvas, letterbox/pillarbox
-//   uMode = 1  Cover   — fill canvas, crop overflow
-//   uMode = 2  Stretch — ignore aspect, fill canvas
-//   uMode = 3  Native  — 1:1 pixel mapping centered on canvas
+//   uMode = 0  Contain - fit entirely inside canvas, letterbox/pillarbox
+//   uMode = 1  Cover   - fill canvas, crop overflow
+//   uMode = 2  Stretch - ignore aspect, fill canvas
+//   uMode = 3  Native  - 1:1 pixel mapping centered on canvas
 
 in  vec2 vUV;
 out vec4 fragColor;
@@ -19,7 +19,7 @@ uniform int  uMode;
 
 void main() {
     if (uMode == 2) {
-        // Stretch: fill canvas. Still V-flip the source sample — sws_scale is
+        // Stretch: fill canvas. Still V-flip the source sample - sws_scale is
         // top-left and GL is bottom-left, the same flip every other branch in
         // this shader applies. Without it Stretch shows the image upside down.
         fragColor = texture(uTex, vec2(vUV.x, 1.0 - vUV.y));
@@ -52,8 +52,8 @@ void main() {
         fragColor = vec4(0.0, 0.0, 0.0, 1.0);
     } else {
         // sws_scale writes the source frame top-left, GL samples bottom-left.
-        // Flip V here (and only here) so subsequent effect passes — which read
-        // GL-convention FBO textures — don't double-flip the result.
+        // Flip V here (and only here) so subsequent effect passes - which read
+        // GL-convention FBO textures - don't double-flip the result.
         fragColor = texture(uTex, vec2(uv.x, 1.0 - uv.y));
     }
 }
