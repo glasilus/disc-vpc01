@@ -143,8 +143,10 @@ PRESETS = {
 # hide-color-fx, and their cfg flags are forced off so the engine can't
 # accidentally trip them either.
 # Empty: stutter / flash / datamosh now all WORK in passthrough mode.
-#   • Datamosh runs via DatamoshEffect (optical-flow motion-vector smear)
+#   • Optical Flow (legacy "Datamosh" keys) runs via OpticalFlowEffect
 #     through the regular effect chain — no prebake needed in passthrough.
+#   • True Datamosh (fx_truemosh) is a regular 1-in-1-out chain effect
+#     (in-process codec pair), so it needs no passthrough special-casing.
 #   • Stutter and Flash use REPLACE-mode in the passthrough loop instead
 #     of the cut-mode INSERT-mode: source `cap.grab()` advances the read
 #     pointer normally, but the written frame is overridden with a held
@@ -901,7 +903,7 @@ class MainGUI(tk.Tk):
     # ─── conditional enable / position-preserving repack helpers ───
     # Two-tier UX: HIDE for "this whole control group is irrelevant in
     # the current mode" (effect block when its enable_key is OFF, or
-    # passthrough hiding stutter/flash/datamosh) and DISABLE-grey for
+    # any PASSTHROUGH_HIDDEN_KEYS entry) and DISABLE-grey for
     # "this control still belongs here but its parent flag pinned its
     # value" (chance slider while `always` is ON, BPM entry while
     # snap-to-beat is OFF). Disable cascades naturally: a predicate of
@@ -1819,21 +1821,23 @@ class MainGUI(tk.Tk):
         bpm_entry.bind('<Return>', _commit_manual_bpm)
 
         # Passthrough mode — read frames sequentially from one source video,
-        # analyse its OWN audio track, no cut/sample/random sampling. Frame-
-        # inserting effects (Stutter, Flash, Datamosh prebake) get hidden
-        # from the EFFECTS panel while this is on, since they'd shift the
-        # input→output frame mapping and desync the audio.
+        # analyse its OWN audio track, no cut/sample/random sampling. All
+        # effects keep the 1:1 input→output frame mapping here: Stutter and
+        # Flash switch to replace-mode, Optical Flow and True Datamosh are
+        # ordinary one-in-one-out chain effects.
         self._row_with_help(body, 'Passthrough Mode', bi(
             "Process the source video 1:1 — no cuts, no resampling, native frame order. "
             "Audio is taken from the video's own track and used both for analysis (effect "
             "triggers) and for the output. No external audio file is needed. Stutter / "
-            "Flash / Datamosh ALL work here too: they switch to replace-mode (overwrite "
-            "frames in place instead of inserting new ones) so audio stays in sync.",
+            "Flash / Optical Flow / True Datamosh ALL work here too: frame-inserting "
+            "effects switch to replace-mode (overwrite frames in place instead of "
+            "inserting new ones) so audio stays in sync.",
             "Прогон исходного видео 1:1 — без нарезки, без рандомного семплинга, в "
             "нативном порядке кадров. Аудио берётся из самого видео и используется и для "
             "анализа (триггеры эффектов), и в выводе. Внешний аудиофайл не нужен. "
-            "Stutter / Flash / Datamosh тоже работают: они переключаются в режим замены "
-            "кадров (вместо вставки новых) — аудио остаётся в синхроне."))
+            "Stutter / Flash / Optical Flow / True Datamosh тоже работают: вставляющие "
+            "кадры эффекты переключаются в режим замены кадров (вместо вставки новых) — "
+            "аудио остаётся в синхроне."))
         ttk.Checkbutton(body, text='Passthrough mode (use source video as-is)',
                         variable=self.vars['passthrough_mode'],
                         command=self._on_toggle_passthrough,

@@ -457,15 +457,36 @@ Sorts pixels within selected horizontal or vertical strips by their luminance, h
 
 ---
 
-**Datamosh**
+**Optical Flow**
 
-*Trigger: NOISE*
+*Trigger: NOISE, SUSTAIN, IMPACT, DROP*
 
-In **Draft** and **Preview** modes: simulates the P-frame bleed effect using optical flow — the previous frame's motion vectors are applied to warp the image, approximating datamosh compression artefacts.
+Motion-flow smear: the previous frame is warped along the picture's own motion vectors, so moving areas drag and flow like wet paint. This effect used to ship under the name **Datamosh** — presets saved before the rename keep working unchanged, since the config keys are identical. That includes the legacy behaviour in **Final render** mode, where NOISE segments additionally swap the source to a prebaked I-frame-stripped copy of the video.
 
-In **Final render** mode: actual I-frame dropping is applied at the video codec level, producing authentic datamosh output.
+If you want the real codec-level mosh, use **True Datamosh** below.
 
-**Chance** *(0.0 – 1.0)* — probability per eligible segment.
+**Chance** *(0.0 - 1.0)* — probability per eligible segment.
+
+---
+
+**True Datamosh**
+
+*Trigger: NOISE, SUSTAIN, IMPACT, DROP*
+
+The genuine article. A real MPEG-4 encoder and decoder run inside the effect, and the classic bitstream surgery is performed on the fly: at a cut the keyframe is physically removed from the stream, so the decoder keeps applying the new clip's motion vectors and DCT residuals to the stale picture — the old scene melts along the new scene's motion and only heals patch by patch. This is the exact mechanism of classic datamosh tools (aviglitch, datamosher), not a simulation, and it works identically in Draft, Preview, Final and Passthrough modes.
+
+Consecutive triggered segments chain into one continuous "datamix" melt; the first segment that does not trigger snaps the picture back clean, exactly like a moshed stream hitting a surviving keyframe.
+
+**Chance** *(0.0 - 1.0)* — probability per eligible segment.
+
+**Mosh Mode:**
+- `melt` — I-frame dropping at cuts (the canonical datamosh smear)
+- `bloom` — one P-frame is decoded repeatedly, so its motion field compounds and moving regions grow out of themselves (the classic P-frame-duplication bloom)
+- `hybrid` — randomly picks melt, bloom or both per event
+
+**Bloom Frames** *(2 - 24)* — maximum length of a bloom burst in frames; the actual length scales with segment loudness.
+
+**Block Crunch** *(0.0 - 1.0)* — bitrate starvation of the internal MPEG-4 stream. Low values give a smooth, almost painterly melt; high values give coarse 16 px macroblock soup with visible DCT blocks.
 
 ---
 
@@ -965,7 +986,7 @@ Effects intentionally **NOT** in the list — either their primary action isn't 
 - **Has a palette-preserving mode** (you decide via the effect's own controls): `ASCII Filter` (`original` colour mode samples source pixels).
 - **Primary action is texture / noise / motion, not colour** — even though minor colour drift can occur: `VHS Tape (composite)` (chroma blur + grain), `Histogram Lag` (palette borrowing is subtle at low values), `Bit Flip` (data corruption first, colour shifts are an artefact), `JPEG Crush` (block artefacts first, hue drift is incidental).
 - **Pure geometric** — palette is preserved: `Pixel Sort`, `Pixel Drift`, `Phase Shift`, `Mosaic Pulse`, `Zoom Glitch`, `Fisheye / Barrel`, all `Geometry Fault` effects, `VSync Roll`, `Wrong Motion Vector`.
-- **Frame-blending** — averages source colours, doesn't introduce new ones: `Ghost Trails`, `Datamosh`, `Freeze + Corrupt`, `P-Frame Lag`, `Self Cannibalize`, `Interlace`, `Feedback Loop`.
+- **Frame-blending** — averages source colours, doesn't introduce new ones: `Ghost Trails`, `Optical Flow`, `True Datamosh`, `Freeze + Corrupt`, `P-Frame Lag`, `Self Cannibalize`, `Interlace`, `Feedback Loop`.
 - **Subtle modulation / small area**: `Scan Lines`, `Sharpen`, `Resonant Rows`, `Game of Life Mask`, `VHS Tracking`, `Block Glitch`, `Cursor Storm`, `Stutter`.
 - **User-controlled content**: `Overlays`, `Formula`.
 
@@ -1177,7 +1198,7 @@ Three render buttons are pinned to the bottom of the sidebar:
 
 **DRAFT (5 sec / 480p)**
 
-Renders the first 5 seconds of the audio track at 480p resolution. Effects that are computationally expensive (datamosh optical flow, ASCII) use simplified fast paths. Use this to quickly check cut timing and basic effect behavior.
+Renders the first 5 seconds of the audio track at 480p resolution. Effects that are computationally expensive (Optical Flow, True Datamosh, ASCII) use simplified fast paths. Use this to quickly check cut timing and basic effect behavior.
 
 ---
 
@@ -1248,7 +1269,7 @@ When more than one file is loaded, the engine maintains an independent video rea
 This means:
 - Different segments can come from completely different video files with no preparation or manual splicing
 - Scene detection (if enabled) runs on all loaded files and collects cut points from each
-- Datamosh pre-processing uses the first file in the selection as the P-frame source
+- The legacy datamosh pre-processing (Optical Flow's Final-mode I-frame strip) uses the first file in the selection as the P-frame source
 - Files of different resolutions and frame rates are all valid; each is read at its native rate and scaled to the output resolution
 
 The sidebar label shows the filename when one file is loaded, and the count (`3 videos loaded`) when multiple are selected.
@@ -1283,7 +1304,7 @@ Use it when you want every effect in this program (warps, glitches, mystery, for
 - The video plays sequentially from frame 0 to its last frame at its native frame rate. No random seeks, no scene-detection jumping, no cuts.
 - The audio is **extracted from the video** itself — internally via ffmpeg into a temporary WAV — and used both for analysis (segment classification, beat tracking, intensity) and as the muxed output track. **No external audio file is required**, and the **Load Audio** button is disabled while Passthrough is on.
 - The output FPS is auto-locked to the source video's native FPS, so the picture and sound stay in sync.
-- Frame-inserting effects that don't make sense in this mode are **hidden** from the EFFECTS tab: `Stutter`, `Flash Frame`, `Datamosh`. Their state is restored when you turn Passthrough off.
+- No effects are hidden in this mode: `Stutter` and `Flash Frame` switch to replace-mode (they overwrite frames in place instead of inserting new ones), and both `Optical Flow` and `True Datamosh` are ordinary one-in-one-out chain effects, so the 1:1 frame mapping — and therefore audio sync — is always preserved.
 - Cut-logic widgets that don't apply (`Min Cut Duration`, `Scene Buffer Size`, `Smart Scene Detection`) are also hidden. Snap to beat, manual BPM, chaos and beat threshold all still work — they shape effect intensity, just not cut points.
 
 **What it does *not* change:** every other effect — warps, signal domain, degradation, sharpen, ASCII, formula, mystery, overlays, chroma key, silence treatment — runs exactly as it does in normal mode. The intensity model, segment types, snap-to-beat, and chaos all behave identically.
@@ -1933,9 +1954,10 @@ decoded correctly. Safely ignored.
 
 **Offline editor: `Invalid NAL unit size`, `partial file`, `moov atom not found` in console**
 
-Expected and harmless when the **Datamosh** effect is enabled. Datamosh
-deliberately produces a broken H.264 stream with no I-frames — that's the
-whole point of the effect — and OpenCV's bundled ffmpeg honestly reports it
+Expected and harmless when the **Optical Flow** effect (the historical
+"Datamosh") is enabled: its legacy Final-mode prebake deliberately produces
+a broken H.264 stream with no I-frames — that's the whole point of the
+trick — and OpenCV's bundled ffmpeg honestly reports it
 as broken when it reads the file. The program suppresses these warnings
 internally on launch (`OPENCV_FFMPEG_LOGLEVEL=-8`); if you still see them,
 you're on a build older than this fix. Stale `*_dmosh_src.mp4` files left

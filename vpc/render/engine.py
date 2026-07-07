@@ -605,7 +605,12 @@ class BreakcoreEngine:
                 spec = fb
                 sink = _open_sink(fb)
 
-        # ----- datamosh pre-bake -----
+        # ----- legacy datamosh pre-bake (fx_datamosh / Optical Flow) -----
+        # Kept verbatim for preset compatibility: presets saved before the
+        # Optical Flow / True Datamosh split expect fx_datamosh to keep the
+        # whole historical behaviour, including this Final-mode prebake.
+        # The new True Datamosh (fx_truemosh) needs none of this - it is a
+        # regular chain effect with an in-process codec pair.
         # Both modes use the SAME 'strip' bitstream prebake (long-GOP,
         # P-only, single-reference, then drop every source I-frame). The
         # bitstream effect is the real-deal datamosh smear: forcing the
@@ -627,7 +632,7 @@ class BreakcoreEngine:
         #     across multiple output frames as a freeze-and-smear.
         #     `target_total_frames = audio_duration × fps` is unchanged,
         #     so audio still aligns 1:1 with output frames.
-        # The Python-side DatamoshEffect (optical-flow smear) runs in
+        # The Python-side OpticalFlowEffect (optical-flow smear) runs in
         # both modes via the regular effect chain — independent of and
         # complementary to the bitstream prebake.
         datamosh_source_path = None
@@ -873,10 +878,11 @@ class BreakcoreEngine:
         relative to input audio): for the next N frames they overwrite the
         emitted frame with a held copy (stutter) or a flash colour while
         still calling cap.grab() so the source pointer keeps stepping in
-        lockstep with audio. Datamosh is just a regular effect in the chain
-        (DatamoshEffect, optical-flow-based motion-vector smear) — no
-        prebake here, since dropping I-frames from a 1:1 stream would
-        change frame count and desync audio.
+        lockstep with audio. Optical Flow (legacy fx_datamosh keys) is just
+        a regular effect in the chain (OpticalFlowEffect, optical-flow-based
+        motion-vector smear) — no prebake here, since dropping I-frames from
+        a 1:1 stream would change frame count and desync audio. True
+        Datamosh (fx_truemosh) is likewise a plain 1-in-1-out chain effect.
 
         If `segments` is empty (no audio / extraction failed), every frame
         is rendered with a synthesised SILENCE segment, i.e. effects gated

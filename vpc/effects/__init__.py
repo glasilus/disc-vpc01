@@ -7,8 +7,10 @@ the original `from effects import ...` form too.
 from .base import BaseEffect, _ensure_uint8, _reseg
 
 from .core import (
-    FlashEffect, GhostTrailsEffect, PixelSortEffect, DatamoshEffect, ASCIIEffect,
+    FlashEffect, GhostTrailsEffect, PixelSortEffect, OpticalFlowEffect,
+    DatamoshEffect, ASCIIEffect,
 )
+from .mosh import TrueDatamoshEffect
 
 from .glitch import (
     RGBShiftEffect, BlockGlitchEffect, PixelDriftEffect,
@@ -42,7 +44,8 @@ from .overlay import OverlayEffect, ChromaKeyEffect, load_overlay_frames
 
 __all__ = [
     'BaseEffect', '_ensure_uint8', '_reseg',
-    'FlashEffect', 'GhostTrailsEffect', 'PixelSortEffect', 'DatamoshEffect', 'ASCIIEffect',
+    'FlashEffect', 'GhostTrailsEffect', 'PixelSortEffect', 'OpticalFlowEffect',
+    'DatamoshEffect', 'TrueDatamoshEffect', 'ASCIIEffect',
     'RGBShiftEffect', 'BlockGlitchEffect', 'PixelDriftEffect',
     'ColorBleedEffect', 'FreezeCorruptEffect', 'NegativeEffect',
     'ScanLinesEffect', 'BitcrushEffect', 'JPEGCrushEffect', 'FisheyeEffect',

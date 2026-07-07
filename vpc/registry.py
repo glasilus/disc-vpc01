@@ -25,7 +25,7 @@ from vpc.analyzer import SegmentType
 from .effects.base import BaseEffect
 from .effects import (
     core, glitch, degradation, complex_fx, signal, warp, overlay, formula,
-    vhs as vhs_fx, broken as broken_fx, virus as virus_fx,
+    mosh, vhs as vhs_fx, broken as broken_fx, virus as virus_fx,
 )
 from .effects.paint import PaintCanvasEffect
 from .effects.visualizer import (
@@ -464,18 +464,78 @@ EFFECTS: List[EffectSpec] = [
     ),
 
     EffectSpec(
-        id='datamosh', label='Datamosh', group='CORE FX',
-        cls=core.DatamoshEffect,
+        id='datamosh', label='Optical Flow', group='CORE FX',
+        cls=core.OpticalFlowEffect,
         enable_key='fx_datamosh', enabled_default=False,
         chance_key='fx_datamosh_chance', default_chance=0.5,
-        note='NOISE - optical-flow smear, plus real I-frame drop in Final mode.',
+        note='NOISE - optical-flow smear; legacy Final-mode I-frame source swap kept.',
         tooltip=bi(
-            'The classic "melting video" look - moving areas bloom and smear as the image '
-            'fails to redraw, dragging the previous frame across the new one in soupy, flowing '
-            'blocks. In Final render the NOISE segments get the "real" I-frame-drop mosh.',
-            'Классический вид «плавящегося видео» - движущиеся зоны цветут и размазываются, '
-            'будто картинка не успевает перерисоваться, таща предыдущий кадр по новому текучими '
-            'блоками. В режиме Final на NOISE - «настоящий» мош без ключевых кадров.',
+            'Motion-flow smear: the previous frame is warped along the picture\'s own motion '
+            'vectors, so moving areas drag and flow like wet paint. This is the effect old '
+            'presets saved as "Datamosh" - they keep working unchanged, including the legacy '
+            'I-frame-drop source swap on NOISE segments in Final render. For the real '
+            'codec-level mosh see True Datamosh below.',
+            'Смаз по оптическому потоку: предыдущий кадр деформируется вдоль векторов движения '
+            'самой картинки, движущиеся зоны текут, как мокрая краска. Именно этот эффект старые '
+            'пресеты сохраняли под именем «Datamosh» - они продолжают работать без изменений, '
+            'включая старую подмену источника без I-кадров на NOISE в режиме Final. Настоящий '
+            'кодековый мош - в True Datamosh ниже.',
+        ),
+    ),
+
+    EffectSpec(
+        id='true_datamosh', label='True Datamosh', group='CORE FX',
+        cls=mosh.TrueDatamoshEffect,
+        enable_key='fx_truemosh', enabled_default=False,
+        chance_key='fx_truemosh_chance', default_chance=0.5,
+        params=[
+            ParamSpec('fx_truemosh_mode', 'Mosh Mode', 'melt', kind='choice',
+                      choices=['melt', 'bloom', 'hybrid'], kwarg='mode', indent=True,
+                      tooltip=bi(
+                          'melt = I-frames are dropped at cuts, the old scene smears along the new '
+                          'scene\'s motion (the canonical datamosh). bloom = one P-frame is decoded '
+                          'repeatedly, moving regions grow out of themselves. hybrid = randomly picks '
+                          'melt, bloom or both per event.',
+                          'melt - I-кадры выбрасываются на склейках, старая сцена размазывается по '
+                          'движению новой (канонический датамош). bloom - один P-кадр декодируется '
+                          'многократно, движущиеся зоны прорастают сами из себя. hybrid - на каждое '
+                          'событие случайно выбирается melt, bloom или оба.',
+                      )),
+            ParamSpec('fx_truemosh_bloom', 'Bloom Frames', 8, 2, 24, kind='int',
+                      kwarg='bloom_frames', indent=True,
+                      tooltip=bi(
+                          'Maximum length of a bloom burst in frames (the actual length scales with '
+                          'segment loudness). Longer = motion compounds further before the stream '
+                          'moves on.',
+                          'Максимальная длина bloom-вспышки в кадрах (фактическая длина зависит от '
+                          'громкости сегмента). Длиннее - движение накапливается дольше, прежде чем '
+                          'поток пойдёт дальше.',
+                      )),
+            ParamSpec('fx_truemosh_crunch', 'Block Crunch', 0.35, 0.0, 1.0,
+                      kwarg='crunch', indent=True,
+                      tooltip=bi(
+                          'Bitrate starvation of the internal MPEG-4 stream. Low = smooth, almost '
+                          'painterly melt. High = coarse 16px macroblock soup with visible DCT '
+                          'blocks, like a heavily corrupted download.',
+                          'Битрейтное голодание внутреннего MPEG-4 потока. Мало - гладкое, почти '
+                          'живописное плавление. Много - грубая каша из 16px макроблоков с видимыми '
+                          'DCT-блоками, как сильно битая скачка.',
+                      )),
+        ],
+        note='NOISE / SUSTAIN / IMPACT / DROP - real MPEG-4 I-frame-drop mosh.',
+        tooltip=bi(
+            'The genuine article. A real MPEG-4 encoder and decoder run inside the effect: at '
+            'a cut the keyframe is physically removed from the bitstream, and the decoder drags '
+            'the old scene along the new scene\'s motion vectors until it patchily heals - the '
+            'exact mechanism of classic datamosh tools, not an imitation. Consecutive triggered '
+            'segments chain into one continuous datamix melt; the first segment that does not '
+            'trigger snaps the picture back clean.',
+            'Настоящий датамош. Внутри эффекта работают реальные энкодер и декодер MPEG-4: на '
+            'склейке ключевой кадр физически удаляется из битстрима, и декодер тащит старую '
+            'сцену по векторам движения новой, пока картинка не «заживёт» пятнами - тот же '
+            'механизм, что в классических инструментах датамоша, а не имитация. Подряд идущие '
+            'сработавшие сегменты сцепляются в непрерывное datamix-плавление; первый '
+            'несработавший сегмент возвращает чистую картинку.',
         ),
     ),
 

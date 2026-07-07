@@ -16,9 +16,9 @@ class BaseEffect(ABC):
 
     Subclass MUST implement `_apply(frame, seg, draft)`. The default `apply()`
     runs the gating chain (enabled → trigger_types → chance roll) and dispatches
-    to `_apply` only on success. Stateful effects (Datamosh, DerivWarp,
-    SelfDisplace) override `apply()` to keep their history in sync regardless
-    of whether the effect actually fires this frame.
+    to `_apply` only on success. Stateful effects (OpticalFlow, TrueDatamosh,
+    DerivWarp, SelfDisplace) override `apply()` to keep their history in sync
+    regardless of whether the effect actually fires this frame.
     """
     trigger_types: List[SegmentType] = list(SegmentType)
 

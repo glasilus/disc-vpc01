@@ -1,4 +1,4 @@
-"""Core effects: Flash, GhostTrails, PixelSort, Datamosh, ASCII."""
+"""Core effects: Flash, GhostTrails, PixelSort, OpticalFlow, ASCII."""
 from __future__ import annotations
 
 import random
@@ -194,11 +194,15 @@ class PixelSortEffect(BaseEffect):
         return _ensure_uint8(result)
 
 
-class DatamoshEffect(BaseEffect):
+class OpticalFlowEffect(BaseEffect):
     """Optical-flow-based motion-vector smear.
 
-    Engine separately wires real I-frame-drop datamoshing on top of this for
-    NOISE segments in Final render mode.
+    Historically shipped under the name "Datamosh" (cfg keys fx_datamosh*
+    are kept verbatim so old presets keep driving exactly this effect). For
+    the same compatibility reason the engine still wires the legacy
+    I-frame-drop source swap on top of this for NOISE segments in Final
+    render mode. The real codec-level mosh lives in
+    vpc.effects.mosh.TrueDatamoshEffect.
     """
     trigger_types = [SegmentType.NOISE, SegmentType.SUSTAIN,
                      SegmentType.IMPACT, SegmentType.DROP]
@@ -245,6 +249,11 @@ class DatamoshEffect(BaseEffect):
                            borderMode=cv2.BORDER_REFLECT)
         self.prev_frame = frame.copy()
         return _ensure_uint8(result)
+
+
+# Backward-compat alias: external code and old imports still refer to the
+# optical-flow effect by its historical name.
+DatamoshEffect = OpticalFlowEffect
 
 
 class ASCIIEffect(BaseEffect):
