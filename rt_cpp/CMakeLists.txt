@@ -18,10 +18,16 @@ find_package(FFTW3f  CONFIG REQUIRED)   # single-precision (libfftw3f)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(glad    CONFIG REQUIRED)
 
-# RtMidi (optional MIDI control). vcpkg exposes different config/target names
-# across versions/ports; probe the common ones and link whichever exists.
-find_package(rtmidi CONFIG QUIET)
-if(NOT rtmidi_FOUND)
+# RtMidi (MIDI control). The vcpkg port exports package "RtMidi" (file
+# RtMidiConfig.cmake, target RtMidi::rtmidi). find_package is case-sensitive on
+# the package name, so we must ask for "RtMidi" — the lowercase spellings below
+# are only fallbacks for other distributions. Probe them all, then link the
+# target that actually got defined.
+find_package(RtMidi CONFIG QUIET)
+if(NOT TARGET RtMidi::rtmidi)
+    find_package(rtmidi CONFIG QUIET)
+endif()
+if(NOT TARGET RtMidi::rtmidi AND NOT TARGET rtmidi::rtmidi)
     find_package(unofficial-rtmidi CONFIG QUIET)
 endif()
 set(RTMIDI_TARGET "")
@@ -32,8 +38,9 @@ foreach(cand RtMidi::rtmidi rtmidi::rtmidi unofficial::rtmidi::rtmidi rtmidi)
     endif()
 endforeach()
 if(RTMIDI_TARGET STREQUAL "")
-    message(FATAL_ERROR "RtMidi not found — run: vcpkg install rtmidi")
+    message(FATAL_ERROR "RtMidi not found — ensure 'rtmidi' is in vcpkg.json and installed")
 endif()
+message(STATUS "RtMidi target: ${RTMIDI_TARGET}")
 
 
 # FFmpeg: vcpkg exposes FFMPEG_INCLUDE_DIRS / FFMPEG_LIBRARY_DIRS / FFMPEG_LIBRARIES
