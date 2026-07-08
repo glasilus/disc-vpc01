@@ -344,4 +344,5 @@ class ASCIIEffect(BaseEffect):
         out = np.array(canvas)
         if self.blend > 0:
             out = cv2.addWeighted(out, 1.0 - self.blend, frame, self.blend, 0)
-        return _ensure_uint8(out)
+        out = _ensure_uint8(out)
+        return self._blend_by_intensity(seg, out, frame)

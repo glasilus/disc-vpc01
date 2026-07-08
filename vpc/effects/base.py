@@ -109,6 +109,17 @@ class BaseEffect(ABC):
         # parameter regions that occasionally crash cv2.remap on Windows.
         return max(0.0, min(0.95, v))
 
+    def _blend_by_intensity(self, seg: Segment, result: np.ndarray,
+                             frame: np.ndarray) -> np.ndarray:
+        """Cross-fade `result` toward the untouched `frame` by
+        `scaled_intensity(seg)`. Gives effects that have no continuous
+        "amount" knob of their own a working `always`/`always-on intensity`
+        control for free, on both the audio-driven path (normal mode) and
+        the fixed-value path (always-on mode) — both flow through
+        `intensity_min`/`intensity_max` already."""
+        strength = self.scaled_intensity(seg)
+        return cv2.addWeighted(result, strength, frame, 1.0 - strength, 0.0)
+
     @abstractmethod
     def _apply(self, frame: np.ndarray, seg: Segment, draft: bool) -> np.ndarray: ...
 

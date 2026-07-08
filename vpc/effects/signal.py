@@ -201,8 +201,10 @@ class HistoLagEffect(BaseEffect):
             s = cv2.resize(frame, (dw, dh))
             r = cv2.resize(ref, (dw, dh))
             matched = _match_histograms(s, r)
-            return cv2.resize(matched, (frame.shape[1], frame.shape[0]))
-        return _match_histograms(frame, ref)
+            matched = cv2.resize(matched, (frame.shape[1], frame.shape[0]))
+        else:
+            matched = _match_histograms(frame, ref)
+        return self._blend_by_intensity(seg, matched, frame)
 
 
 class WrongSubsamplingEffect(BaseEffect):

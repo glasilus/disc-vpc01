@@ -732,6 +732,8 @@ Because of `warp` and `mask`, any view doubles as a way to drive the source mate
 
 The classic equalizer: per-band bars with peak-hold smoothing (fast attack, slow release).
 
+- **Chance** *(0.0 – 1.0)* — probability of firing on each eligible frame, scaled by Global Chaos like every other effect. Default `1.0`.
+
 - **Composite Mode** — `replace` / `over` / `warp` / `mask` (see above).
 - **Opacity / Amount** *(0.0 – 1.0)* — blend strength for `over`, displacement amount for `warp`.
 - **Band Count** *(4 – 64)* — number of bars.
@@ -745,6 +747,8 @@ The classic equalizer: per-band bars with peak-hold smoothing (fast attack, slow
 
 The equalizer wrapped around a circle: each ray's length tracks a frequency band and the whole corona rotates slowly.
 
+- **Chance** *(0.0 – 1.0)* — probability of firing on each eligible frame, scaled by Global Chaos like every other effect. Default `1.0`.
+
 - **Composite Mode** / **Opacity / Amount** — as above.
 - **Ray Count** *(8 – 128)* — number of radial rays.
 
@@ -756,6 +760,8 @@ The equalizer wrapped around a circle: each ray's length tracks a frequency band
 
 A horizontal scope line whose amplitude follows the spectrum and scrolls in phase with time. Cleanest as an `over`-blend on top of the video.
 
+- **Chance** *(0.0 – 1.0)* — probability of firing on each eligible frame, scaled by Global Chaos like every other effect. Default `1.0`.
+
 - **Composite Mode** / **Opacity / Amount** — as above.
 - **Line Thickness** *(1 – 8)* — scope line width in pixels.
 
@@ -763,9 +769,13 @@ A horizontal scope line whose amplitude follows the spectrum and scrolls in phas
 
 **Lissajous (XY)**
 
-*Trigger: any segment type*
+*Trigger: SUSTAIN, BUILD*
 
 XY oscilloscope figures: bass and high steer the two axis frequencies while time drifts the phase, drawing evolving loops — a retro lab-scope look.
+
+Restricted to the two segment types the analyzer defines as extended/continuous — the figure's rotation is a persistent phase accumulator that only advances on frames the effect actually renders, so sparse/short segments would make it stutter.
+
+- **Chance** *(0.0 – 1.0)* — probability of firing on each eligible frame, scaled by Global Chaos like every other effect. Default `1.0`.
 
 - **Composite Mode** / **Opacity / Amount** — as above.
 - **Frequency Ratio** *(1.0 – 8.0)* — base X:Y frequency ratio of the figure.
@@ -778,6 +788,8 @@ XY oscilloscope figures: bass and high steer the two axis frequencies while time
 
 Demoscene plasma built from summed sine fields. Bass shifts the palette, mids drive the speed, highs the brightness. In `warp` mode it ripples the source.
 
+- **Chance** *(0.0 – 1.0)* — probability of firing on each eligible frame, scaled by Global Chaos like every other effect. Default `1.0`.
+
 - **Composite Mode** / **Opacity / Amount** — as above.
 - **Scale** *(0.01 – 0.15)* — spatial frequency of the plasma; higher = finer ripples.
 
@@ -785,9 +797,13 @@ Demoscene plasma built from summed sine fields. Bass shifts the palette, mids dr
 
 **Beat Particles**
 
-*Trigger: any segment type*
+*Trigger: IMPACT, DROP*
 
 A particle system emitting from the centre: each detected beat throws a burst whose size scales with bass, then gravity pulls the particles down.
+
+Restricted to percussive-hit segment types — its particle physics are keyed directly off the beat/onset signal (and keep running every frame regardless of gating), so it belongs on transient moments rather than sustained ones.
+
+- **Chance** *(0.0 – 1.0)* — probability of firing on each eligible frame, scaled by Global Chaos like every other effect. Default `1.0`.
 
 - **Composite Mode** / **Opacity / Amount** — as above.
 - **Particle Count** *(16 – 512)* — maximum particles in the system.
@@ -797,9 +813,13 @@ A particle system emitting from the centre: each detected beat throws a burst wh
 
 **Flow Field**
 
-*Trigger: any segment type*
+*Trigger: SUSTAIN, BUILD*
 
 Thousands of particles are advected along a slowly evolving turbulent vector field, each leaving a fading trail so the streamlines reveal the flow. Mids and bass drive the flow speed; the current bands tint the ink.
+
+Restricted to the same accumulator rationale as Lissajous — its trail buffer only fades on frames it actually renders.
+
+- **Chance** *(0.0 – 1.0)* — probability of firing on each eligible frame, scaled by Global Chaos like every other effect. Default `1.0`.
 
 - **Composite Mode** / **Opacity / Amount** — as above.
 - **Flow Scale** *(0.005 – 0.08)* — spatial scale of the turbulence; higher = tighter swirls.
@@ -808,9 +828,13 @@ Thousands of particles are advected along a slowly evolving turbulent vector fie
 
 **Alchemy**
 
-*Trigger: any segment type*
+*Trigger: SUSTAIN, BUILD*
 
 A WMP-style video-feedback "liquid light" field: each frame the previous image is rotated, zoomed and dimmed, then a radially symmetric rose whose petals track the spectrum is drawn on top. The compounding rotate + zoom becomes an endless glowing kaleidoscopic tunnel with a slowly cycling hue. Strong as a full-screen replace or a warp map.
+
+Restricted to the same accumulator rationale — its spiral tunnel is a feedback buffer that only evolves on rendered frames.
+
+- **Chance** *(0.0 – 1.0)* — probability of firing on each eligible frame, scaled by Global Chaos like every other effect. Default `1.0`.
 
 - **Composite Mode** / **Opacity / Amount** — as above.
 - **Symmetry** *(2 – 12)* — number of petals / fold symmetry of the rose.

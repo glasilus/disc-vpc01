@@ -53,8 +53,8 @@ def test_search_by_name(app):
 
 
 def test_search_matches_tooltip_text(app):
-    # 'left' appears in the fx_rgb tooltip but not in its display name.
-    app.var_fx_search.set('left')
+    # 'aberration' appears in the fx_rgb tooltip but not in its display name.
+    app.var_fx_search.set('aberration')
     app.update_idletasks()
     assert 'fx_rgb' in _visible(app)
 

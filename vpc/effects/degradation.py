@@ -112,7 +112,7 @@ class InterlaceEffect(BaseEffect):
         if self.prev_frame is not None and self.prev_frame.shape == frame.shape:
             result[1::2] = self.prev_frame[1::2]
         self.prev_frame = frame.copy()
-        return result
+        return self._blend_by_intensity(seg, result, frame)
 
 
 class BadSignalEffect(BaseEffect):

@@ -98,4 +98,5 @@ class NegativeEffect(BaseEffect):
     trigger_types = [SegmentType.IMPACT, SegmentType.DROP, SegmentType.NOISE]
 
     def _apply(self, frame, seg, draft):
-        return (255 - frame).astype(np.uint8)
+        inverted = (255 - frame).astype(np.uint8)
+        return self._blend_by_intensity(seg, inverted, frame)

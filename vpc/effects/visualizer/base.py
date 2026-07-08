@@ -31,7 +31,8 @@ class VisualizerEffect(BaseEffect):
         h, w = frame.shape[:2]
         sample = read_sample(seg)
         visual, field = self._render(h, w, sample)
-        return composite(frame, visual, field, self.mode, self.opacity, self.blend)
+        composed = composite(frame, visual, field, self.mode, self.opacity, self.blend)
+        return self._blend_by_intensity(seg, composed, frame)
 
     @abstractmethod
     def _render(self, h: int, w: int, sample) -> tuple[np.ndarray, np.ndarray]:

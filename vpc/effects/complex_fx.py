@@ -91,7 +91,8 @@ class EchoCompoundEffect(BaseEffect):
             result += past2_shifted.astype(np.float32) * 0.2
         else:
             result += frame.astype(np.float32) * 0.2
-        return _ensure_uint8(result)
+        result = _ensure_uint8(result)
+        return self._blend_by_intensity(seg, result, frame)
 
 
 class KaliMirrorEffect(BaseEffect):

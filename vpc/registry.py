@@ -1660,7 +1660,7 @@ EFFECTS: List[EffectSpec] = [
     EffectSpec(
         id='viz_bars', label='Spectrum Bars', group='VISUALIZER',
         cls=SpectrumBarsEffect, enable_key='fx_viz_bars', enabled_default=False,
-        chance_key=None,
+        chance_key='fx_viz_bars_chance', default_chance=1.0,
         params=_viz_mode_params('fx_viz_bars') + [
             ParamSpec('fx_viz_bars_bands', 'Band Count', 24, 4, 64, kind='int', indent=True,
                       kwarg=None,
@@ -1685,7 +1685,7 @@ EFFECTS: List[EffectSpec] = [
     EffectSpec(
         id='viz_radial', label='Radial Spectrum', group='VISUALIZER',
         cls=RadialSpectrumEffect, enable_key='fx_viz_radial', enabled_default=False,
-        chance_key=None,
+        chance_key='fx_viz_radial_chance', default_chance=1.0,
         params=_viz_mode_params('fx_viz_radial') + [
             ParamSpec('fx_viz_radial_rays', 'Ray Count', 48, 8, 128, kind='int', indent=True,
                       kwarg=None,
@@ -1706,7 +1706,7 @@ EFFECTS: List[EffectSpec] = [
     EffectSpec(
         id='viz_scope', label='Oscilloscope', group='VISUALIZER',
         cls=OscilloscopeEffect, enable_key='fx_viz_scope', enabled_default=False,
-        chance_key=None,
+        chance_key='fx_viz_scope_chance', default_chance=1.0,
         params=_viz_mode_params('fx_viz_scope') + [
             ParamSpec('fx_viz_scope_thick', 'Line Thickness', 2, 1, 8, kind='int', indent=True,
                       kwarg=None,
@@ -1727,7 +1727,8 @@ EFFECTS: List[EffectSpec] = [
     EffectSpec(
         id='viz_lissajous', label='Lissajous (XY)', group='VISUALIZER',
         cls=LissajousEffect, enable_key='fx_viz_lissajous', enabled_default=False,
-        chance_key=None,
+        chance_key='fx_viz_lissajous_chance', default_chance=1.0,
+        trigger_types=[SegmentType.SUSTAIN, SegmentType.BUILD],
         params=_viz_mode_params('fx_viz_lissajous') + [
             ParamSpec('fx_viz_lissajous_ratio', 'Frequency Ratio', 3.0, 1.0, 8.0, indent=True,
                       kwarg=None,
@@ -1748,7 +1749,7 @@ EFFECTS: List[EffectSpec] = [
     EffectSpec(
         id='viz_plasma', label='Plasma Field', group='VISUALIZER',
         cls=PlasmaFieldEffect, enable_key='fx_viz_plasma', enabled_default=False,
-        chance_key=None,
+        chance_key='fx_viz_plasma_chance', default_chance=1.0,
         params=_viz_mode_params('fx_viz_plasma') + [
             ParamSpec('fx_viz_plasma_scale', 'Scale', 0.04, 0.01, 0.15, indent=True,
                       kwarg=None,
@@ -1769,7 +1770,8 @@ EFFECTS: List[EffectSpec] = [
     EffectSpec(
         id='viz_particles', label='Beat Particles', group='VISUALIZER',
         cls=BeatParticlesEffect, enable_key='fx_viz_particles', enabled_default=False,
-        chance_key=None,
+        chance_key='fx_viz_particles_chance', default_chance=1.0,
+        trigger_types=[SegmentType.IMPACT, SegmentType.DROP],
         params=_viz_mode_params('fx_viz_particles') + [
             ParamSpec('fx_viz_particles_count', 'Particle Count', 120, 16, 512, kind='int', indent=True,
                       kwarg=None,
@@ -1795,7 +1797,8 @@ EFFECTS: List[EffectSpec] = [
     EffectSpec(
         id='viz_flow', label='Flow Field', group='VISUALIZER',
         cls=FlowFieldEffect, enable_key='fx_viz_flow', enabled_default=False,
-        chance_key=None,
+        chance_key='fx_viz_flow_chance', default_chance=1.0,
+        trigger_types=[SegmentType.SUSTAIN, SegmentType.BUILD],
         params=_viz_mode_params('fx_viz_flow') + [
             ParamSpec('fx_viz_flow_noise', 'Flow Scale', 0.02, 0.005, 0.08, indent=True,
                       kwarg=None,
@@ -1818,7 +1821,8 @@ EFFECTS: List[EffectSpec] = [
     EffectSpec(
         id='viz_alchemy', label='Alchemy', group='VISUALIZER',
         cls=AlchemyEffect, enable_key='fx_viz_alchemy', enabled_default=False,
-        chance_key=None,
+        chance_key='fx_viz_alchemy_chance', default_chance=1.0,
+        trigger_types=[SegmentType.SUSTAIN, SegmentType.BUILD],
         params=_viz_mode_params('fx_viz_alchemy') + [
             ParamSpec('fx_viz_alchemy_symmetry', 'Symmetry', 6, 2, 12, kind='int', indent=True,
                       kwarg=None,

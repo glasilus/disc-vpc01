@@ -194,3 +194,49 @@ def test_old_preset_loads_without_viz():
             del cfg[k]
     chain = build_chain(cfg)
     assert all('Visualizer' not in type(fx).__name__ for fx in chain)
+
+
+# ── always / always-on-intensity consistency ────────────────────────────────
+def test_visualizer_intensity_scales():
+    from vpc.analyzer import Segment, SegmentType
+    from vpc.effects.visualizer.spectrum import SpectrumBarsEffect
+    frame = np.full((90, 120, 3), 30, np.uint8)
+    seg = Segment(0, 1, 1, SegmentType.SUSTAIN, 0.8, 0.1, 0.1, 0.0)
+    seg.live = _fake_sample(0.9)
+
+    fx_zero = SpectrumBarsEffect(enabled=True, chance=1.0, mode='replace',
+                                  intensity_min=0.0, intensity_max=0.0)
+    result_zero = fx_zero.apply(frame, seg, draft=False)
+    assert np.array_equal(result_zero, frame)
+
+    fx_full = SpectrumBarsEffect(enabled=True, chance=1.0, mode='replace',
+                                  intensity_min=0.7, intensity_max=0.7)
+    result_full = fx_full.apply(frame, seg, draft=False)
+    diff = int(np.abs(result_full.astype(int) - frame.astype(int)).sum())
+    assert diff > 0
+
+
+def test_viz_effects_have_chance_key():
+    from vpc.registry import EFFECTS
+    viz = {e.id: e for e in EFFECTS if e.group == 'VISUALIZER'}
+    for eid, spec in viz.items():
+        assert spec.chance_key == f'{spec.enable_key}_chance', eid
+        assert spec.default_chance == 1.0, eid
+        assert spec.chance_scaled_by_chaos is True, eid
+
+
+def test_viz_trigger_types_curated():
+    from vpc.analyzer import SegmentType
+    from vpc.registry import find_spec
+    accumulators = ('viz_lissajous', 'viz_flow', 'viz_alchemy')
+    for eid in accumulators:
+        spec = find_spec(eid)
+        assert spec.trigger_types == [SegmentType.SUSTAIN, SegmentType.BUILD], eid
+
+    particles = find_spec('viz_particles')
+    assert particles.trigger_types == [SegmentType.IMPACT, SegmentType.DROP]
+
+    unrestricted = ('viz_bars', 'viz_radial', 'viz_scope', 'viz_plasma')
+    for eid in unrestricted:
+        spec = find_spec(eid)
+        assert spec.trigger_types is None, eid

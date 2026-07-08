@@ -80,24 +80,22 @@ class PaintCanvasEffect(BaseEffect):
         is_stroke = mask_resized < 128
 
         self._t += 1
-        intensity_factor = 0.2 + 0.8 * seg.intensity
+        intensity_factor = 0.2 + 0.8 * self.scaled_intensity(seg)
         amp = self.warp_intensity * 25.0 * intensity_factor
 
         if self.mode == 'overlay':
-            out = frame.copy()
-            out[is_stroke] = [self.color_r, self.color_g, self.color_b]
-            return out
+            result = frame.copy()
+            result[is_stroke] = [self.color_r, self.color_g, self.color_b]
 
         elif self.mode == 'lag':
             delayed_frame = self.history[0] if self.history else frame
-            out = frame.copy()
-            out[is_stroke] = delayed_frame[is_stroke]
-            return out
+            result = frame.copy()
+            result[is_stroke] = delayed_frame[is_stroke]
 
         elif self.mode == 'warp_video':
             # Wave/liquid warp of the current frame, displayed INSIDE the drawing strokes!
             ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
-            
+
             dx = np.sin(ys / 12.0 + self._t * 0.15) * amp
             dy = np.cos(xs / 12.0 + self._t * 0.15) * amp
 
@@ -106,15 +104,14 @@ class PaintCanvasEffect(BaseEffect):
 
             # Warp the current frame
             warped_frame = cv2.remap(frame, map_x, map_y, cv2.INTER_LINEAR)
-            
-            out = frame.copy()
-            out[is_stroke] = warped_frame[is_stroke]
-            return out
+
+            result = frame.copy()
+            result[is_stroke] = warped_frame[is_stroke]
 
         elif self.mode == 'lag_warp':
             # Wobbly/warped strokes containing delayed video
             ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
-            
+
             dx = np.sin(ys / 12.0 + self._t * 0.2) * amp
             dy = np.cos(xs / 12.0 + self._t * 0.2) * amp
 
@@ -126,8 +123,10 @@ class PaintCanvasEffect(BaseEffect):
             is_warped_stroke = warped_mask < 128
 
             delayed_frame = self.history[0] if self.history else frame
-            out = frame.copy()
-            out[is_warped_stroke] = delayed_frame[is_warped_stroke]
-            return out
+            result = frame.copy()
+            result[is_warped_stroke] = delayed_frame[is_warped_stroke]
 
-        return frame
+        else:
+            result = frame
+
+        return self._blend_by_intensity(seg, result, frame)
