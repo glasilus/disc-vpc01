@@ -10,7 +10,7 @@ void Theme::apply_win95() {
     s.PopupRounding     = 0.f;
     s.ScrollbarRounding = 0.f;
     s.TabRounding       = 0.f;
-    s.WindowBorderSize  = 2.f;   // raised-panel look
+    s.WindowBorderSize  = 2.f;   // толстая рамка ради эффекта "выпуклой панели"
     s.ChildBorderSize   = 2.f;
     s.FrameBorderSize   = 1.f;
     s.PopupBorderSize   = 1.f;
@@ -19,11 +19,11 @@ void Theme::apply_win95() {
     s.ItemSpacing       = {4, 4};
     s.ItemInnerSpacing  = {3, 3};
     s.IndentSpacing     = 16.f;
-    s.ScrollbarSize     = 16.f;  // classic chunky scrollbar
+    s.ScrollbarSize     = 16.f;  // классический "толстый" скроллбар в стиле 95-х
     s.GrabMinSize       = 12.f;
 
     ImVec4* c = s.Colors;
-    // Classic Win95 gray palette
+    // Классическая серая палитра Windows 95
     c[ImGuiCol_WindowBg]          = {0.753f, 0.753f, 0.753f, 1.f};
     c[ImGuiCol_ChildBg]           = {0.753f, 0.753f, 0.753f, 1.f};
     c[ImGuiCol_PopupBg]           = {0.753f, 0.753f, 0.753f, 1.f};

@@ -20,7 +20,7 @@ static void log_av_error(const char* where, int err) {
 VideoSource::VideoSource(const std::string& path) : path_(path) {
     fprintf(stderr, "[video] VideoSource ctor: %s\n", path.c_str());
 
-    // Create GL textures (must be called from render thread)
+    // Создаем GL-текстуры (вызывать обязательно из render-потока)
     glGenTextures(kTexPoolSize, tex_pool_);
     for (int i = 0; i < kTexPoolSize; ++i) {
         glBindTexture(GL_TEXTURE_2D, tex_pool_[i]);
@@ -34,7 +34,7 @@ VideoSource::VideoSource(const std::string& path) : path_(path) {
     open_ = open_decoder();
     if (!open_) { fprintf(stderr, "[video] open_decoder failed for %s\n", path.c_str()); return; }
 
-    // Start background decode thread
+    // Запускаем фоновый поток декодирования
     fprintf(stderr, "[video] launching decode thread for %s\n", path.c_str());
     decode_thread_ = std::thread(&VideoSource::decode_thread_fn, this);
 }
@@ -49,8 +49,8 @@ VideoSource::~VideoSource() {
 
 bool VideoSource::open_decoder() {
     fmt_ctx_ = nullptr;
-    // NOTE: path_ MUST be UTF-8. On Windows, FFmpeg decodes UTF-8 paths via
-    // avutil's wchar helpers; ANSI (CP1251 etc) paths silently fail.
+    // ВАЖНО: path_ обязан быть UTF-8. На Windows FFmpeg разбирает UTF-8 пути
+    // через wchar-хелперы avutil; ANSI-пути (CP1251 и т.п.) молча ломаются.
     int err = avformat_open_input(&fmt_ctx_, path_.c_str(), nullptr, nullptr);
     if (err < 0) { log_av_error("avformat_open_input", err); return false; }
 
@@ -68,8 +68,8 @@ bool VideoSource::open_decoder() {
     src_w_           = stream->codecpar->width;
     src_h_           = stream->codecpar->height;
 
-    // Frame rate: avg_frame_rate is what we want. Falls back to r_frame_rate
-    // (which can be wrong for VFR sources but is at least non-zero).
+    // Частота кадров: нужен avg_frame_rate. Если он нулевой, откатываемся на
+    // r_frame_rate (для VFR-источников он может врать, но хотя бы не ноль).
     AVRational fr = stream->avg_frame_rate;
     if (fr.num <= 0 || fr.den <= 0) fr = stream->r_frame_rate;
     src_fps_ = (fr.num > 0 && fr.den > 0) ? av_q2d(fr) : 30.0;
@@ -109,15 +109,16 @@ void VideoSource::seek_random() {
 }
 
 bool VideoSource::decode_next(DecodedFrame& out, int /*w*/, int /*h*/) {
-    // Cap the decode target so a 4K video doesn't eat gigabytes of RAM when
-    // multiplied by the 30-frame pool (4K × 30 ≈ 720 MB). 1920×1080 is plenty
-    // for any canvas we expose, and effects run on the canvas anyway.
+    // Ограничиваем разрешение декодирования, иначе 4K-видео сожрет гигабайты
+    // RAM при умножении на пул из 30 кадров (4K × 30 ≈ 720 МБ). 1920×1080
+    // с запасом хватает под любой канвас, который мы показываем, а эффекты
+    // все равно работают уже на канвасе.
     constexpr int kMaxW = 1920, kMaxH = 1080;
     const int nw_src = codec_ctx_->width, nh_src = codec_ctx_->height;
     int tw = nw_src, th = nh_src;
     if (tw > kMaxW || th > kMaxH) {
         float s = std::min((float)kMaxW / tw, (float)kMaxH / th);
-        tw = std::max(2, (int)(tw * s) & ~1);   // even dims keep sws happy
+        tw = std::max(2, (int)(tw * s) & ~1);   // sws не любит нечетные размеры
         th = std::max(2, (int)(th * s) & ~1);
     }
 
@@ -143,7 +144,7 @@ bool VideoSource::decode_next(DecodedFrame& out, int /*w*/, int /*h*/) {
 
     while (!got_frame && tries < 500) {
         if (av_read_frame(fmt_ctx_, pkt) < 0) {
-            // End of file - loop back
+            // Конец файла - зацикливаем сначала
             av_seek_frame(fmt_ctx_, video_stream_idx_, 0, AVSEEK_FLAG_BACKWARD);
             avcodec_flush_buffers(codec_ctx_);
             loop_count_.fetch_add(1, std::memory_order_relaxed);
@@ -174,15 +175,15 @@ bool VideoSource::decode_next(DecodedFrame& out, int /*w*/, int /*h*/) {
 
 void VideoSource::decode_thread_fn() {
     while (!stop_thread_.load()) {
-        // Honour pending seek requests at the top of the loop so they pre-empt
-        // any in-flight decode. We drop already-decoded frames from the queue -
-        // they belong to the OLD position and would replay over the cut.
+        // Обрабатываем запрос на seek в начале итерации, чтобы он вытеснял
+        // любое незавершенное декодирование. Уже готовые кадры в очереди
+        // выбрасываем - они относятся к СТАРОЙ позиции и проиграются поверх cut'а.
         if (seek_request_.exchange(false)) {
             seek_random();
             std::lock_guard<std::mutex> lk(queue_mutex_);
             ready_queue_.clear();
-            // Force pump_uploads to fast-fill (skip pacing window) so new
-            // post-seek frames hit the screen on the very next render tick.
+            // Заставляем pump_uploads залить кадры без ожидания темпа, чтобы
+            // новые кадры после seek попали на экран уже на следующем render-тике.
             last_upload_time_ = 0.0;
         }
 
@@ -194,7 +195,7 @@ void VideoSource::decode_thread_fn() {
             });
         }
         if (stop_thread_.load()) break;
-        if (seek_request_.load()) continue;  // restart loop to handle seek
+        if (seek_request_.load()) continue;  // перезапускаем итерацию ради обработки seek
 
         DecodedFrame frame;
         if (decode_next(frame, 0, 0)) {
@@ -206,17 +207,18 @@ void VideoSource::decode_thread_fn() {
 }
 
 void VideoSource::pump_uploads() {
-    // Pace GPU uploads to the source's native FPS. Without this throttle the
-    // render loop drains the decoded queue as fast as it runs (~60 Hz),
-    // playing 30 fps videos at 2× speed. Decoder thread blocks naturally on
-    // the queue once it fills, keeping CPU/RAM bounded.
+    // Задаем темп заливки на GPU по нативному FPS источника. Без этого
+    // ограничения render-цикл вычерпывал бы очередь декодированных кадров
+    // со своей скоростью (~60 Гц), проигрывая 30-fps видео вдвое быстрее.
+    // Поток декодера сам блокируется, когда очередь заполнена, так что
+    // CPU/RAM остаются в разумных пределах.
     const double now      = glfwGetTime();
     const double interval = 1.0 / std::max(1.0, src_fps_);
     if (last_upload_time_ == 0.0) last_upload_time_ = now;
     double behind = now - last_upload_time_;
     int budget = (int)(behind / interval);
     if (budget <= 0) return;
-    if (budget > 3) budget = 3;   // cap catch-up to avoid burst stutter
+    if (budget > 3) budget = 3;   // ограничиваем догон, чтобы не было рывка кадров
     last_upload_time_ += budget * interval;
 
     std::unique_lock<std::mutex> lk(queue_mutex_);
@@ -224,9 +226,9 @@ void VideoSource::pump_uploads() {
     while (!ready_queue_.empty() && uploaded < budget) {
         DecodedFrame& f = ready_queue_.front();
 
-        // Defensive: never feed glTexImage2D zero/negative dims or a buffer
-        // that's smaller than the expected w*h*3. A malformed DecodedFrame
-        // here would crash the GL driver on some hardware.
+        // Подстраховка: не отдаем в glTexImage2D нулевые/отрицательные размеры
+        // или буфер меньше ожидаемого w*h*3. Битый DecodedFrame здесь может
+        // уронить GL-драйвер на некоторых видеокартах.
         if (f.width <= 0 || f.height <= 0 ||
             f.pixels.size() < (size_t)f.width * f.height * 3) {
             fprintf(stderr, "[video] skipping bad frame: %dx%d buf=%zu\n",
@@ -237,13 +239,13 @@ void VideoSource::pump_uploads() {
 
         GLuint tex = tex_pool_[tex_next_];
         glBindTexture(GL_TEXTURE_2D, tex);
-        // RGB rows of arbitrary width may not be 4-byte aligned; tell GL.
+        // Строки RGB произвольной ширины не обязаны быть выровнены по 4 байта - сообщаем GL.
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        // After the first frame fills a slot, subsequent uploads of the
-        // same dimensions go through glTexSubImage2D which just streams
-        // pixels into existing storage. glTexImage2D re-allocates GPU
-        // storage every call, fragmenting driver memory and starving the
-        // render loop on lower-end hardware.
+        // После того как слот один раз заполнен кадром, последующие заливки
+        // того же размера идут через glTexSubImage2D - он просто перезаписывает
+        // пиксели в уже выделенном хранилище. glTexImage2D при каждом вызове
+        // заново выделяет память на GPU, фрагментируя ее в драйвере и подсаживая
+        // render-цикл на слабом железе.
         if (tex_w_[tex_next_] == f.width && tex_h_[tex_next_] == f.height) {
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
                             f.width, f.height, GL_RGB, GL_UNSIGNED_BYTE,
@@ -281,10 +283,11 @@ GLuint VideoSource::get_random_frame(int /*w*/, int /*h*/, int* out_w, int* out_
 GLuint VideoSource::get_sequential_frame(int /*w*/, int /*h*/, int* out_w, int* out_h) {
     pump_uploads();
     if (tex_ready_count_ == 0) return 0;
-    // Show the most recently uploaded slot. pump_uploads is rate-limited to
-    // src_fps_, so this naturally plays back at native speed regardless of
-    // render FPS. Indexing seq_idx_ at render rate caused 2× playback by
-    // cycling the 12-slot pool faster than frames were produced.
+    // Показываем самый свежий залитый слот. pump_uploads сама ограничена
+    // темпом src_fps_, так что воспроизведение идет на нативной скорости
+    // независимо от FPS рендера. Индексация seq_idx_ по темпу рендера
+    // давала двойную скорость - 12-слотовый пул прокручивался быстрее,
+    // чем успевали появляться новые кадры.
     int idx = (tex_next_ - 1 + kTexPoolSize) % kTexPoolSize;
     if (out_w) *out_w = tex_w_[idx];
     if (out_h) *out_h = tex_h_[idx];

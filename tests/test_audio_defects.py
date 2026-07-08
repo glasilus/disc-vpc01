@@ -1,8 +1,9 @@
-"""Pure-function tests for the audio defects pipeline.
+"""Тесты чистых функций пайплайна аудио-дефектов.
 
-Defects are pure (samples, sr) -> samples; no file I/O, no global state,
-trivially testable. We verify shape/dtype, non-trivial mutation, and
-that the orchestrator correctly skips when nothing is enabled.
+Дефекты - чистые функции (samples, sr) -> samples, без файлового I/O и
+глобального состояния, поэтому тестируются тривиально. Проверяем
+shape/dtype, что выход реально меняется, и что оркестратор корректно
+ничего не делает, когда ни один дефект не включён.
 """
 from __future__ import annotations
 
@@ -77,7 +78,7 @@ def test_changes_output(fn):
 
 
 def test_handles_empty():
-    """Defects must accept a zero-sample buffer without crashing."""
+    """Дефекты не должны падать на пустом (нулевой длины) буфере."""
     empty = np.zeros((0, 2), dtype=np.float32)
     for fn in _ALL_DEFECTS:
         out = fn(empty, SR)
@@ -85,9 +86,9 @@ def test_handles_empty():
 
 
 def test_coupling_registry_keys_match_visual_effects():
-    """Every key in EFFECT_AUDIO_COUPLING must correspond to an actual
-    EffectSpec.enable_key in the visual registry — protects against typos
-    when adding new couplings."""
+    """Каждый ключ в EFFECT_AUDIO_COUPLING должен соответствовать реальному
+    EffectSpec.enable_key в визуальном реестре - страхует от опечаток при
+    добавлении новых связок."""
     from vpc.registry import EFFECTS
     enable_keys = {s.enable_key for s in EFFECTS if s.enable_key}
     for k in EFFECT_AUDIO_COUPLING:
@@ -99,7 +100,7 @@ def test_audio_link_var_name_format():
 
 
 def _write_wav(path: str, samples: np.ndarray, sr: int = SR) -> None:
-    """Helper: write a stereo int16 WAV from float32 samples in [-1, 1]."""
+    """Пишет стерео int16 WAV из float32-сэмплов в диапазоне [-1, 1]."""
     int16 = (np.clip(samples, -1.0, 1.0) * 32767).astype(np.int16)
     with wave.open(path, 'wb') as w:
         w.setnchannels(samples.shape[1])
@@ -117,8 +118,8 @@ def _read_wav(path: str) -> np.ndarray:
 
 
 def test_pipeline_no_op_when_no_defects_enabled():
-    """When neither effect-enable nor audio_link is set, pipeline must
-    return False and leave the WAV byte-identical."""
+    """Если не включён ни enable-флаг эффекта, ни audio_link, пайплайн
+    должен вернуть False и не менять WAV побайтово."""
     with tempfile.TemporaryDirectory() as tmp:
         path = os.path.join(tmp, 'in.wav')
         sig = _signal(0.5)
@@ -131,12 +132,12 @@ def test_pipeline_no_op_when_no_defects_enabled():
 
 
 def test_self_echo_perf_under_budget():
-    """Regression guard: defect_self_echo must complete 60s of stereo
-    44.1kHz audio under 1 second. The earlier Python-loop implementation
-    took ~5s; lfilter on a 9700-tap denominator paradoxically took ~50s;
-    the chunked-vector implementation does it in <0.2s. If this test
-    starts failing the most likely cause is someone re-introduced a
-    per-sample Python loop."""
+    """Регрессионный тест на производительность: defect_self_echo должен
+    обрабатывать 60с стерео 44.1kHz быстрее секунды. Старая реализация
+    с Python-циклом занимала ~5с; lfilter с 9700-tap знаменателем давал
+    парадоксально ~50с; текущая chunked-vector реализация укладывается
+    в <0.2с. Если тест начал падать - скорее всего кто-то вернул
+    поэлементный Python-цикл."""
     import time
     from vpc.audio.defects import defect_self_echo
     sig = (np.random.rand(SR * 60, 2).astype(np.float32) - 0.5) * 0.4
@@ -147,8 +148,8 @@ def test_self_echo_perf_under_budget():
 
 
 def test_defects_handle_mono():
-    """Defects shouldn't assume stereo. Mono path exercises the
-    `out.shape[1]` access on a 1-channel buffer."""
+    """Дефекты не должны считать, что вход всегда стерео. Проверяем доступ
+    к `out.shape[1]` на буфере с одним каналом."""
     sig = (np.random.rand(SR, 1).astype(np.float32) - 0.5) * 0.4
     for fn in _ALL_DEFECTS:
         out = fn(sig, SR)
@@ -157,7 +158,7 @@ def test_defects_handle_mono():
 
 
 def test_pipeline_applies_when_enabled():
-    """With one coupling enabled, the WAV must change."""
+    """При включённой одной связке WAV должен измениться."""
     with tempfile.TemporaryDirectory() as tmp:
         path = os.path.join(tmp, 'in.wav')
         sig = _signal(0.5)

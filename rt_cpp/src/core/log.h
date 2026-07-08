@@ -1,12 +1,12 @@
 #pragma once
 #include <cstdio>
 
-// Lightweight logger that mirrors writes to:
-//   1. A file `vpc01rt.log` next to the executable's working directory.
-//   2. stderr (visible if a console is attached).
+// Простой логгер, дублирующий запись в:
+//   1. Файл `vpc01rt.log` в рабочей директории исполняемого файла.
+//   2. stderr (виден, если подключена консоль).
 //
-// All writes are flushed immediately so log lines survive a crash. Initialize
-// once in main() before anything else writes diagnostics.
+// Каждая запись сразу флашится, чтобы лог пережил краш. Вызывать один раз
+// в main() до того, как что-либо ещё начнёт писать диагностику.
 namespace Log {
     void init();
     void shutdown();

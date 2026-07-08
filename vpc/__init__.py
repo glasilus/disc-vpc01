@@ -1,6 +1,6 @@
-"""Disc VPC 01 — modular package.
+"""Disc VPC 01 - модульный пакет.
 
-Public API mirrors the old flat layout for backward compatibility:
+Публичный API повторяет старую плоскую структуру для обратной совместимости:
     from vpc import BreakcoreEngine, AudioAnalyzer, EFFECTS, MysterySection
 """
 

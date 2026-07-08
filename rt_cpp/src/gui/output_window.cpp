@@ -2,9 +2,8 @@
 #include <GLFW/glfw3.h>
 #include <cstdio>
 
-// Fullscreen textured quad with aspect-preserving fit (Contain). The canvas
-// is already composited at the right aspect, so here we only need to fit
-// the canvas into the monitor without stretching.
+// Полноэкранный текстурированный квад. Канвас уже скомпонован с нужным
+// аспектом, вершинному шейдеру остаётся только растянуть его на весь экран.
 static const char* k_vert =
     "#version 330 core\n"
     "layout(location=0) in vec2 aPos;\n"
@@ -12,10 +11,9 @@ static const char* k_vert =
     "out vec2 vUV;\n"
     "void main(){ vUV=aUV; gl_Position=vec4(aPos,0.0,1.0); }\n";
 
-// Same four aspect modes as canvas_place: Contain / Cover / Stretch / Native.
-// Without this, a 4:3 canvas on a 16:9 monitor was always letterboxed even
-// when the user picked Cover at the master level - output had its own
-// hardcoded Contain that overrode the inner choice.
+// Те же четыре режима аспекта, что и в canvas_place: Contain / Cover /
+// Stretch / Native. Режим нужно передавать сюда явно - у output-окна свой
+// шейдер, независимый от того, как скомпонован сам канвас.
 static const char* k_frag =
     "#version 330 core\n"
     "in vec2 vUV;\n"
@@ -32,7 +30,7 @@ static const char* k_frag =
     "  if (uMode == 3) {\n"
     "      frac = uCanvasSize / uWindowSize;\n"
     "  } else if (uMode == 1) {\n"
-    "      // Cover: crop to fill - never any black bars.\n"
+    "      // Cover: обрезаем, чтобы заполнить весь экран без чёрных полос.\n"
     "      frac = (cA > wA) ? vec2(cA / wA, 1.0) : vec2(1.0, wA / cA);\n"
     "  } else {\n"
     "      // Contain: letterbox/pillarbox.\n"
@@ -65,7 +63,8 @@ static GLuint link_program(const char* vs, const char* fs) {
     return p;
 }
 
-// Close-request flag, set from GLFW callback (no closures on GLFW callbacks).
+// Флаг запроса закрытия. Глобальный, потому что GLFW-колбэки - обычные
+// C-функции без захвата контекста (лямбды с захватом сюда не передать).
 static bool g_close_requested = false;
 
 static void key_cb(GLFWwindow* w, int key, int, int action, int) {
@@ -124,10 +123,10 @@ bool OutputWindow::open(int monitor_index) {
     GLFWmonitor* mon = mons[monitor_index];
     const GLFWvidmode* mode = glfwGetVideoMode(mon);
 
-    // Borderless fullscreen: position at monitor origin, no decorations,
-    // no resize. This preserves desktop compositor / window manager
-    // behavior so dragging other windows on top still works (important for
-    // OBS capture during a VJ set).
+    // Fullscreen без рамки: окно ставим в начало координат монитора, без
+    // декораций и ресайза. Это не эксклюзивный fullscreen - оконный менеджер
+    // и compositor продолжают работать как обычно, поверх можно перетащить
+    // другое окно (важно для захвата через OBS во время VJ-сета).
     glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
     glfwWindowHint(GLFW_FLOATING,  GLFW_FALSE);
@@ -140,7 +139,7 @@ bool OutputWindow::open(int monitor_index) {
 
     window_ = glfwCreateWindow(mode->width, mode->height,
                                "Disc VPC 01 - Output", nullptr, share_);
-    // Reset hints so they don't leak into any future window creation.
+    // Сбрасываем хинты, чтобы они не повлияли на создание следующих окон.
     glfwDefaultWindowHints();
     if (!window_) { fprintf(stderr, "[output] glfwCreateWindow failed\n"); return false; }
 
@@ -152,7 +151,7 @@ bool OutputWindow::open(int monitor_index) {
     glfwSetKeyCallback(window_, key_cb);
     glfwSetWindowCloseCallback(window_, close_cb);
 
-    // Build our GL objects in this context.
+    // GL-объекты нужно создавать именно в контексте output-окна.
     GLFWwindow* prev = glfwGetCurrentContext();
     glfwMakeContextCurrent(window_);
     glfwSwapInterval(1);
@@ -173,8 +172,8 @@ void OutputWindow::close() {
     if (vao_)  { glDeleteVertexArrays(1, &vao_); vao_ = 0; }
     if (vbo_)  { glDeleteBuffers(1, &vbo_);      vbo_ = 0; }
     if (prog_) { glDeleteProgram(prog_);         prog_ = 0; }
-    // Restore context BEFORE destroying the window - otherwise `prev`
-    // becomes invalid if it was the one we just deleted.
+    // Контекст нужно восстановить ДО уничтожения окна - иначе `prev`
+    // становится невалидным, если это было то самое окно, которое мы удаляем.
     glfwMakeContextCurrent(prev == window_ ? nullptr : prev);
     glfwDestroyWindow(window_);
     window_  = nullptr;

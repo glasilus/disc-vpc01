@@ -1,15 +1,13 @@
-"""MysterySection — undocumented compound knobs.
+"""MysterySection - недокументированные составные ручки.
 
-DESIGN NOTE: This module is intentionally chaotic. The nine knobs (VESSEL,
-ENTROPY_7, DELTA_OMEGA, STATIC_MIND, RESONANCE, COLLAPSE, ZERO, FLESH_K, DOT)
-cross-multiply, drive each other's thresholds, and reach into private
-internals of other effects. That is the design — a hidden artistic surface.
+Модуль намеренно хаотичен. Девять ручек (VESSEL, ENTROPY_7, DELTA_OMEGA,
+STATIC_MIND, RESONANCE, COLLAPSE, ZERO, FLESH_K, DOT) перемножаются между
+собой, влияют на пороги друг друга и лезут в приватные внутренности других
+эффектов. Так и задумано - это скрытая художественная поверхность.
 
-When changing this file, run `tests/test_mystery.py` (golden hashes against
-fixed seeds). Any deliberate change in the visible output is a knob-redesign;
-any unintended change is a regression.
-
-Logic, formulas, magic numbers — verbatim from the original engine.
+При изменении этого файла запускай `tests/test_mystery.py` (golden-хэши
+на фиксированных сидах). Осознанное изменение видимого результата -
+редизайн ручки; неосознанное - регрессия.
 """
 from __future__ import annotations
 
@@ -40,11 +38,11 @@ class MysterySection:
         self.ZERO = 0.0
         self.FLESH_K = 0.0
         self.DOT = 0.0
-        # "Always-on" per-knob bypass flags. When True AND the knob is > 0,
-        # the per-frame random gate (and any soft thresholds) for that knob
-        # are skipped — the block fires every frame. Default False keeps
-        # legacy behaviour bit-identical, which is what the golden tests
-        # in tests/test_mystery.py rely on.
+        # Флаги "always-on" для каждой ручки. Если True И значение ручки > 0,
+        # рандомный гейт на кадр (и любые мягкие пороги) для неё пропускаются -
+        # блок срабатывает каждый кадр. По умолчанию False, чтобы поведение
+        # оставалось бит-в-бит как раньше - на этом держатся golden-тесты
+        # в tests/test_mystery.py.
         self.always_VESSEL = False
         self.always_ENTROPY_7 = False
         self.always_DELTA_OMEGA = False
@@ -66,31 +64,31 @@ class MysterySection:
         self._histo_lag = HistoLagEffect(enabled=True, chance=1.0)
         self._waveshaper = WaveshaperEffect(enabled=True, chance=1.0)
         self._wrong_sub = WrongSubsamplingEffect(enabled=True, chance=1.0)
-        # ── new state for redesigned VESSEL / ENTROPY_7 / ZERO / DOT ──
-        # VESSEL maintains a slowly-decaying accumulator of past output —
-        # "то, что вы отдали ему раньше, всё ещё присутствует". This same
-        # accumulator is also the source ENTROPY_7 grows inside.
+        # ── состояние для VESSEL / ENTROPY_7 / ZERO / DOT ──
+        # VESSEL держит медленно затухающий аккумулятор прошлых кадров -
+        # то, что вы отдали ему раньше, всё ещё присутствует. Тот же
+        # аккумулятор служит источником, внутри которого растёт ENTROPY_7.
         self._vessel_accum: np.ndarray | None = None
-        # ZERO needs a deep buffer (≈4 seconds at 30fps) to recall from.
-        # Capped both by frame count and by total bytes — at 1080p uint8
-        # 120 frames is ~750 MB, which is excessive for tools that can run
-        # alongside the GUI. The byte cap (~256 MB) lowers `_zero_history_max`
-        # adaptively the first time `apply()` sees a full-resolution frame.
+        # ZERO нужен глубокий буфер (примерно 4 секунды при 30fps), из
+        # которого он вспоминает кадры. Ограничен и по числу кадров, и по
+        # суммарному объёму памяти - на 1080p uint8 120 кадров это ~750 МБ,
+        # что слишком много для инструмента, работающего рядом с GUI.
+        # Байтовый лимит (~256 МБ) адаптивно снижает `_zero_history_max`
+        # при первом кадре полного разрешения, увиденном в `apply()`.
         self._zero_history: list[np.ndarray] = []
         self._zero_history_max = 120
         self._zero_history_byte_cap = 256 * 1024 * 1024
-        # Internal phase counter for VESSEL's wandering polar centre.
+        # Счётчик фаз для блуждающего полярного центра VESSEL.
         self._t = 0
 
     def apply(self, frame, seg, draft):
         result = frame.copy()
         self._t += 1
-        # Always-on bookkeeping — the deep history feeding ZERO's recall and
-        # VESSEL's accumulator is updated on every frame regardless of which
-        # knobs are non-zero. Otherwise turning a knob on would suddenly find
-        # an empty buffer and pop visually.
-        # Adaptive cap: the first sample tells us frame size; clamp the
-        # history length so the buffer fits under `_zero_history_byte_cap`.
+        # Буферы обновляются каждый кадр независимо от того, какие ручки
+        # включены. Иначе при включении ручки буфер оказался бы пустым и
+        # это дало бы визуальный скачок.
+        # Адаптивный лимит: первый кадр подсказывает размер, дальше длина
+        # истории подгоняется под `_zero_history_byte_cap`.
         if not self._zero_history:
             per_frame = max(1, int(frame.nbytes))
             adaptive = max(8, self._zero_history_byte_cap // per_frame)
@@ -111,9 +109,9 @@ class MysterySection:
         _ds = self.DOT * self.STATIC_MIND
         _zf = self.ZERO * self.FLESH_K
 
-        # DELTA_OMEGA's "BREACH" toggle pins the threshold-shift multiplier
-        # at its maximum (slider=1.0 equivalent). The knob value still gates
-        # whether the toggle is meaningful — at knob=0 nothing triggers it.
+        # Тумблер "BREACH" у DELTA_OMEGA фиксирует множитель сдвига порога
+        # на максимуме (эквивалент слайдера=1.0). Значение ручки всё равно
+        # важно - при knob=0 тумблер ничего не запускает.
         if self.always_DELTA_OMEGA and self.DELTA_OMEGA > 0:
             _rg = seg.rms * 4.0
         else:
@@ -123,8 +121,8 @@ class MysterySection:
             return random.random() < min(1.0, max(0.0, base + sign * rms_w * _rg))
 
         def _force(knob_name):
-            """Bypass the random gate for `knob_name` if always-flag set
-            AND knob value > 0."""
+            """Пропускает рандомный гейт для `knob_name`, если выставлен
+            always-флаг И значение ручки > 0."""
             return (getattr(self, f'always_{knob_name}', False)
                     and getattr(self, knob_name, 0.0) > 0)
 
@@ -144,14 +142,14 @@ class MysterySection:
             self._wrong_sub.factor = 2 + int(self.FLESH_K * 6 + _ds * 4)
             result = self._wrong_sub._apply(result, _reseg(seg, self.FLESH_K), draft)
 
-        # ── VESSEL ── polar morph + accumulating memory layer.
-        # VESSEL "питает" — it carries an accumulator of past output that
-        # grows heavier over time and gradually overpowers the present. The
-        # accumulator is read through a polar transform whose centre wanders
-        # on a Lissajous path so the memory layer rotates and unspools
-        # underneath the live image. DOT cross-link: when DOT is non-zero
-        # the polar centre splits — two offset polar morphs are blended,
-        # the "три вещи уходят из одного момента" hinted in the docs.
+        # ── VESSEL ── полярный морф + накопительный слой памяти.
+        # VESSEL "питает" - несёт аккумулятор прошлых кадров, который со
+        # временем становится тяжелее и постепенно перевешивает настоящее.
+        # Аккумулятор читается через полярное преобразование, чей центр
+        # блуждает по фигуре Лиссажу, так что слой памяти вращается и
+        # разматывается под живым изображением. Кросс-связь с DOT: когда
+        # DOT ненулевой, полярный центр раздваивается - смешиваются два
+        # смещённых полярных морфа ("три вещи уходят из одного момента").
         ev = self.VESSEL * (1.0 + self.DOT * 0.6)
         if ev > 0 and (_force('VESSEL') or _gate(ev, rms_w=0.1)):
             h_v, w_v = result.shape[:2]
@@ -159,7 +157,7 @@ class MysterySection:
             radius = float(np.hypot(w_v, h_v) * 0.5)
 
             def _polar_morph(img, cx, cy, twist):
-                """Forward polar → angular shift (twist) → inverse polar."""
+                """Прямое полярное преобразование -> угловой сдвиг (twist) -> обратное."""
                 lp = cv2.linearPolar(img, (cx, cy), radius,
                                      cv2.WARP_FILL_OUTLIERS)
                 shift_px = int(round((twist / (2.0 * np.pi)) * lp.shape[0]))
@@ -174,7 +172,7 @@ class MysterySection:
             twist0 = ev * 0.9 * np.sin(t * 0.7)
             morphed = _polar_morph(result, cx0, cy0, twist0)
             if self.DOT > 0.05:
-                # Second offset polar morph mixed in — DOT-controlled split.
+                # Второй смещённый полярный морф, подмешанный сверху - раздвоение по DOT.
                 cx1 = w_v * (0.5 - 0.18 * np.cos(t * 0.85) * self.DOT)
                 cy1 = h_v * (0.5 + 0.18 * np.cos(t * 1.05) * self.DOT)
                 twist1 = -ev * 0.7 * self.DOT
@@ -182,17 +180,18 @@ class MysterySection:
                 morphed = cv2.addWeighted(morphed, 1.0 - self.DOT * 0.5,
                                           morphed2, self.DOT * 0.5, 0)
 
-            # Memory layer: the accumulator, also polar-morphed, blended in
-            # at a weight that grows with VESSEL — high values let the past
-            # outweigh the present.
+            # Слой памяти: аккумулятор, тоже пропущенный через полярный
+            # морф, смешивается с весом, растущим вместе с VESSEL - на
+            # высоких значениях прошлое перевешивает настоящее.
             mem = _polar_morph(self._vessel_accum.astype(np.uint8),
                                cx0, cy0, twist0 * 1.2)
             past_w = min(0.85, ev * 0.9)
             result = cv2.addWeighted(morphed, 1.0 - past_w,
                                      mem, past_w, 0)
 
-            # Update accumulator: heavier with VESSEL, plus a hue rotation
-            # so re-seen frames don't congeal into a still average.
+            # Обновление аккумулятора: тяжелее с ростом VESSEL, плюс
+            # вращение оттенка, чтобы повторно виденные кадры не слипались
+            # в статичное усреднение.
             decay = 1.0 - max(0.04, 0.18 - ev * 0.13)
             new_part = result.astype(np.float32) * (1.0 - decay)
             self._vessel_accum = self._vessel_accum * decay + new_part
@@ -277,13 +276,13 @@ class MysterySection:
                         np.abs(np.fft.ifft2(np.fft.ifftshift(Fs))), 0, 255
                     ).astype(np.uint8)
 
-        # ── ENTROPY_7 ── living quad-tree subdivision with conditional swaps.
-        # Frame is recursively split into quadrants down to a depth driven by
-        # ENTROPY_7. At each leaf the local luminance variance ("читает кадр
-        # как условие") becomes the swap probability — busy regions tear,
-        # flat regions hold. Sources of swap material are taken from VESSEL's
-        # accumulator when VESSEL is active ("то, что накопил VESSEL,
-        # ENTROPY_7 выращивает внутри") — otherwise from the live frame.
+        # ── ENTROPY_7 ── живое квадро-дерево с условными подменами блоков.
+        # Кадр рекурсивно делится на квадранты до глубины, заданной
+        # ENTROPY_7. В каждом листе локальная дисперсия яркости становится
+        # вероятностью подмены - "шумные" области рвутся, ровные держатся.
+        # Материал для подмены берётся из аккумулятора VESSEL, если VESSEL
+        # активен ("то, что накопил VESSEL, ENTROPY_7 выращивает внутри"),
+        # иначе - из живого кадра.
         if self.ENTROPY_7 > 0 and (_force('ENTROPY_7')
                                    or _gate(self.ENTROPY_7, rms_w=0.1)):
             depth = max(1, int(self.ENTROPY_7 * 4) + (1 if _ve > 0.25 else 0))
@@ -304,13 +303,13 @@ class MysterySection:
                 if y1 - y0 < 4 or x1 - x0 < 4 or d == 0:
                     block = out_e[y0:y1, x0:x1]
                     var = _variance(block)
-                    # Variance normalised to [0, 1] roughly via log curve;
-                    # ENTROPY_7 globally scales the trigger probability.
+                    # Дисперсия грубо нормализуется в [0, 1]; ENTROPY_7
+                    # глобально масштабирует вероятность срабатывания.
                     p = self.ENTROPY_7 * min(1.0, var / 1500.0 + 0.2)
                     if random.random() < p:
                         op = random.random()
                         if op < 0.45:
-                            # Swap with another random block of the same size.
+                            # Подмена другим случайным блоком того же размера.
                             sh, sw = y1 - y0, x1 - x0
                             sy = random.randint(0, max(0, h_e - sh))
                             sx = random.randint(0, max(0, w_e - sw))
@@ -318,14 +317,14 @@ class MysterySection:
                                     else source_pool)
                             out_e[y0:y1, x0:x1] = pool[sy:sy + sh, sx:sx + sw]
                         elif op < 0.75:
-                            # 90° rotation — bigger structural rip.
+                            # Поворот на 90° - разрыв покрупнее.
                             sub = out_e[y0:y1, x0:x1]
                             if sub.shape[0] == sub.shape[1]:
                                 out_e[y0:y1, x0:x1] = np.rot90(sub)
                             else:
                                 out_e[y0:y1, x0:x1] = sub[::-1, ::-1]
                         else:
-                            # Channel swizzle.
+                            # Перестановка каналов.
                             ch = list(range(out_e.shape[2]))
                             random.shuffle(ch)
                             out_e[y0:y1, x0:x1] = out_e[y0:y1, x0:x1][:, :, ch]
@@ -340,13 +339,13 @@ class MysterySection:
             _subdivide(0, 0, h_e, w_e, depth)
             result = out_e
 
-        # ── ZERO ── negative-time recall.
-        # Pulls pixels back from a deep buffer, blends + XORs them through
-        # a Bayer-style mask whose seed is shifted by ZERO ("те же значения,
-        # другой ZERO — другой результат"). FLESH_K cross-link: when present,
-        # the recall mask is biased toward edges of the live frame
-        # ("FLESH_K усиливает то, что ZERO раскрывает"), so the recall
-        # punches out exactly the contours instead of being a uniform XOR.
+        # ── ZERO ── воспоминание из отрицательного времени.
+        # Тянет пиксели из глубокого буфера, смешивает и XOR-ит их через
+        # маску в стиле Байера, чей сид смещается значением ZERO - те же
+        # значения, другой ZERO, другой результат. Кросс-связь с FLESH_K:
+        # если он есть, маска смещается к краям живого кадра ("FLESH_K
+        # усиливает то, что ZERO раскрывает"), так что воспоминание
+        # проступает именно по контурам, а не равномерным XOR-ом.
         if self.ZERO > 0 and (_force('ZERO')
                               or _gate(self.ZERO - 0.05, rms_w=-0.05)):
             n_hist = len(self._zero_history)
@@ -356,8 +355,8 @@ class MysterySection:
                 past = self._zero_history[n_hist - 1 - lag]
                 if past.shape == result.shape:
                     h_z, w_z = result.shape[:2]
-                    # Bayer mask, seeded by ZERO so different ZERO values
-                    # produce different recall patterns at the same RMS.
+                    # Маска Байера, засеянная от ZERO - разные значения
+                    # ZERO дают разные паттерны воспоминания при одном RMS.
                     seed = int(self.ZERO * 8191) ^ int(self.FLESH_K * 4093)
                     rng = np.random.RandomState(seed & 0x7FFFFFFF)
                     mask_small = (rng.rand(max(2, h_z // 16),
@@ -367,7 +366,7 @@ class MysterySection:
                                       interpolation=cv2.INTER_LINEAR)
                     threshold = 1.0 - self.ZERO
                     if self.FLESH_K > 0:
-                        # Bias the mask toward strong edges of the live frame.
+                        # Смещаем маску к сильным краям живого кадра.
                         gray = cv2.cvtColor(result, cv2.COLOR_RGB2GRAY)
                         edges = cv2.Sobel(gray, cv2.CV_32F, 1, 1, ksize=3)
                         edge_w = np.abs(edges)
@@ -385,12 +384,12 @@ class MysterySection:
                         recalled = past
                     result = np.where(sel, recalled, result)
 
-        # ── DOT ── horizontal slit-scan, plus a vertical scan above 0.6.
-        # Buffer length is "удлиняется при VESSEL" — VESSEL multiplies depth.
-        # On high values the time grid becomes 2-D: every column reads from
-        # one past frame, and inside that frame every row reads from yet
-        # another past frame, so a single output pixel encodes two distinct
-        # past times.
+        # ── DOT ── горизонтальный slit-scan, плюс вертикальный выше 0.6.
+        # Длина буфера удлиняется при VESSEL - он множит глубину. На высоких
+        # значениях временная сетка становится 2-мерной: каждая колонка
+        # читает из одного прошлого кадра, а внутри него каждая строка -
+        # из ещё одного прошлого кадра, так что один выходной пиксель
+        # кодирует два разных момента прошлого.
         if self.DOT > 0 and (_force('DOT') or _gate(self.DOT, rms_w=0.3)):
             depth = max(2, int(self.DOT * 6 + self.VESSEL * 8))
             self._frame_buffer.append(result.copy())
@@ -411,14 +410,14 @@ class MysterySection:
                     cols = np.where(col_to_frame == fi)[0]
                     if len(cols) > 0:
                         out_dot[:, cols] = buf[fi][:, cols]
-                # Vertical slit-scan compounded on top above the threshold,
-                # turning the time grid 2-D.
+                # Вертикальный slit-scan добавляется поверх выше порога,
+                # превращая временную сетку в 2-мерную.
                 if self.DOT > 0.6:
                     row_to_frame = np.clip(
                         (np.arange(h_d) * (n - 1) / max(1, h_d - 1)).astype(int),
                         0, n - 1
                     )
-                    # Phase-offset rows so they don't realign with columns.
+                    # Сдвиг фазы строк, чтобы они не совпали с колонками.
                     row_to_frame = (row_to_frame + (n // 3)) % n
                     out_dot2 = out_dot.copy()
                     for fi in range(n):
@@ -444,7 +443,7 @@ class MysterySection:
         return self.RESONANCE
 
 
-# ── Knob metadata for GUI generation ────────────────────────────────────
+# ── метаданные ручек для генерации GUI ──────────────────────────────────
 
 MYSTERY_KNOBS = [
     ('VESSEL', 'mystery_VESSEL'),
@@ -458,9 +457,9 @@ MYSTERY_KNOBS = [
     ('[  .  ]', 'mystery_DOT'),
 ]
 
-# "Always-on" labels per knob — analogous to `always_<key>` for ordinary
-# effects but in the mystery aesthetic: each gets a unique cryptic name.
-# Order matches MYSTERY_KNOBS. The cfg key is `always_mystery_<KEY>`.
+# Подписи "always-on" для каждой ручки - аналог `always_<key>` у обычных
+# эффектов, но в эстетике mystery: у каждой своё загадочное имя. Порядок
+# совпадает с MYSTERY_KNOBS. Ключ в cfg - `always_mystery_<KEY>`.
 MYSTERY_ALWAYS_LABELS = [
     ('VESSEL',       'PERPETUAL'),
     ('ENTROPY_7',    'UNCHAINED'),

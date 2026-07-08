@@ -1,4 +1,4 @@
-"""Core effects: Flash, GhostTrails, PixelSort, OpticalFlow, ASCII."""
+"""Базовые эффекты: Flash, GhostTrails, PixelSort, OpticalFlow, ASCII."""
 from __future__ import annotations
 
 import random
@@ -52,7 +52,6 @@ class PixelSortEffect(BaseEffect):
         h, w = result.shape[:2]
         intensity = self.scaled_intensity(seg)
 
-        # Determine strip/band size based on direction
         if self.sort_direction == 'vertical':
             strip_size = max(1, int(w * (0.05 + intensity * 0.4)))
         else:
@@ -61,7 +60,7 @@ class PixelSortEffect(BaseEffect):
         n_strips = 1 if draft else max(1, int(intensity * 8))
 
         if self.sort_mode == 'block':
-            # --- 1. BLOCK MODE: The Original Global Flattening (1st Commit) ---
+            # Блочный режим: сортируем все пиксели полосы одним плоским списком.
             for _ in range(n_strips):
                 if self.sort_direction == 'vertical':
                     x = random.randint(0, max(0, w - strip_size))
@@ -95,7 +94,8 @@ class PixelSortEffect(BaseEffect):
                     result[y:y + strip_size] = pixels[order].reshape(ch, cw, 3)
 
         elif self.sort_mode == 'streaks':
-            # --- 2. STREAKS MODE: After Effects / Threshold sorting ---
+            # Режим "потёков": сортируем только участки строки/столбца,
+            # превышающие порог яркости (как в After Effects).
             threshold_val = self.sort_threshold * 255.0
             for _ in range(n_strips):
                 if self.sort_direction == 'vertical':
@@ -160,7 +160,8 @@ class PixelSortEffect(BaseEffect):
                             result[row_idx, start_idx:w] = row_pixels[start_idx:w][sort_order]
 
         else:
-            # --- 3. COLUMNS MODE: The 0.1.0 column-shifting ("rewind") look ---
+            # Режим "столбцов": строки/столбцы полосы переставляются по
+            # среднему значению - вид перемотки/сдвига.
             for _ in range(n_strips):
                 if self.sort_direction == 'vertical':
                     x = random.randint(0, max(0, w - strip_size))
@@ -195,13 +196,13 @@ class PixelSortEffect(BaseEffect):
 
 
 class OpticalFlowEffect(BaseEffect):
-    """Optical-flow-based motion-vector smear.
+    """Смаз по векторам оптического потока.
 
-    Historically shipped under the name "Datamosh" (cfg keys fx_datamosh*
-    are kept verbatim so old presets keep driving exactly this effect). For
-    the same compatibility reason the engine still wires the legacy
-    I-frame-drop source swap on top of this for NOISE segments in Final
-    render mode. The real codec-level mosh lives in
+    Исторически назывался "Datamosh" (ключи конфига fx_datamosh* оставлены
+    как есть, чтобы старые пресеты продолжали управлять именно этим
+    эффектом). По той же причине совместимости движок всё ещё подмешивает
+    сверху легаси-подмену источника при потере I-кадра для NOISE-сегментов
+    в режиме финального рендера. Настоящий мош на уровне кодека - в
     vpc.effects.mosh.TrueDatamoshEffect.
     """
     trigger_types = [SegmentType.NOISE, SegmentType.SUSTAIN,
@@ -212,7 +213,8 @@ class OpticalFlowEffect(BaseEffect):
         self.prev_frame = None
 
     def apply(self, frame, seg, draft):
-        # Always update prev_frame, even when effect doesn't fire.
+        # prev_frame обновляется всегда, даже если эффект в этот раз не
+        # сработает - иначе смаз будет считаться от устаревшего кадра.
         should_fire = (
             self.enabled and
             seg.type in self.trigger_types and
@@ -251,13 +253,13 @@ class OpticalFlowEffect(BaseEffect):
         return _ensure_uint8(result)
 
 
-# Backward-compat alias: external code and old imports still refer to the
-# optical-flow effect by its historical name.
+# Алиас для обратной совместимости: внешний код и старые импорты
+# продолжают ссылаться на эффект оптического потока по старому имени.
 DatamoshEffect = OpticalFlowEffect
 
 
 class ASCIIEffect(BaseEffect):
-    """Full-frame ASCII art conversion via PIL."""
+    """Полное преобразование кадра в ASCII-арт через PIL."""
     trigger_types = [SegmentType.SUSTAIN, SegmentType.SILENCE, SegmentType.BUILD]
     DEFAULT_CHARSET = '@#%S?*+;:,. '
 

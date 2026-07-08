@@ -1,10 +1,10 @@
-"""Smoke tests for the effect registry.
+"""Смок-тесты реестра эффектов.
 
-Every registered effect must:
-  * appear in EFFECTS exactly once,
-  * produce the correct cfg keys via default_cfg(),
-  * be constructible with default kwargs from build_chain,
-  * survive a 64×64 frame on every SegmentType without raising.
+Каждый зарегистрированный эффект должен:
+  * встречаться в EFFECTS ровно один раз,
+  * давать правильные ключи cfg через default_cfg(),
+  * собираться с дефолтными kwargs в build_chain,
+  * без исключений отрабатывать на кадре 64x64 для любого SegmentType.
 """
 import numpy as np
 import pytest
@@ -49,32 +49,32 @@ def test_find_spec_roundtrip():
 
 
 def test_build_chain_default_subset():
-    """With default cfg, only enabled-by-default effects should appear."""
+    """При дефолтном cfg в цепочке должны быть только включённые по умолчанию эффекты."""
     cfg = default_cfg()
     chain = build_chain(cfg)
     types = {type(c).__name__ for c in chain}
     enabled_default = {s.id for s in EFFECTS
                        if s.enabled_default and s.chain_kind == 'normal'}
-    # Every enabled-default with chain_kind=normal should be present
+    # каждый enabled_default с chain_kind='normal' должен присутствовать
     for spec in EFFECTS:
         if spec.enabled_default and spec.chain_kind == 'normal' and spec.cls is not None:
             assert spec.cls.__name__ in types, f'missing {spec.id} in default chain'
 
 
 def test_build_chain_all_enabled_smoke():
-    """Enable every effect; every one constructed without error."""
+    """Включаем все эффекты - каждый должен собраться без ошибок."""
     cfg = default_cfg()
     for s in EFFECTS:
         if s.enable_key:
             cfg[s.enable_key] = True
-    cfg['overlay_dir'] = ''  # overlay will be skipped (no dir)
+    cfg['overlay_dir'] = ''  # без каталога overlay-эффект будет пропущен
     chain = build_chain(cfg)
-    assert len(chain) >= 30  # most effects active
+    assert len(chain) >= 30  # большинство эффектов активно
 
 
 @pytest.mark.parametrize('seg_type', list(SegmentType))
 def test_chain_runs_on_every_segment_type(seg_type):
-    """Run an all-enabled chain over a 64×64 frame on every SegmentType."""
+    """Прогоняет цепочку со всеми включёнными эффектами на кадре 64x64 для каждого SegmentType."""
     cfg = default_cfg()
     for s in EFFECTS:
         if s.enable_key:

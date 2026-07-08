@@ -23,7 +23,7 @@ void PresetManager::scan_folder(const std::string& folder) {
             names_.push_back(n);
         }
     }
-    // Sort alphabetically
+    // Сортировка по алфавиту
     std::vector<int> idx(names_.size());
     std::iota(idx.begin(), idx.end(), 0);
     std::sort(idx.begin(), idx.end(), [&](int a, int b){return names_[a]<names_[b];});
@@ -44,10 +44,11 @@ bool PresetManager::load(const std::string& path, EngineSettings& out) {
     json j;
     try { f >> j; } catch(...) { return false; }
 
-    // Reset to defaults FIRST so keys absent from this preset don't inherit the
-    // previously-loaded preset's state. Without this, loading preset B after A
-    // leaves A's effects (and params) that B never mentions still active - the
-    // exact "phantom effects / wrong result" bug seen on the Python side.
+    // Сначала сбрасываем на дефолты, чтобы отсутствующие в этом пресете ключи не
+    // наследовали состояние предыдущего загруженного пресета. Без этого загрузка
+    // пресета B после A оставляет активными эффекты (и параметры) из A, которые
+    // B вообще не упоминает - тот самый баг с "эффектами-призраками", что был в
+    // Python-версии.
     out = EngineSettings{};
 
     if (j.contains("chaos"))            out.chaos            = j["chaos"].get<float>();
@@ -77,8 +78,8 @@ bool PresetManager::load(const std::string& path, EngineSettings& out) {
             const char* key = fx_key((FxId)i);
             if (!fx.contains(key)) continue;
             auto& e = fx[key];
-            // Two on-disk shapes are accepted:
-            //   • legacy bool  → just the enabled flag
+            // На диске принимаются два формата:
+            //   • legacy bool  → только флаг enabled
             //   • object       → {enabled,intensity,chance,mode}
             if (e.is_boolean()) {
                 out.fx[i].enabled = e.get<bool>();
@@ -89,7 +90,7 @@ bool PresetManager::load(const std::string& path, EngineSettings& out) {
                 if (e.contains("mode"))      out.fx[i].mode      = e["mode"].get<int>();
             }
         }
-        // Backward compat: old presets used "fx_rgb" → map to fx_derivwarp
+        // Обратная совместимость: старые пресеты использовали "fx_rgb" → мапим на fx_derivwarp
         if (fx.contains("fx_rgb") && !fx.contains("fx_derivwarp") && fx["fx_rgb"].is_boolean())
             out.fx[(int)FxId::DERIVWARP].enabled = fx["fx_rgb"].get<bool>();
     }

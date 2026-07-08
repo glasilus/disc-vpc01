@@ -1,8 +1,9 @@
-"""Frame source: VideoPool over multiple cv2.VideoCapture handles.
+"""Источник кадров: VideoPool поверх нескольких хендлов cv2.VideoCapture.
 
-Still images are supported alongside videos: an image path is wrapped in an
-`ImageCapture` (duck-typed to cv2.VideoCapture) so it joins the pool as a
-frozen clip. Detection is purely by file extension.
+Наряду с видео поддерживаются неподвижные изображения: путь к картинке
+оборачивается в `ImageCapture` (по интерфейсу совместим с cv2.VideoCapture),
+так что она попадает в пул как "замороженный" клип. Определяется это
+исключительно по расширению файла.
 """
 from __future__ import annotations
 
@@ -18,12 +19,12 @@ IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.bmp', '.webp', '.tiff', '.tif'}
 
 
 def is_image(path: str) -> bool:
-    """True if `path` looks like a still image (by extension, case-insensitive)."""
+    """True, если `path` похож на изображение (по расширению, без учёта регистра)."""
     return os.path.splitext(path)[1].lower() in IMAGE_EXTS
 
 
 class VideoPool:
-    """Manages multiple VideoCapture handles; selects randomly per segment."""
+    """Управляет несколькими хендлами VideoCapture; выбор случайный на каждый сегмент."""
 
     def __init__(self, paths: List[str]):
         if not paths:
@@ -39,7 +40,7 @@ class VideoPool:
         for path in paths:
             img = is_image(path)
             if img:
-                cap = ImageCapture(path)     # raises RuntimeError if unreadable
+                cap = ImageCapture(path)     # бросает RuntimeError, если файл не читается
             else:
                 cap = cv2.VideoCapture(path)
                 if not cap.isOpened():
@@ -68,10 +69,10 @@ class VideoPool:
         return self.caps[0], self.fps_list[0], self.total_frames_list[0], self.durations[0]
 
     def first_video_index(self) -> Optional[int]:
-        """Index of the first non-image source, or None if the pool is images-only.
+        """Индекс первого не-изображения в пуле, либо None, если пул состоит только из картинок.
 
-        Passthrough uses this: its contract is 1:1 over a real video (timeline +
-        audio), which a still image cannot provide.
+        Используется passthrough: ему нужно соответствие 1:1 с настоящим видео
+        (таймлайн + звук), а неподвижное изображение этого дать не может.
         """
         for i, img in enumerate(self.is_image_list):
             if not img:

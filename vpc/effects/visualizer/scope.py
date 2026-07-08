@@ -1,13 +1,13 @@
-"""Scope visualizers: oscilloscope waveform and Lissajous XY figures.
+"""Scope-визуализаторы: осциллограф-волна и фигуры Лиссажу.
 
-Both mimic a phosphor CRT scope: a single bright anti-aliased trace with a
-soft bloom around it. The oscilloscope reconstructs a *time-domain waveform*
-from the spectrum (additive synthesis — each band is a harmonic), so a
-bass-heavy moment shows big slow swings and a bright hi-hat shows fast ripple,
-exactly like a real audio scope. The Lissajous holds integer frequency ratios
-so the figure stays a clean closed curve and lets the audio drive its phase
-drift and size instead of its frequencies (non-integer ratios never close and
-degenerate into scribble).
+Оба имитируют люминофорный CRT-осциллограф: одна яркая сглаженная линия с
+мягким свечением вокруг. Осциллограф восстанавливает *волну во временной
+области* из спектра (аддитивный синтез - каждая полоса это гармоника),
+поэтому басовый момент даёт большие плавные качели, а яркий хай-хэт - быструю
+рябь, точь-в-точь как настоящий аудиоосциллограф. Фигура Лиссажу держит
+целочисленные соотношения частот, чтобы кривая оставалась чистой замкнутой
+линией, а звук управляет только дрейфом фазы и размером, а не частотами
+(нецелые соотношения никогда не замыкаются и вырождаются в каракули).
 """
 from __future__ import annotations
 
@@ -18,18 +18,18 @@ from .base import VisualizerEffect
 
 
 def _phosphor(vis: np.ndarray, sigma: float = 3.0, gain: float = 0.7) -> np.ndarray:
-    """Add a soft CRT bloom around a drawn trace (screen-add of a blur)."""
+    """Добавляет мягкое CRT-свечение вокруг нарисованной линии (screen-add размытия)."""
     glow = cv2.GaussianBlur(vis, (0, 0), sigma)
     return cv2.addWeighted(vis, 1.0, glow, gain, 0.0)
 
 
 class OscilloscopeEffect(VisualizerEffect):
-    """Time-domain waveform scope reconstructed from the spectrum.
+    """Осциллограф во временной области, восстановленный из спектра.
 
-    The trace is a full-width, per-pixel waveform built by summing one
-    harmonic per frequency band (amplitude = band magnitude). Its *shape*
-    comes from the spectrum and its *size* from the overall level, so it is
-    never a flat 24-point zig-zag — it reads as an actual oscilloscope.
+    Линия - это волна на всю ширину, попиксельно построенная суммированием
+    одной гармоники на каждую частотную полосу (амплитуда = магнитуда полосы).
+    Её *форма* берётся из спектра, а *размер* - из общего уровня, так что это
+    никогда не плоский зигзаг из 24 точек, а вид настоящего осциллографа.
     """
 
     def __init__(self, color=(60, 255, 120), thickness=2, **kw):
@@ -43,16 +43,17 @@ class OscilloscopeEffect(VisualizerEffect):
         n = max(1, len(bins))
         x = np.linspace(0.0, 1.0, w, dtype=np.float32)
 
-        # Additive reconstruction: band k drives harmonic (k+1). Each harmonic
-        # scrolls at its own rate so the trace drifts and evolves like a scope
-        # not quite locked to the signal.
+        # Аддитивное восстановление: полоса k управляет гармоникой (k+1).
+        # Каждая гармоника скроллится со своей скоростью, поэтому линия
+        # дрейфует и эволюционирует, как осциллограф, не совсем
+        # синхронизированный с сигналом.
         scroll = sample.t * 2.2
         wave = np.zeros(w, np.float32)
         for k in range(n):
             f = k + 1
             wave += bins[k] * np.sin(2.0 * np.pi * f * x + f * scroll)
 
-        # Shape from spectrum (unit amplitude), size from loudness.
+        # Форма из спектра (единичная амплитуда), размер из громкости.
         wave /= (np.abs(wave).max() + 1e-6)
         level = float(np.clip(bins.mean() * 2.5, 0.02, 1.0))
         amp = (h / 2.0 - 2.0) * (0.12 + 0.88 * level)
@@ -66,12 +67,13 @@ class OscilloscopeEffect(VisualizerEffect):
 
 
 class LissajousEffect(VisualizerEffect):
-    """XY Lissajous figure — a clean closed curve that morphs with the music.
+    """XY-фигура Лиссажу - чистая замкнутая кривая, морфящаяся под музыку.
 
-    Frequencies are pinned to a small integer ratio (a : round(ratio)) so the
-    curve always closes; the audio drives the phase drift (how fast it rotates
-    through its family) and the amplitude (how large it breathes), which is the
-    signature XY-scope motion. Amplitude is capped so it never leaves frame.
+    Частоты закреплены на небольшом целочисленном соотношении
+    (a : round(ratio)), так что кривая всегда замкнута; звук управляет
+    дрейфом фазы (скоростью вращения по семейству фигур) и амплитудой
+    (насколько сильно она "дышит") - это и есть характерное движение
+    XY-осциллографа. Амплитуда ограничена, чтобы фигура не выходила за кадр.
     """
 
     def __init__(self, color=(0, 220, 255), ratio=3.0, **kw):
@@ -86,8 +88,8 @@ class LissajousEffect(VisualizerEffect):
 
         a = 2
         b = max(1, int(round(self.ratio)))
-        # Phase drift advances every frame → the figure slowly rotates/morphs.
-        # Bass nudges the drift speed so it surges on hits.
+        # Фаза дрейфует каждый кадр - фигура медленно вращается/морфит.
+        # Бас подталкивает скорость дрейфа, давая всплеск на ударах.
         self._phase += 0.015 + sample.bass * 0.05
         delta = self._phase
 

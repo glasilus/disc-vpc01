@@ -1,4 +1,4 @@
-"""Shared helpers for reading the per-frame AudioSample off a segment."""
+"""Общие хелперы для чтения AudioSample кадра с сегмента."""
 from __future__ import annotations
 
 import numpy as np
@@ -7,12 +7,12 @@ from vpc.analyzer import AudioSample, N_BINS
 
 
 def read_sample(seg) -> AudioSample:
-    """Return the per-frame AudioSample the engine attached, or a fallback.
+    """Возвращает AudioSample, прикреплённый движком к сегменту, либо заглушку.
 
-    The engine sets ``seg.live`` in ``_apply_chain`` before the effect chain
-    runs. When it is absent (e.g. a GUI still-frame preview with no render
-    context) we synthesize a zeroed sample modulated by segment intensity so
-    the visual is never blank.
+    Движок выставляет ``seg.live`` в ``_apply_chain`` перед прогоном цепочки
+    эффектов. Если его нет (например, превью статичного кадра в GUI без
+    контекста рендера), собираем сэмпл на основе intensity сегмента, чтобы
+    визуализация не была пустой.
     """
     live = getattr(seg, 'live', None)
     if live is not None:

@@ -6,8 +6,8 @@
 bool RtEngine::init(int w, int h) {
     width_ = w; height_ = h;
 
-    // Black texture (fallback / blackout). Always 1×1 - we never sample from
-    // it at a specific resolution, only as a uniform color.
+    // Чёрная текстура (fallback / blackout). Всегда 1×1 - мы никогда не сэмплим
+    // из неё по координатам, только как сплошной цвет.
     uint8_t black_px[3] = {0, 0, 0};
     glGenTextures(1, &black_tex_);
     glBindTexture(GL_TEXTURE_2D, black_tex_);
@@ -23,7 +23,7 @@ void RtEngine::set_canvas_size(int w, int h) {
     if (w == width_ && h == height_) return;
     width_ = w; height_ = h;
     fx_.resize(w, h);
-    last_frame_tex_ = 0;  // dimension-dependent refs invalidated
+    last_frame_tex_ = 0;  // ссылка привязана к старому размеру, больше не валидна
 }
 
 void RtEngine::destroy() {
@@ -39,7 +39,7 @@ GLuint RtEngine::process_frame(float dt, EngineSettings& settings) {
     // ── Audio ─────────────────────────────────────────────────────────────────
     last_stats_   = audio_.get_stats();
 
-    // Tap-tempo metronome: OR a synthetic beat onto the audio beat on the grid.
+    // Tap-tempo метроном: подмешиваем синтетический бит по сетке через OR.
     if (metronome && bpm_ > 1.f) {
         beat_phase_ += dt * bpm_ / 60.f;
         if (beat_phase_ >= 1.f) { beat_phase_ -= 1.f; last_stats_.beat = true; }
@@ -50,11 +50,11 @@ GLuint RtEngine::process_frame(float dt, EngineSettings& settings) {
 
     if (blackout) return black_tex_;
 
-    // ── Video frame selection ─────────────────────────────────────────────────
-    // Skip GPU uploads while frozen - otherwise the decoder keeps overwriting
-    // the textures that last_frame_tex_ points to, and the "frozen" image
-    // visibly drifts. Decoder thread will block on the queue when its CPU
-    // buffer fills (~0.1 sec of slack), which is fine.
+    // ── Выбор видеокадра ──────────────────────────────────────────────────────
+    // Пока freeze - не грузим кадры на GPU, иначе декодер продолжит перезаписывать
+    // текстуры, на которые указывает last_frame_tex_, и "замороженная" картинка
+    // будет заметно плыть. Поток декодера просто заблокируется на очереди, когда
+    // забьётся его CPU-буфер (~0.1 сек запаса) - это нормально.
     if (!freeze) pool_.pump_uploads();
 
     GLuint frame_tex = 0;
@@ -66,15 +66,15 @@ GLuint RtEngine::process_frame(float dt, EngineSettings& settings) {
         frame_w   = last_frame_w_;
         frame_h   = last_frame_h_;
     } else if (settings.cut_mode == 0) {
-        // Continuous mode: linear playback of one source, no cuts. Effects
-        // still react to audio. This is what most VJs want when the music
-        // has no clear beat or when they want a steady visual base.
+        // Continuous: линейное воспроизведение одного источника, без склеек.
+        // Эффекты по-прежнему реагируют на аудио. Это то, что нужно большинству
+        // VJ, когда в музыке нет чёткого бита или нужна стабильная визуальная база.
         frame_tex = pool_.get_sequential_frame(width_, height_, &frame_w, &frame_h);
     } else {
-        // Cut mode: random cuts on beats / impacts / drops. cut_interval
-        // gates softer (build / sustain) cuts so they don't feel frantic.
+        // Cut: случайные склейки на битах / импактах / дропах. cut_interval
+        // ограничивает более мягкие склейки (build / sustain), чтобы не мельтешило.
         auto t = last_segment_.type;
-        const float kMinCutSec = 0.030f;  // 30 ms hard-trigger anti-spam (time_since_cut_ is seconds)
+        const float kMinCutSec = 0.030f;  // антиспам для hard-trigger, 30 мс (time_since_cut_ в секундах)
         bool hard_trigger = (t == SegmentType::IMPACT || t == SegmentType::DROP ||
                              last_stats_.beat);
         bool soft_trigger = (t == SegmentType::BUILD ||
@@ -103,16 +103,16 @@ GLuint RtEngine::process_frame(float dt, EngineSettings& settings) {
         }
     }
 
-    // ── Overlay ───────────────────────────────────────────────────────────────
+    // ── Оверлей ───────────────────────────────────────────────────────────────
     if (settings.overlay_intensity <= 0.01f || overlays_.empty()) {
         current_overlay_tex_ = 0;
     } else {
         bool overlay_beat = false;
         if (settings.cut_mode == 0) {
-            // In Continuous Mode: trigger a potential overlay change on beats / impacts
+            // В Continuous: возможная смена оверлея на битах / импактах
             overlay_beat = (last_stats_.beat || last_segment_.type == SegmentType::IMPACT);
         } else {
-            // In Cut Mode: sync overlay changes precisely with video cuts
+            // В Cut: смена оверлея синхронизирована точно со склейками видео
             overlay_beat = trigger_cut;
         }
 
@@ -143,7 +143,7 @@ GLuint RtEngine::process_frame(float dt, EngineSettings& settings) {
     ck.gate_fx   = settings.ck_gate_fx;
     ck.gate_mode = settings.ck_gate_mode;
 
-    // ── Apply effects ─────────────────────────────────────────────────────────
+    // ── Применение эффектов ───────────────────────────────────────────────────
     AspectMode am = (AspectMode)settings.aspect_mode;
     return fx_.apply(
         frame_tex, frame_w, frame_h, am,

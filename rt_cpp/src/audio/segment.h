@@ -12,10 +12,10 @@ enum class SegmentType {
 
 struct Segment {
     SegmentType type     = SegmentType::SILENCE;
-    float       intensity = 0.f;   // 0..1 normalised energy for this segment
+    float       intensity = 0.f;   // нормализованная энергия сегмента, 0..1
 };
 
-// Identical classification logic to Python's make_segment_from_stats()
+// Логика классификации идентична Python-версии make_segment_from_stats()
 Segment classify_segment(const AudioStats& s, float gate_threshold) noexcept;
 
 const char* segment_name(SegmentType t) noexcept;

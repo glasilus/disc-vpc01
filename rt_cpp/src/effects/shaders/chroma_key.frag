@@ -1,14 +1,14 @@
 #version 330 core
 in  vec2 vUV;
 out vec4 FragColor;
-uniform sampler2D uBase;    // video frame
-uniform sampler2D uOverlay; // overlay image (RGBA)
-uniform vec2  uOverlayPos;  // normalised top-left position
-uniform vec2  uOverlaySize; // normalised size
-uniform float uTolerance;   // hue tolerance 0..1
-uniform float uSoftness;    // edge softness 0..1
-uniform vec3  uKeyColor;    // key color in RGB [0..1]
-uniform int   uMode;        // 0=none,1=dominant,2=secondary,3=manual
+uniform sampler2D uBase;    // кадр видео
+uniform sampler2D uOverlay; // изображение оверлея (RGBA)
+uniform vec2  uOverlayPos;  // нормализованная позиция верхнего левого угла
+uniform vec2  uOverlaySize; // нормализованный размер
+uniform float uTolerance;   // допуск по оттенку 0..1
+uniform float uSoftness;    // мягкость края 0..1
+uniform vec3  uKeyColor;    // ключевой цвет в RGB [0..1]
+uniform int   uMode;        // 0=нет,1=доминантный,2=вторичный,3=вручную
 uniform float uOverlayAlpha;
 
 vec3 rgb2hsv(vec3 c) {
@@ -24,7 +24,7 @@ void main() {
     vec4 base = texture(uBase, vUV);
     if (uOverlayAlpha < 0.01) { FragColor = base; return; }
 
-    // Check if this pixel is within the overlay region
+    // Проверяем, попадает ли этот пиксель в область оверлея
     vec2 rel = (vUV - uOverlayPos) / uOverlaySize;
     if (rel.x < 0.0 || rel.x > 1.0 || rel.y < 0.0 || rel.y > 1.0) {
         FragColor = base; return;
@@ -32,16 +32,16 @@ void main() {
 
     vec4 ov = texture(uOverlay, rel);
 
-    // Mask starts from overlay's own alpha. Chroma key further attenuates it
-    // when uMode != 0; with uMode == 0 we composite the overlay normally.
+    // Маска стартует с собственной альфы оверлея. Chroma key дополнительно
+    // ослабляет её при uMode != 0; при uMode == 0 оверлей просто накладывается.
     float mask = ov.a;
     if (uMode != 0) {
         vec3  key_hsv = rgb2hsv(uKeyColor);
         vec3  ov_hsv  = rgb2hsv(ov.rgb);
         float hue_diff = abs(ov_hsv.x - key_hsv.x);
         hue_diff = min(hue_diff, 1.0 - hue_diff);
-        // Pixels close in hue to the key get masked out (alpha → 0);
-        // far pixels stay (alpha → 1).
+        // Пиксели, близкие по оттенку к ключевому, маскируются (alpha → 0);
+        // далёкие остаются (alpha → 1).
         float alpha = smoothstep(uTolerance - uSoftness, uTolerance, hue_diff);
         mask *= alpha;
     }

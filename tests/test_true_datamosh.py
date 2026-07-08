@@ -1,17 +1,18 @@
-"""Tests for the real codec-level datamosh (TrueDatamoshEffect) and for the
-Datamosh -> Optical Flow split.
+"""Тесты настоящего кодекового датамоша (TrueDatamoshEffect) и разделения
+Datamosh -> Optical Flow.
 
-Covered:
-  * registry: old fx_datamosh keys still drive the optical-flow effect
-    (preset backward compatibility), new fx_truemosh keys exist with sane
-    defaults and build into the chain right after Optical Flow;
-  * chain contract: 1 frame in -> 1 frame out, shape and dtype preserved,
-    in every mode;
-  * mosh actually moshes: during a triggered episode the output diverges
-    from the clean input (the stale reference is being dragged), and a
-    non-triggering segment snaps back to a clean passthrough;
-  * stability: the effect never raises through apply() even on degenerate
-    input (tiny frames, odd dimensions, constant colour).
+Покрыто:
+  * реестр: старые ключи fx_datamosh по-прежнему управляют optical-flow
+    эффектом (обратная совместимость пресетов), новые ключи fx_truemosh
+    существуют с разумными дефолтами и встраиваются в цепочку сразу
+    после Optical Flow;
+  * контракт цепочки: 1 кадр на входе -> 1 кадр на выходе, shape и dtype
+    сохраняются в любом режиме;
+  * мош реально мошит: во время сработавшего эпизода вывод расходится с
+    чистым входом (тянется устаревший референс), а несработавший сегмент
+    возвращается к чистому passthrough;
+  * стабильность: apply() не падает даже на вырожденном входе (крошечные
+    кадры, нечётные размеры, однородный цвет).
 """
 from __future__ import annotations
 
@@ -44,7 +45,7 @@ def _scene_b(i: int, h: int = 96, w: int = 128) -> np.ndarray:
     return f
 
 
-# ── registry / preset compatibility ─────────────────────────────────────
+# реестр / совместимость пресетов
 
 def test_old_datamosh_keys_drive_optical_flow():
     spec = find_spec('datamosh')
@@ -53,7 +54,7 @@ def test_old_datamosh_keys_drive_optical_flow():
     assert spec.chance_key == 'fx_datamosh_chance'
     assert spec.cls is OpticalFlowEffect
     assert spec.label == 'Optical Flow'
-    # Alias keeps any external import of the historical name working.
+    # алиас нужен, чтобы внешний импорт старого имени продолжал работать
     assert DatamoshEffect is OpticalFlowEffect
 
 
@@ -71,9 +72,9 @@ def test_true_datamosh_spec_registered():
 
 
 def test_old_preset_config_enables_only_optical_flow():
-    """A preset saved before the split knows nothing about fx_truemosh:
-    overlaying it on registry defaults must enable the optical-flow effect
-    and leave True Datamosh off."""
+    """Пресет, сохранённый до разделения эффектов, ничего не знает про
+    fx_truemosh: наложение его на дефолты реестра должно включить
+    optical-flow и оставить True Datamosh выключенным."""
     cfg = default_cfg()
     cfg.update({'fx_datamosh': True, 'fx_datamosh_chance': 0.8})
     chain = build_chain(cfg)
@@ -89,7 +90,7 @@ def test_both_effects_build_in_order():
     assert names.index('TrueDatamoshEffect') == names.index('OpticalFlowEffect') + 1
 
 
-# ── chain contract ───────────────────────────────────────────────────────
+# контракт цепочки
 
 pytestmark_needs_av = pytest.mark.skipif(not _AV_OK, reason='PyAV missing')
 
@@ -126,12 +127,11 @@ def test_melt_diverges_then_clean_segment_resyncs():
         clean = _scene_b(i)
         out = fx.apply(clean, seg2, draft=True)
         diffs.append(np.abs(out.astype(np.float32) - clean.astype(np.float32)).mean())
-    # The moshed picture must NOT track the clean input: the decoder is
-    # still dragging scene A around.
+    # мошнутая картинка не должна повторять чистый вход: декодер всё ещё
+    # тянет за собой сцену A
     assert max(diffs) > 20.0, f'no melt detected, diffs={diffs}'
 
-    # A segment that fails the trigger gate (chance path bypassed by
-    # setting chance to 0) must return the untouched input frame.
+    # сегмент, не прошедший триггер (chance=0), должен вернуть кадр без изменений
     fx.chance = 0.0
     seg3 = _seg(1.0, 1.5, SegmentType.NOISE)
     clean = _scene_a(0)
@@ -154,7 +154,7 @@ def test_disabled_or_silence_is_passthrough():
 def test_degenerate_input_never_raises():
     fx = TrueDatamoshEffect(enabled=True, chance=1.0, mode='hybrid',
                             bloom_frames=3, crunch=1.0)
-    # Odd dimensions and near-constant colour.
+    # нечётные размеры и почти однородный цвет
     seg1 = _seg(0.0, 0.5, SegmentType.SUSTAIN)
     seg2 = _seg(0.5, 1.0, SegmentType.IMPACT)
     for i in range(3):

@@ -1,17 +1,18 @@
-"""Disc VPC 01 — Tk GUI generated from the effect registry.
+"""Disc VPC 01 - Tk GUI, генерируется из реестра эффектов.
 
-Sections, sliders, checkboxes, tooltips, and the cfg dict are all derived from
-`registry.EFFECTS`. Adding a new effect to the registry makes it appear in the
-GUI automatically — no changes here required.
+Секции, слайдеры, чекбоксы, тултипы и словарь cfg - всё выводится из
+`registry.EFFECTS`. Добавление нового эффекта в реестр делает его видимым
+в GUI автоматически - никаких изменений здесь не требуется.
 
-Backlog support:
-  * Tooltip / [?] popup on every label and slider (item #4) — uses the
-    `tooltip` field on EffectSpec / ParamSpec.
-  * Per-effect "always-on" override (item #1) — each effect's accordion block
-    has an `always` checkbox + intensity slider that bypasses its triggers.
-  * Resolution mode: preset / source / custom (item #2).
-  * Formula effect block (item #3) — same registry mechanism, with a free-form
-    Entry widget for the expression.
+Поддерживаемые возможности:
+  * Тултип / всплывашка [?] на каждой метке и слайдере - использует поле
+    `tooltip` из EffectSpec / ParamSpec.
+  * Переопределение "always-on" для каждого эффекта - у аккордеон-блока
+    каждого эффекта есть чекбокс `always` + слайдер интенсивности, которые
+    обходят его триггеры.
+  * Режим разрешения: preset / source / custom.
+  * Блок формульного эффекта - тот же механизм реестра, со свободным полем
+    Entry для выражения.
 """
 from __future__ import annotations
 
@@ -60,29 +61,30 @@ except Exception:
 
 
 def _wait_file_writable(path: str, timeout: float = 2.0) -> None:
-    """Poll until `path` can be opened for exclusive write, or `timeout` seconds pass.
+    """Ждёт в цикле, пока `path` не откроется для эксклюзивной записи, либо пока не пройдёт `timeout` секунд.
 
-    On Windows 11, cv2.VideoCapture uses the Media Foundation (MSMF) backend
-    which releases the underlying OS file handle asynchronously via MF worker
-    threads after cap.release() is called. This means the handle can remain
-    alive for ~100-200 ms after the Python thread has exited and join()
-    returned. ffmpeg needs GENERIC_WRITE access (no read sharing) to overwrite
-    the file; while MSMF still holds it with FILE_SHARE_READ, that open fails
-    with ERROR_SHARING_VIOLATION. This function retries every 50 ms using the
-    Win32 CreateFile API with dwShareMode=0 (exclusive), which is the most
-    conservative test: if it succeeds, ffmpeg will too.
+    На Windows 11 cv2.VideoCapture использует backend Media Foundation (MSMF),
+    который освобождает нижележащий файловый хендл ОС асинхронно через
+    рабочие потоки MF после вызова cap.release(). Из-за этого хендл может
+    оставаться живым ещё ~100-200 мс после того, как поток Python завершился
+    и join() вернул управление. ffmpeg нужен доступ GENERIC_WRITE (без
+    расшаривания на чтение), чтобы перезаписать файл; пока MSMF всё ещё
+    держит его с FILE_SHARE_READ, такое открытие падает с
+    ERROR_SHARING_VIOLATION. Эта функция повторяет попытку каждые 50 мс через
+    Win32 API CreateFile с dwShareMode=0 (эксклюзивный доступ) - это самая
+    строгая проверка: если она проходит, то и ffmpeg пройдёт.
     """
     if sys.platform != 'win32':
         return
     import ctypes
     k32 = ctypes.windll.kernel32
-    # Set restype explicitly so Python gets a signed 32-bit int back.
-    # Without this, ctypes defaults to c_int anyway, but being explicit
-    # avoids the comparison trap: INVALID_HANDLE_VALUE as c_int is -1,
-    # while ctypes.c_void_p(-1).value on 64-bit is 0xFFFFFFFFFFFFFFFF —
-    # they are not equal as Python ints even though they represent the same
-    # handle, which would make the check silently wrong.
-    k32.CreateFileW.restype = ctypes.c_long  # 32-bit signed; INVALID_HANDLE_VALUE → -1
+    # Явно задаём restype, чтобы Python получал знаковое 32-битное число.
+    # Без этого ctypes и так по умолчанию использует c_int, но явное указание
+    # избегает ловушки сравнения: INVALID_HANDLE_VALUE как c_int равен -1,
+    # а ctypes.c_void_p(-1).value на 64-битной системе - это
+    # 0xFFFFFFFFFFFFFFFF - как числа Python они не равны, хотя представляют
+    # один и тот же хендл, из-за чего проверка тихо сломалась бы.
+    k32.CreateFileW.restype = ctypes.c_long  # знаковое 32-бит; INVALID_HANDLE_VALUE → -1
     GENERIC_WRITE = 0x40000000
     FILE_SHARE_NONE = 0
     OPEN_EXISTING = 3
@@ -96,7 +98,7 @@ def _wait_file_writable(path: str, timeout: float = 2.0) -> None:
             return
         time.sleep(0.05)
 
-# ── Win95 colours ──
+# ── цвета Win95 ──
 C_SILVER = '#C0C0C0'
 C_DARK_GRAY = '#808080'
 C_BLACK = '#000000'
@@ -107,86 +109,92 @@ C_BLUE_LIGHT = '#D0D8F0'
 C_GREEN_DOT = '#00AA00'
 C_RED_BTN = '#CC2222'
 
-# ── TUI palette (FORMULA tab) ──
-C_TUI_BG = '#0A1208'           # deep terminal background
-C_TUI_FG = '#39FF14'           # phosphor green
-C_TUI_DIM = '#1F8C0E'          # dim green for separators / labels
-C_TUI_AMBER = '#FFB000'        # amber for headings / values
-C_TUI_RED = '#FF5555'          # error red
-C_TUI_HL = '#0F1F0A'           # subtle highlight row
+# ── палитра TUI (вкладка FORMULA) ──
+C_TUI_BG = '#0A1208'           # глубокий терминальный фон
+C_TUI_FG = '#39FF14'           # фосфорный зелёный
+C_TUI_DIM = '#1F8C0E'          # приглушённый зелёный для разделителей / меток
+C_TUI_AMBER = '#FFB000'        # янтарный для заголовков / значений
+C_TUI_RED = '#FF5555'          # красный для ошибок
+C_TUI_HL = '#0F1F0A'           # тонкая подсветка строки
 
-# ── Built-in presets ─────────────────────────────────────────────────────
-# Only one entry: Empty. All effects off, all sliders at 0, mystery zeroed,
-# silence_mode = none. Anything beyond that is filled in from default_cfg().
-# Custom presets the user makes through the UI live alongside this entry in
-# presets.json (with builtin=False).
+# ── Встроенные пресеты ─────────────────────────────────────────────────
+# Только одна запись: Empty. Все эффекты выключены, все слайдеры на 0,
+# mystery обнулён, silence_mode = none. Всё остальное подставляется из
+# default_cfg(). Пользовательские пресеты, созданные через UI, живут
+# рядом с этой записью в presets.json (с builtin=False).
 EMPTY_PRESET_NAME = 'Empty'
 PRESETS = {
     EMPTY_PRESET_NAME: {},
 }
 
 
-# ── Effects considered "color-altering" ──────────────────────────────────
-# When the "Hide color effects" checkbox is on, these are force-disabled
-# AND hidden from the EFFECTS accordion. Original states are snapshotted
-# on enable and restored on disable so the user can re-enter the mode
-# without losing their settings.
+# ── Эффекты, считающиеся "меняющими цвет" ────────────────────────────────
+# Когда включён чекбокс "Hide color effects", они принудительно
+# отключаются И скрываются из аккордеона EFFECTS. Исходные состояния
+# сохраняются при включении режима и восстанавливаются при выключении,
+# чтобы пользователь мог повторно войти в режим без потери настроек.
 #
-# The list is curated by the user — these are effects that directly mess
-# with RGB channels or the source palette in a way that breaks "color
-# fidelity" of the input video.
-# Effects that materially break passthrough's 1:1 input→output frame
-# mapping by inserting extra frames into the stream (Stutter duplicates
-# frames, Flash inserts a 1–2 frame strobe, Datamosh swaps to a prebaked
-# I-frame-dropped source). Their blocks are pack_forget()-ed when
-# passthrough mode is on, exactly like COLOR_EFFECT_KEYS does for
-# hide-color-fx, and their cfg flags are forced off so the engine can't
-# accidentally trip them either.
-# Empty: stutter / flash / datamosh now all WORK in passthrough mode.
-#   • Optical Flow (legacy "Datamosh" keys) runs via OpticalFlowEffect
-#     through the regular effect chain — no prebake needed in passthrough.
-#   • True Datamosh (fx_truemosh) is a regular 1-in-1-out chain effect
-#     (in-process codec pair), so it needs no passthrough special-casing.
-#   • Stutter and Flash use REPLACE-mode in the passthrough loop instead
-#     of the cut-mode INSERT-mode: source `cap.grab()` advances the read
-#     pointer normally, but the written frame is overridden with a held
-#     copy (stutter) or a flash colour (flash). Output frame count stays
-#     1:1 with input, so the source audio stays in perfect sync.
-# Left as a tuple constant so the existing snapshot/restore machinery
-# still works if any key is ever re-added.
+# Список подобран вручную - это эффекты, которые напрямую портят RGB-каналы
+# или исходную палитру так, что нарушается "цветовая достоверность"
+# входного видео.
+# Эффекты, которые существенно ломают соответствие входных и выходных
+# кадров 1:1 в режиме passthrough, вставляя в поток лишние кадры (Stutter
+# дублирует кадры, Flash вставляет строб на 1-2 кадра, Datamosh
+# подменяет источник на предзаготовленный с выброшенными I-кадрами). Их
+# блоки скрываются через pack_forget(), когда включён режим passthrough,
+# точно так же, как COLOR_EFFECT_KEYS делает для hide-color-fx, а их
+# флаги cfg принудительно выключаются, чтобы движок тоже не мог случайно
+# их запустить.
+# Сейчас пусто: stutter / flash / datamosh теперь все РАБОТАЮТ в режиме
+# passthrough.
+#   • Optical Flow (старые ключи "Datamosh") идёт через OpticalFlowEffect
+#     по обычной цепочке эффектов - предзаготовка в passthrough не нужна.
+#   • True Datamosh (fx_truemosh) - обычный эффект цепочки 1-в-1-выход
+#     (пара кодеков в процессе), так что особый случай для passthrough
+#     ему тоже не нужен.
+#   • Stutter и Flash в цикле passthrough используют режим REPLACE вместо
+#     режима INSERT с вырезанием: `cap.grab()` источника продвигает
+#     указатель чтения как обычно, но записываемый кадр подменяется
+#     удержанной копией (stutter) или цветом вспышки (flash). Количество
+#     выходных кадров остаётся 1:1 с входными, поэтому звук источника не
+#     теряет синхронизацию.
+# Оставлено как кортеж-константа, чтобы существующий механизм
+# снапшот/восстановление продолжал работать, если какой-то ключ снова
+# добавят.
 PASSTHROUGH_HIDDEN_KEYS = ()
 
 
 COLOR_EFFECT_KEYS = (
-    # Direct colour overwrites / inversions / quantisations.
-    'fx_flash',           # Flash Frame — replaces frame with white/black
-    'fx_negative',        # Negative — 255 - pixel for every channel
-    'fx_bitcrush',        # Bitcrush / Posterize — quantises to 1-7 levels
-    'fx_dither',          # Dithering — Bayer 4x4 quantises palette to 2-16 levels
-    'fx_bsod_shred',      # BSOD Shred — replaces bands with NT-blue + white text
-    # Hue / chroma transforms (palette is recoloured, not preserved).
-    'fx_rgb',             # RGB Shift — chromatic-aberration fringes
-    'fx_colorbleed',      # Color Bleed / VHS Smear — channel blur
-    'fx_temporal_rgb',    # Temporal RGB Shift — R/G/B from different frames
-    'fx_echo',            # Echo Compound — explicit +30 deg hue-shifted echoes
-    'fx_kali',            # Kali Mirror — composite includes 255-pixel inversion
-    'fx_wrong_sub',       # Wrong Chroma Sub — chroma blocks bleed past edges
-    # Aggressive numerical corruptions whose visible signature is colour shifts.
-    'fx_waveshaper',      # Waveshaper — tanh saturation / hue distortion
-    'fx_fft_phase',       # FFT Phase Corrupt — colour interference patterns
-    'fx_dtype_corrupt',   # Dtype Reinterpret — float16 byte view = colour cliffs
-    'fx_bad_signal',      # Bad Signal — randomly coloured vertical noise bars
-    # Forensic / acoustic mappings whose output replaces the source palette.
-    'fx_ela',             # ELA — error-level heat map replaces colours
-    'fx_spatial_reverb',  # Spatial Reverb — convolves rows, palette mixes laterally
-    # Compound effect chain: any of its random sub-effects above.
-    'fx_cascade',         # Glitch Cascade — chains random palette-altering effects
+    # Прямая перезапись цвета / инверсии / квантование.
+    'fx_flash',           # Flash Frame - заменяет кадр белым/чёрным
+    'fx_negative',        # Negative - 255 - пиксель по каждому каналу
+    'fx_bitcrush',        # Bitcrush / Posterize - квантует к 1-7 уровням
+    'fx_dither',          # Dithering - Bayer 4x4 квантует палитру до 2-16 уровней
+    'fx_bsod_shred',      # BSOD Shred - заменяет полосы NT-синим + белым текстом
+    # Трансформации оттенка / цветности (палитра перекрашивается, а не сохраняется).
+    'fx_rgb',             # RGB Shift - хроматические каёмки
+    'fx_colorbleed',      # Color Bleed / VHS Smear - размытие каналов
+    'fx_temporal_rgb',    # Temporal RGB Shift - R/G/B из разных кадров
+    'fx_echo',            # Echo Compound - явные эхо со сдвигом оттенка +30 град
+    'fx_kali',            # Kali Mirror - композит включает инверсию 255-пиксель
+    'fx_wrong_sub',       # Wrong Chroma Sub - блоки цветности выходят за края
+    # Агрессивные числовые искажения, чей видимый эффект - сдвиги цвета.
+    'fx_waveshaper',      # Waveshaper - tanh-насыщение / искажение оттенка
+    'fx_fft_phase',       # FFT Phase Corrupt - цветные интерференционные узоры
+    'fx_dtype_corrupt',   # Dtype Reinterpret - побайтовый вид float16 = цветовые обрывы
+    'fx_bad_signal',      # Bad Signal - случайно окрашенные вертикальные шумовые полосы
+    # Форензик / акустические отображения, чей результат заменяет палитру источника.
+    'fx_ela',             # ELA - тепловая карта уровня ошибок заменяет цвета
+    'fx_spatial_reverb',  # Spatial Reverb - свёртка по строкам, палитра смешивается по горизонтали
+    # Составная цепочка эффектов: любой из случайных под-эффектов выше.
+    'fx_cascade',         # Glitch Cascade - цепочка случайных эффектов, меняющих палитру
 )
 
 
-# ── BSOD palette (FORMULA tab) ───────────────────────────────────────────
-# Classic Win9x bluescreen — high-contrast, monospace. Used when the
-# default Win95-silver theme is too soft to read code against.
+# ── палитра BSOD (вкладка FORMULA) ───────────────────────────────────────
+# Классический синий экран Win9x - высокая контрастность, моноширинный
+# шрифт. Используется, когда стандартная серебристая тема Win95 слишком
+# мягкая, чтобы читать код на её фоне.
 C_BSOD_BG = '#0000AA'
 C_BSOD_FG = '#FFFFFF'
 C_BSOD_ACCENT = '#FFFF55'   # bright yellow for headings / values
@@ -197,7 +205,7 @@ C_BSOD_HL = '#1A1ABB'       # subtle highlight row
 
 # ────────────────────────────────────────────────────────────────────────
 class Tooltip:
-    """Hover tooltip — used on labels, sliders, [?] icons."""
+    """Всплывающая подсказка при наведении - используется на метках, слайдерах, значках [?]."""
     def __init__(self, widget, text):
         self.widget = widget
         self.text = text
@@ -226,9 +234,9 @@ class MainGUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title('Disc VPC 01')
-        # Clamp the initial size to the screen so the window doesn't open larger
-        # than the display (common on laptops / smaller Macs, where a fixed
-        # 1500x900 would spill off-screen and hide controls).
+        # Ограничиваем начальный размер экраном, чтобы окно не открывалось больше
+        # дисплея (частый случай на ноутбуках / небольших Mac, где фиксированные
+        # 1500x900 вылезли бы за границы экрана и скрыли элементы управления).
         try:
             sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
             w, h = min(1500, sw - 80), min(900, sh - 120)
@@ -238,10 +246,11 @@ class MainGUI(tk.Tk):
         self.minsize(900, 700)
         self.configure(bg=C_SILVER)
         self.resizable(True, True)
-        # Window icon (Tk uses iconphoto regardless of OS — covers Linux
-        # WMs and the Tk titlebar on Windows/macOS where the OS-level icon
-        # comes from the bundle/exe). Resource path resolves both the
-        # frozen PyInstaller bundle (sys._MEIPASS) and a dev checkout.
+        # Иконка окна (Tk использует iconphoto независимо от ОС - покрывает
+        # оконные менеджеры Linux и заголовок Tk на Windows/macOS, где
+        # иконка на уровне ОС берётся из бандла/exe). Путь к ресурсу
+        # разрешается и для собранного PyInstaller-бандла (sys._MEIPASS),
+        # и для рабочей копии из репозитория.
         try:
             base = getattr(sys, '_MEIPASS', None) or os.path.dirname(
                 os.path.dirname(os.path.abspath(__file__)))
@@ -258,17 +267,17 @@ class MainGUI(tk.Tk):
         self.temp_preview_path = str(temp_preview_path())
 
         self.progress_var = tk.DoubleVar(value=0)
-        # Audio-mastered preview player (vpc.render.preview_player). Owns its
-        # own worker thread + master clock; the GUI only marshals frames onto
-        # the Tk thread and drives transport. See PreviewPlayer for the sync
-        # design (video is a pure function of the audio clock → no drift).
+        # Плеер предпросмотра, синхронизированный по звуку (vpc.render.preview_player).
+        # Владеет собственным рабочим потоком и мастер-часами; GUI лишь
+        # передаёт кадры в поток Tk и управляет транспортом. Схема синхронизации
+        # описана в PreviewPlayer (видео - чистая функция звуковых часов, без дрейфа).
         self._player = None
         self._audio_wav = None
-        # Cooperative cancellation: GUI sets engine.abort = True from the
-        # main thread; the worker thread reads it. CPython GIL makes plain
-        # attribute writes atomic, so no lock is needed.
+        # Кооперативная отмена: GUI выставляет engine.abort = True из главного
+        # потока; рабочий поток это читает. GIL CPython делает обычную запись
+        # атрибута атомарной, так что блокировка не нужна.
         self.engine = None
-        # Preview-player volume/mute state (applied live via the player).
+        # Состояние громкости/mute плеера предпросмотра (применяется вживую через плеер).
         self._volume = 0.8
         self._volume_pre_mute = 0.8
         self._muted = False
@@ -277,7 +286,7 @@ class MainGUI(tk.Tk):
         self._setup_styles()
         self._setup_vars()
         self._build_ui()
-        self._setup_dnd()          # optional drag-and-drop (tkinterdnd2)
+        self._setup_dnd()          # опциональный drag-and-drop (tkinterdnd2)
         self._load_presets_file()
         self._setup_paint_canvas_trace()
 
@@ -292,9 +301,9 @@ class MainGUI(tk.Tk):
         self.style.map('W95.TButton',
                        background=[('active', '#D6D6D6'), ('disabled', C_SILVER)],
                        relief=[('pressed', 'sunken'), ('active', 'raised')])
-        # Slim variant for cramped strips (e.g. the log Copy/Clear row) —
-        # same Win95 look, minimal padding + smaller font so it doesn't
-        # hog vertical/horizontal space.
+        # Узкий вариант для тесных полос (например, строка Copy/Clear лога) -
+        # тот же вид Win95, минимальные отступы + меньший шрифт, чтобы не
+        # занимать лишнее место по вертикали/горизонтали.
         self.style.configure('W95Thin.TButton', background=C_SILVER,
                              foreground=C_TEXT, relief='raised', borderwidth=1,
                              padding=(2, 0), font=('MS Sans Serif', 8))
@@ -327,15 +336,16 @@ class MainGUI(tk.Tk):
 
     # ─── vars ───
     def _setup_vars(self):
-        """Tk-vars are created from the registry's default_cfg().
+        """Tk-переменные создаются из default_cfg() реестра.
 
-        Side-channel state vars (cut-logic, mystery, export, custom resolution,
-        formula expression, single-segment mode) are added on top.
+        Поверх добавляются вспомогательные переменные состояния (логика
+        нарезки, mystery, экспорт, произвольное разрешение, выражение
+        формулы, режим одного сегмента).
         """
         self.vars = {}
         self._defaults_all = {}
 
-        # Cut-logic + audio analysis
+        # Логика нарезки + анализ звука
         cut_defaults = {
             'chaos_level': 0.6, 'threshold': 1.2, 'transient_thresh': 0.5,
             'min_cut_duration': 0.05, 'scene_buffer_size': 10.0,
@@ -343,31 +353,33 @@ class MainGUI(tk.Tk):
             'use_manual_bpm': False, 'manual_bpm': 120.0,
             'passthrough_mode': False,
         }
-        # Export
+        # Экспорт
         export_defaults = {'fps': 24.0, 'crf': 22.0, 'custom_w': 1280.0, 'custom_h': 720.0}
         # Mystery
         mystery_keys = ('VESSEL', 'ENTROPY_7', 'DELTA_OMEGA', 'STATIC_MIND',
                         'RESONANCE', 'COLLAPSE', 'ZERO', 'FLESH_K', 'DOT')
         mystery_defaults = {f'mystery_{k}': 0.0 for k in mystery_keys}
-        # "Always-on" toggles per mystery knob. Default False — preserves
-        # legacy behaviour bit-identical (mystery golden tests rely on this).
+        # Переключатели "always-on" для каждого mystery-регулятора. По
+        # умолчанию False - сохраняет старое поведение побитово идентичным
+        # (golden-тесты mystery на это опираются).
         mystery_defaults.update({f'always_mystery_{k}': False
                                  for k in mystery_keys})
 
-        # Registry defaults
+        # Значения по умолчанию из реестра
         reg = default_cfg()
 
-        # Per-effect audio-link toggles for passthrough mode. One BooleanVar
-        # per coupled effect; default False so the existing audio path is
-        # bit-identical until the user opts in. The `audio_link_<key>` keys
-        # flow through self.vars and therefore through preset save/load.
+        # Переключатели audio-link для каждого эффекта в режиме passthrough.
+        # По одной BooleanVar на связанный эффект; по умолчанию False, чтобы
+        # существующий аудио-путь оставался побитово идентичным, пока
+        # пользователь сам не включит опцию. Ключи `audio_link_<key>` идут
+        # через self.vars и, соответственно, через сохранение/загрузку пресетов.
         from vpc.audio.pipeline import EFFECT_AUDIO_COUPLING
         audio_link_defaults = {f'audio_link_{k}': False
                                for k in EFFECT_AUDIO_COUPLING.keys()}
 
         defaults = {**cut_defaults, **reg, **export_defaults,
                     **mystery_defaults, **audio_link_defaults}
-        # Composite RGB lists handled via *_r/_g/_b ints below — drop the list keys
+        # Составные RGB-списки обрабатываются через *_r/_g/_b ints ниже - убираем ключи-списки
         for compkey in ('fx_ascii_fg', 'fx_ascii_bg', 'fx_overlay_ck_color'):
             defaults.pop(compkey, None)
 
@@ -380,39 +392,42 @@ class MainGUI(tk.Tk):
                 self.vars[name] = tk.DoubleVar(value=float(val))
         self._defaults_all = dict(defaults)
 
-        # Side-channel string vars: silence + resolution mode + formula text
+        # Вспомогательные строковые переменные: silence + режим разрешения + текст формулы
         self.var_silence_mode = tk.StringVar(value='none')
-        # Hide-color-effects checkbox state + snapshot taken when toggled on
+        # Состояние чекбокса hide-color-effects + снапшот, снимаемый при включении
         self.var_hide_color_fx = tk.BooleanVar(value=False)
         self._color_fx_snapshot: dict = {}
-        # Passthrough snapshot mirrors `_color_fx_snapshot`: stores user's
-        # original choices for keys we force off while passthrough is on.
+        # Снапшот passthrough зеркалит `_color_fx_snapshot`: хранит исходный
+        # выбор пользователя для ключей, которые мы принудительно выключаем,
+        # пока passthrough включён.
         self._passthrough_snapshot: dict = {}
-        # Registry of audio-link Checkbutton holders, populated by
-        # `_build_effect_block` for every spec whose enable_key is in
-        # `EFFECT_AUDIO_COUPLING`. The passthrough_mode trace iterates
-        # this list to pack/unpack all holders in one go when the user
-        # flips passthrough on or off. Each entry: (enable_key, holder_frame).
+        # Реестр держателей чекбоксов audio-link, заполняется
+        # `_build_effect_block` для каждого спека, чей enable_key есть в
+        # `EFFECT_AUDIO_COUPLING`. Трейс passthrough_mode проходит по этому
+        # списку, чтобы одним махом показать/скрыть все держатели, когда
+        # пользователь включает или выключает passthrough. Каждая запись:
+        # (enable_key, holder_frame).
         self._audio_link_holders: list = []
         self.var_resolution_mode = tk.StringVar(value='preset')
         self.var_formula_expr = tk.StringVar(value='frame')
-        # Preview length (seconds) — UI-only, intentionally NOT in self.vars
-        # so it bypasses preset save/load (avoids any compat risk with
-        # existing preset files). Read at render-time via
-        # `_get_preview_seconds()` which clamps to [1, 90].
+        # Длина превью (в секундах) - только для UI, намеренно НЕ в self.vars,
+        # чтобы не проходить через сохранение/загрузку пресетов (избегаем
+        # риска несовместимости с уже существующими файлами пресетов).
+        # Читается во время рендера через `_get_preview_seconds()`, которая
+        # ограничивает диапазоном [1, 90].
         self.var_preview_seconds = tk.IntVar(value=5)
-        # Encoder quality fields. The Quality dropdown is a convenience —
-        # picking a preset writes crf/export_preset/tune below; touching
-        # any of those by hand flips the dropdown to 'Custom'. Manual
-        # editing always wins.
+        # Поля качества кодировщика. Выпадающий список Quality - это удобство:
+        # выбор пресета записывает crf/export_preset/tune ниже; ручное
+        # изменение любого из них переключает список на 'Custom'. Ручное
+        # редактирование всегда имеет приоритет.
         self.var_quality_preset = tk.StringVar(value='High')
         self.var_tune = tk.StringVar(value='none')
-        # Reentrancy guard: set True while a Quality preset is writing
-        # the three managed fields, so their traces don't immediately
-        # bounce the dropdown back to 'Custom'.
+        # Защита от повторного входа: True, пока пресет Quality пишет три
+        # управляемых поля, чтобы их трейсы не отбрасывали список обратно
+        # на 'Custom'.
         self._applying_quality = False
 
-        # Display vars for slider numeric labels
+        # Переменные отображения для числовых меток слайдеров
         self._display_vars = {}
         for name, dvar in self.vars.items():
             if not isinstance(dvar, tk.DoubleVar):
@@ -423,9 +438,9 @@ class MainGUI(tk.Tk):
                         'custom_w', 'custom_h'}
             int_suffixes = ('_r', '_g', '_b', '_lag', '_iters', '_factor',
                             '_frames', '_softness', '_octaves', '_depth')
-            # snap_tolerance is a small float (0.01..0.15) — including
-            # `_tolerance` in int_suffixes was a bug: it forced the slider
-            # display to int(0) and the slider stopped responding.
+            # snap_tolerance - маленькое float-значение (0.01..0.15) - включение
+            # `_tolerance` в int_suffixes было багом: оно принудительно
+            # округляло отображение слайдера до int(0), и слайдер переставал реагировать.
             float_overrides = {'snap_tolerance'}
             is_int = ((name in int_keys
                        or any(name.endswith(s) for s in int_suffixes))
@@ -440,21 +455,22 @@ class MainGUI(tk.Tk):
             _make_trace(dvar, sv, is_int)
 
     # ─── ui ───
-    # Sidebar width is locked: long filenames must NOT be allowed to push
-    # the column wider, otherwise the centre and right panels shrink.
+    # Ширина боковой панели зафиксирована: длинные имена файлов НЕ должны
+    # расширять колонку, иначе центральная и правая панели сожмутся.
     SIDEBAR_W = 260
 
     def _build_ui(self):
-        # weight=0 + uniform group keeps the sidebar at SIDEBAR_W regardless
-        # of label content. The centre and right panels then split the
-        # remaining horizontal space 3:2.
+        # weight=0 + группа uniform удерживают боковую панель на ширине
+        # SIDEBAR_W независимо от содержимого меток. Центральная и правая
+        # панели затем делят оставшееся горизонтальное пространство 3:2.
         self.grid_columnconfigure(0, weight=0, minsize=self.SIDEBAR_W)
         self.grid_columnconfigure(1, weight=3, minsize=400)
         self.grid_columnconfigure(2, weight=2, minsize=300)
         self.grid_rowconfigure(0, weight=1)
 
-        # Sidebar — propagate=False locks its width to SIDEBAR_W even if a
-        # child widget asks for more room (e.g. a 60-char song filename).
+        # Боковая панель - propagate=False фиксирует её ширину на SIDEBAR_W,
+        # даже если дочерний виджет запрашивает больше места (например,
+        # имя файла песни на 60 символов).
         sidebar = ttk.Frame(self, style='W95.TFrame', width=self.SIDEBAR_W)
         sidebar.grid(row=0, column=0, padx=(8, 4), pady=8, sticky='nsew')
         sidebar.grid_propagate(False)
@@ -472,9 +488,10 @@ class MainGUI(tk.Tk):
                                     command=lambda: self.run('draft'),
                                     style='Draft.TButton')
         self.btn_draft.pack(fill='x', pady=2, ipady=4)
-        # Preview length row — sits directly above the PREVIEW button so
-        # the duration control is visually attached to it. fill='x' keeps
-        # the sidebar grid stable; spinbox is right-justified, label left.
+        # Строка длины превью - расположена прямо над кнопкой PREVIEW, чтобы
+        # регулятор длительности визуально был привязан к ней. fill='x'
+        # держит сетку боковой панели стабильной; spinbox выровнен по
+        # правому краю, метка по левому.
         prf = tk.Frame(rf, bg=C_SILVER)
         prf.pack(fill='x', pady=(4, 0))
         tk.Label(prf, text='Preview length (s):', bg=C_SILVER, fg=C_TEXT,
@@ -491,7 +508,7 @@ class MainGUI(tk.Tk):
                                        style='FullRender.TButton')
         self.btn_run_full.pack(fill='x', pady=(4, 2), ipady=6)
 
-        # Center
+        # Центр
         center = ttk.Frame(self, style='W95.TFrame')
         center.grid(row=0, column=1, padx=4, pady=8, sticky='nsew')
         tb_c = tk.Frame(center, bg=C_TITLE_BAR, height=28)
@@ -527,15 +544,15 @@ class MainGUI(tk.Tk):
             self._center_tab_btns[key] = btn
         self._switch_center_tab('EFFECTS')
 
-        # Right panel: preview monitor + transport + render controls + log.
-        # Layout (top → bottom):
-        #   1) Title bar
-        #   2) Preview Monitor (640×360 frame)
-        #   3) Transport strip: Pause / Mute / Volume / Clear-monitor
-        #   4) Render progress bar
-        #   5) CANCEL RENDER (only enabled while a render is running)
-        #   6) Status Log (Clear button is inline with the LabelFrame title
-        #      strip so it doesn't waste a full row).
+        # Правая панель: монитор превью + транспорт + элементы рендера + лог.
+        # Раскладка (сверху вниз):
+        #   1) Заголовок
+        #   2) Preview Monitor (кадр 640×360)
+        #   3) Полоса транспорта: Pause / Mute / Volume / очистка монитора
+        #   4) Прогресс-бар рендера
+        #   5) CANCEL RENDER (активна только пока идёт рендер)
+        #   6) Status Log (кнопка Clear встроена в полосу заголовка
+        #      LabelFrame, чтобы не занимать отдельную строку).
         right = ttk.Frame(self, style='W95.TFrame')
         right.grid(row=0, column=2, padx=(4, 8), pady=8, sticky='nsew')
         tb2 = tk.Frame(right, bg=C_TITLE_BAR, height=28)
@@ -546,7 +563,7 @@ class MainGUI(tk.Tk):
         cr = tk.Frame(right, bg=C_SILVER)
         cr.pack(fill='both', expand=True, padx=2, pady=2)
 
-        # 2) Preview monitor
+        # 2) Монитор превью
         pmon = tk.LabelFrame(cr, text='Preview Monitor (640×360)',
                              bg=C_SILVER, fg=C_TEXT, bd=2, relief='sunken',
                              font=('MS Sans Serif', 10, 'bold'))
@@ -556,9 +573,10 @@ class MainGUI(tk.Tk):
         self.player_label.imgtk = _blank
         self.player_label.pack(padx=4, pady=4)
 
-        # 3) Transport strip — single row, controls scoped to the preview
-        # player (NOT the renderer). Disabled until a preview is loaded;
-        # toggled together by start_playback / stop_and_clear_playback.
+        # 3) Полоса транспорта - одна строка, элементы относятся к плееру
+        # предпросмотра (НЕ к рендереру). Отключена, пока не загружено
+        # превью; включается/выключается вместе через start_playback /
+        # stop_and_clear_playback.
         pc = tk.Frame(cr, bg=C_SILVER)
         pc.pack(fill='x', padx=8, pady=(0, 4))
         self.btn_pause = ttk.Button(pc, text='PAUSE', style='W95.TButton',
@@ -583,25 +601,26 @@ class MainGUI(tk.Tk):
                                             state='disabled')
         self.btn_clear_monitor.pack(side='left')
 
-        # 4) Render progress
+        # 4) Прогресс рендера
         self.progress = ttk.Progressbar(cr, style='green.W95.Horizontal.TProgressbar',
                                         mode='determinate', maximum=100,
                                         variable=self.progress_var)
         self.progress.pack(fill='x', padx=8, pady=(2, 2))
 
-        # 5) Cancel Render — separate, full-width, disabled outside renders.
-        # Sets engine.abort=True (cooperative cancel implemented in
-        # vpc/render/engine.py). NOT the same as the transport X button.
+        # 5) Cancel Render - отдельная кнопка на всю ширину, отключена вне
+        # рендера. Выставляет engine.abort=True (кооперативная отмена
+        # реализована в vpc/render/engine.py). Это НЕ то же самое, что
+        # кнопка X в транспорте.
         self.btn_cancel_render = ttk.Button(
             cr, text='CANCEL RENDER',
             command=self.cancel_render,
             style='Stop.TButton', state='disabled')
         self.btn_cancel_render.pack(fill='x', padx=8, pady=(2, 4), ipady=4)
 
-        # 6) Status log — Clear button sits in a thin top strip above
-        # the Text widget. Using a real frame (not place()) so HiDPI /
-        # theme-engine layout shifts can't push the button over the
-        # log content.
+        # 6) Status log - кнопка Clear в тонкой полосе сверху над виджетом
+        # Text. Используется настоящий frame (а не place()), чтобы сдвиги
+        # раскладки из-за HiDPI / движка темы не могли надвинуть кнопку
+        # на содержимое лога.
         cp = tk.LabelFrame(cr, text='Status Log', bg=C_SILVER, fg=C_TEXT,
                            bd=2, relief='sunken', font=('MS Sans Serif', 10, 'bold'))
         cp.pack(fill='both', expand=True, padx=8, pady=(2, 6))
@@ -621,13 +640,13 @@ class MainGUI(tk.Tk):
                                bg=C_WHITE, fg=C_BLACK, bd=2, relief='sunken')
         self.console.pack(fill='both', expand=True, padx=4, pady=(2, 4))
 
-    # ─── source files / presets / tabs ───
+    # ─── файлы источников / пресеты / вкладки ───
     @staticmethod
     def _shorten_name(name: str, width: int = 28) -> str:
-        """Truncate a filename to `width` characters, ellipsizing the middle.
+        """Обрезает имя файла до `width` символов, ставя многоточие в середине.
 
         `Some_very_long_song_name_2026_master_v3_final_FINAL.mp3` →
-        `Some_very_long…3_final_FINAL.mp3`. Keeps the extension visible.
+        `Some_very_long…3_final_FINAL.mp3`. Расширение остаётся видимым.
         """
         if len(name) <= width:
             return name
@@ -642,8 +661,9 @@ class MainGUI(tk.Tk):
         ar = tk.Frame(fp, bg=C_SILVER); ar.pack(fill='x', padx=6, pady=(4, 0))
         self._audio_dot = tk.Label(ar, text='●', fg='#AAAAAA', bg=C_SILVER, font=('MS Sans Serif', 12))
         self._audio_dot.pack(side='left', padx=(0, 4))
-        # Cached so passthrough mode can disable it: the audio file isn't
-        # used when the engine extracts the source video's own track.
+        # Кэшируется, чтобы режим passthrough мог её отключить: аудиофайл не
+        # используется, когда движок извлекает собственную звуковую дорожку
+        # исходного видео.
         self._audio_btn = ttk.Button(
             ar, text='Load Audio (WAV / MP3)',
             command=self.sel_audio, style='W95.TButton')
@@ -683,11 +703,11 @@ class MainGUI(tk.Tk):
         sb.pack(side='left', fill='y')
         self._presets_listbox.bind('<Double-Button-1>', lambda e: self._load_selected_preset())
 
-        # Three preset action buttons on one row. With `pack(side='left')`
-        # each button auto-sized to its label text, so on the locked-260px
-        # sidebar 'Save Current' ate most of the row and 'Delete' shrank
-        # to a single character. Switching to grid with weight=1 on every
-        # column gives the three buttons exactly one third of the row.
+        # Три кнопки действий с пресетами в одной строке. С `pack(side='left')`
+        # каждая кнопка автоматически подгонялась под текст метки, поэтому на
+        # зафиксированной 260px боковой панели 'Save Current' съедала большую
+        # часть строки, а 'Delete' сжималась до одного символа. Переход на
+        # grid с weight=1 на каждой колонке даёт трём кнопкам ровно треть строки.
         br = tk.Frame(pp, bg=C_SILVER); br.pack(fill='x', padx=4, pady=2)
         for col, (label, cmd) in enumerate([
                 ('Load', self._load_selected_preset),
@@ -715,15 +735,16 @@ class MainGUI(tk.Tk):
         if ab:
             ab.configure(style='ActiveTab.TButton')
 
-    # ─── widgets primitives ───
+    # ─── примитивы виджетов ───
     @staticmethod
     def _parent_bg(parent):
-        """Return the parent's bg colour so child rows match seamlessly.
+        """Возвращает цвет фона родителя, чтобы дочерние строки сливались с ним бесшовно.
 
-        Effect blocks live inside white accordion bodies, but cut-logic /
-        export panels are silver. Hard-coding bg=C_SILVER inside helpers
-        produced visible silver strips on white — the "broken UI" symptom.
-        Reading from the parent makes every helper self-adapting.
+        Блоки эффектов живут внутри белых тел аккордеона, а панели
+        логики нарезки / экспорта - серебристые. Жёстко прописанный
+        bg=C_SILVER внутри хелперов давал видимые серебристые полосы на
+        белом фоне - симптом "сломанного UI". Чтение цвета у родителя
+        делает каждый хелпер самоадаптирующимся.
         """
         try:
             return parent.cget('bg') or C_SILVER
@@ -731,21 +752,21 @@ class MainGUI(tk.Tk):
             return C_SILVER
 
     def _bind_scale_click_jump(self, scale: ttk.Scale):
-        """Make a ttk.Scale jump to the click position AND keep drag working.
+        """Делает так, чтобы ttk.Scale прыгал в точку клика И при этом продолжало работать перетаскивание.
 
-        Default Tk behaviour for ttk.Scale on the `clam` theme is
-        page-step on trough click (the value pings to whichever extreme
-        is closer to the click), which is unusable on continuous sliders.
-        Returning 'break' from the press handler stopped page-step, but
-        also blocked the class binding that normally starts dragging —
-        so dragging stopped working too.
+        Поведение ttk.Scale по умолчанию в теме `clam` при клике по желобу -
+        это page-step (значение скачет к тому краю, что ближе к клику),
+        что неюзабельно для непрерывных слайдеров. Возврат 'break' из
+        обработчика нажатия останавливал page-step, но заодно блокировал
+        привязку класса, которая обычно запускает перетаскивание - так
+        что drag тоже переставал работать.
 
-        The fix is to handle BOTH press and B1-Motion ourselves. Pressing
-        sets the value; subsequent motion with B1 held continues setting
-        the value. Both bindings return 'break' so the page-step class
-        binding never runs. Clicks on the slider thumb still map to the
-        thumb's centre (effectively a no-op on the visual position) and
-        then drag tracks naturally from there.
+        Решение - обрабатывать И press, И B1-Motion самостоятельно. Нажатие
+        задаёт значение; последующее движение с зажатой B1 продолжает его
+        менять. Оба обработчика возвращают 'break', чтобы привязка
+        page-step класса никогда не срабатывала. Клики по ползунку слайдера
+        по-прежнему отображаются в его центр (визуально ничего не меняя),
+        а дальше drag естественным образом продолжает оттуда.
         """
         def _value_from_x(x: int):
             try:
@@ -754,8 +775,8 @@ class MainGUI(tk.Tk):
             except tk.TclError:
                 return None
             w = scale.winfo_width() or 1
-            # Account for the slider thumb's half-width on each side so
-            # clicks at the visible extremes map to lo/hi cleanly.
+            # Учитываем половину ширины ползунка с каждой стороны, чтобы
+            # клики по видимым краям чисто отображались в lo/hi.
             margin = 6
             xc = max(margin, min(w - margin, x))
             frac = (xc - margin) / max(1, w - 2 * margin)
@@ -770,7 +791,7 @@ class MainGUI(tk.Tk):
         scale.bind('<B1-Motion>', _set)
 
     def _row_with_help(self, parent, text, tooltip='', mono=False):
-        """Label + small [?] help icon to the right; both carry the tooltip."""
+        """Метка + маленький значок справки [?] справа; оба несут тултип."""
         bg = self._parent_bg(parent)
         row = tk.Frame(parent, bg=bg)
         row.pack(fill='x', padx=(8, 8), pady=(2, 0))
@@ -786,14 +807,14 @@ class MainGUI(tk.Tk):
         return row
 
     def _row_with_help_popup(self, parent, text, short_tip, full_text, mono=False):
-        """Like _row_with_help, but the [?] icon opens a modal popup with
-        the full text instead of relying on the hover tooltip alone.
+        """Как _row_with_help, но значок [?] открывает модальное окно с
+        полным текстом вместо одной лишь всплывающей подсказки.
 
-        Used for fields whose explanation is too long to fit a hover
-        tooltip without overflowing the screen (Codec is the canonical
-        case — bilingual EN/RU description with hardware-encoder caveats).
-        Hover still shows a short one-line summary so the user has a hint
-        without having to click.
+        Используется для полей, чьё объяснение слишком длинное для
+        всплывающей подсказки без переполнения экрана (Codec - типичный
+        случай - двуязычное EN/RU описание с оговорками про аппаратные
+        кодировщики). Наведение по-прежнему показывает короткую однострочную
+        сводку, чтобы у пользователя была подсказка без клика.
         """
         bg = self._parent_bg(parent)
         row = tk.Frame(parent, bg=bg)
@@ -801,8 +822,8 @@ class MainGUI(tk.Tk):
         f = ('Courier New', 9, 'bold') if mono else ('MS Sans Serif', 9)
         lbl = tk.Label(row, text=text, bg=bg, fg=C_TEXT, font=f, anchor='w')
         lbl.pack(side='left')
-        # Distinct cursor + tinted background so the icon visibly differs
-        # from the plain-tooltip [?] — signals "click for more".
+        # Отдельный курсор + подкрашенный фон, чтобы значок заметно отличался
+        # от обычного [?] с тултипом - сигнализирует "кликни для подробностей".
         help_lbl = tk.Label(row, text='[ ? ]', bg='#E8E8FF', fg='#1A1A80',
                             cursor='hand2', bd=1, relief='raised',
                             font=('MS Sans Serif', 8, 'bold'),
@@ -815,13 +836,13 @@ class MainGUI(tk.Tk):
         return row
 
     def _open_help_popup(self, title, body):
-        """Modal-ish popup with scrollable body. Uses Toplevel + transient
-        + grab so it floats above the main window without true OS-modal
-        blocking (Tk's grab_set is enough for a help dialog).
+        """Псевдо-модальное окно с прокручиваемым телом. Использует Toplevel +
+        transient + grab, чтобы оно плавало над главным окном без настоящей
+        ОС-модальности (grab_set у Tk достаточно для окна справки).
 
-        Sized to ~600x460 with vertical scrollbar — fits any screen down
-        to 800x600 and avoids the screen-overflow problem of the long
-        hover tooltips this replaces.
+        Размер ~600x460 с вертикальной прокруткой - помещается на любом
+        экране от 800x600 и избегает проблемы переполнения экрана, которая
+        была у длинных всплывающих подсказок, которые это окно заменяет.
         """
         win = tk.Toplevel(self)
         win.title(f'Help — {title}')
@@ -829,14 +850,14 @@ class MainGUI(tk.Tk):
         win.transient(self)
         win.geometry('600x460')
         win.resizable(True, True)
-        # Title bar (Win95-themed, matches the rest of the app).
+        # Заголовок (в стиле Win95, соответствует остальному приложению).
         tb = tk.Frame(win, bg=C_TITLE_BAR, height=24)
         tb.pack(fill='x')
         tk.Label(tb, text=title, fg=C_WHITE, bg=C_TITLE_BAR,
                  font=('MS Sans Serif', 10, 'bold')).pack(side='left',
                                                            padx=6, pady=2)
-        # Body: Text + Scrollbar (Text rather than Label so users can
-        # select / copy snippets like codec names).
+        # Тело: Text + Scrollbar (Text, а не Label, чтобы пользователь мог
+        # выделять / копировать фрагменты вроде названий кодеков).
         body_frame = tk.Frame(win, bg=C_SILVER)
         body_frame.pack(fill='both', expand=True, padx=8, pady=(8, 0))
         sb = ttk.Scrollbar(body_frame, orient='vertical')
@@ -849,13 +870,13 @@ class MainGUI(tk.Tk):
         sb.configure(command=txt.yview)
         txt.insert('1.0', body)
         txt.configure(state='disabled')
-        # Close button + Esc binding for keyboard exit.
+        # Кнопка Close + привязка Esc для выхода с клавиатуры.
         bottom = tk.Frame(win, bg=C_SILVER)
         bottom.pack(fill='x', padx=8, pady=8)
         ttk.Button(bottom, text='Close', style='W95.TButton',
                    width=10, command=win.destroy).pack(side='right')
         win.bind('<Escape>', lambda _e: win.destroy())
-        # Center over the parent window.
+        # Центрируем поверх родительского окна.
         win.update_idletasks()
         try:
             px = self.winfo_rootx() + (self.winfo_width() - win.winfo_width()) // 2
@@ -868,7 +889,7 @@ class MainGUI(tk.Tk):
         return win
 
     def _slider(self, parent, name, lo, hi, indent=False):
-        """Standalone slider with header showing live numeric value."""
+        """Отдельный слайдер с заголовком, показывающим текущее числовое значение."""
         pad = 20 if indent else 8
         bg = self._parent_bg(parent)
         f = tk.Frame(parent, bg=bg)
@@ -892,38 +913,40 @@ class MainGUI(tk.Tk):
         cb = ttk.Combobox(f, values=values, textvariable=self.vars[name],
                           style='W95.TCombobox', width=14)
         cb.pack(side='left')
-        # Track by cfg key + remember the full choice list so modes like
-        # hide-color-fx can temporarily restrict the options and restore.
+        # Отслеживаем по ключу cfg + запоминаем полный список вариантов,
+        # чтобы такие режимы, как hide-color-fx, могли временно ограничить
+        # опции и потом восстановить их.
         cb._sb_full_values = list(values)
         if not hasattr(self, '_combos'):
             self._combos = {}
         self._combos[name] = cb
         return f
 
-    # ─── conditional enable / position-preserving repack helpers ───
-    # Two-tier UX: HIDE for "this whole control group is irrelevant in
-    # the current mode" (effect block when its enable_key is OFF, or
-    # any PASSTHROUGH_HIDDEN_KEYS entry) and DISABLE-grey for
-    # "this control still belongs here but its parent flag pinned its
-    # value" (chance slider while `always` is ON, BPM entry while
-    # snap-to-beat is OFF). Disable cascades naturally: a predicate of
-    # the form `lambda: a.get() and b.get()` is enabled only when both
-    # parents are truthy.
+    # ─── хелперы условного включения / repack с сохранением позиции ───
+    # Двухуровневый UX: HIDE для "вся эта группа элементов неактуальна в
+    # текущем режиме" (блок эффекта, когда его enable_key выключен, или
+    # любая запись PASSTHROUGH_HIDDEN_KEYS) и DISABLE-серый для "этот
+    # элемент управления всё ещё здесь уместен, но родительский флаг
+    # зафиксировал его значение" (слайдер chance, пока `always` включён,
+    # поле BPM, пока snap-to-beat выключен). Disable каскадируется
+    # естественно: предикат вида `lambda: a.get() and b.get()` включён,
+    # только когда истинны оба родителя.
 
     _SKIP_RECOLOR_TEXTS = ('[?]', '[ ? ]')
 
     def _set_widget_enabled(self, w, enabled: bool):
-        """Recursively grey/ungrey a Tk subtree (skips help-icon labels).
+        """Рекурсивно делает серым/не-серым поддерево Tk (пропускает метки-значки справки).
 
-        Uses a per-widget cache (`_sb_enabled` attribute) so a no-op call
-        skips the underlying configure/state/cget round-trip — important
-        because preset apply fires every effect's traces in a tight burst,
-        which used to walk every label/slider tree on every write.
+        Использует покомпонентный кэш (атрибут `_sb_enabled`), чтобы
+        холостой вызов пропускал обращение к configure/state/cget - это
+        важно, потому что применение пресета залпом вызывает трейсы всех
+        эффектов, и раньше это заставляло обходить всё дерево меток/слайдеров
+        на каждой записи.
         """
         prev = getattr(w, '_sb_enabled', None)
         if prev is enabled:
-            # Children already in the desired state too: subtree-wide cache
-            # invariant means no recursion needed.
+            # Дочерние элементы уже в нужном состоянии тоже: инвариант кэша
+            # на всё поддерево означает, что рекурсия не нужна.
             return
         cls = w.winfo_class()
         try:
@@ -943,9 +966,10 @@ class MainGUI(tk.Tk):
             self._set_widget_enabled(child, enabled)
 
     def _bind_dep(self, widgets, predicate, watch_vars):
-        """Tie `widgets` enabled-state to `predicate()`, re-evaluated
-        whenever any var in `watch_vars` is written. Applies once
-        immediately so layout matches current var values.
+        """Привязывает включённое состояние `widgets` к `predicate()`,
+        переоцениваемому при каждой записи в любую переменную из
+        `watch_vars`. Применяется сразу один раз, чтобы раскладка
+        соответствовала текущим значениям переменных.
         """
         targets = list(widgets)
         def _apply(*_a):
@@ -957,11 +981,11 @@ class MainGUI(tk.Tk):
         _apply()
 
     def _snapshot_pack_order(self, parent):
-        """Snapshot a parent's child order AND each child's original pack
-        options, so `_repack_in_order` can restore a hidden child to both
-        its original slot and its original geometry (padx/pady/anchor/side).
-        Without the options snapshot, re-packed sliders lost their indent and
-        snapped flush to the left edge.
+        """Сохраняет снапшот порядка дочерних элементов родителя И исходные
+        параметры pack каждого из них, чтобы `_repack_in_order` мог вернуть
+        скрытый дочерний элемент и на исходное место, и с исходной геометрией
+        (padx/pady/anchor/side). Без снапшота параметров перепакованные
+        слайдеры теряли отступ и прижимались к левому краю.
         """
         children = list(parent.winfo_children())
         parent._sb_initial_order = children
@@ -977,16 +1001,17 @@ class MainGUI(tk.Tk):
         parent._sb_pack_info = info
 
     def _repack_in_order(self, widget, order, **pack_kw):
-        """Re-pack `widget` so it lands at its original position from
-        `order` (a snapshot of its parent's children taken at build) AND with
-        its original pack options (preserved in `_sb_pack_info`). Walks
-        `order` forward from `widget`'s slot to find the next currently-mapped
-        sibling and packs `before=` it. Falls back to plain pack (end) if
-        nothing later is visible. Explicit `pack_kw` overrides the snapshot.
+        """Перепаковывает `widget` так, чтобы он оказался на исходной позиции
+        из `order` (снапшот дочерних элементов родителя, снятый при сборке) И
+        с исходными параметрами pack (сохранены в `_sb_pack_info`). Проходит
+        по `order` вперёд от слота `widget`, чтобы найти следующего сейчас
+        видимого соседа, и пакует с `before=` этим соседом. Если дальше ничего
+        не видно, откатывается к обычному pack (в конец). Явный `pack_kw`
+        переопределяет снапшот.
 
-        Fixes the bug where pack_forget'd widgets always reappeared at
-        the bottom of their parent (passthrough cut-widgets, color-fx
-        hidden effect blocks).
+        Исправляет баг, при котором виджеты после pack_forget всегда
+        оказывались снизу своего родителя (cut-виджеты passthrough, скрытые
+        блоки эффектов color-fx).
         """
         parent = widget.master
         info_map = getattr(parent, '_sb_pack_info', None)
@@ -1014,22 +1039,22 @@ class MainGUI(tk.Tk):
         outer = tk.Frame(parent, bg=C_SILVER)
         outer.pack(fill='both', expand=True)
 
-        # Registries the navigation contract reads from. Initialised before
-        # any group/block is built (both _acc_group and _build_effect_block
-        # write into them).
+        # Реестры, которые читает навигационный контракт. Инициализируются до
+        # построения любой группы/блока (в них пишут и _acc_group, и
+        # _build_effect_block).
         self._acc_groups: dict = {}
         self._effect_block_group: dict = {}
         self._fx_filter_group_snapshot = None
-        # Desired filter-visibility per block, tracked independently of
-        # winfo_ismapped (which also reports False when the group is merely
-        # collapsed — two separate concerns). Blocks start packed → True.
+        # Желаемая видимость блока по фильтру, отслеживается отдельно от
+        # winfo_ismapped (который тоже возвращает False, если просто свёрнута
+        # группа - это разные вещи). Блоки стартуют упакованными → True.
         self._block_visible: dict = {}
         self._combos: dict = {}
         self._build_search_index()
 
-        # Top navigation bar (search / filters / jump-to chips). Replaces the
-        # old single-checkbox toolbar; the Hide color-altering switch now
-        # lives inside it.
+        # Верхняя панель навигации (поиск / фильтры / переход по группам).
+        # Заменяет старый тулбар с одним чекбоксом; переключатель
+        # Hide color-altering теперь живёт внутри неё.
         self._build_effects_navbar(outer)
 
         canvas = tk.Canvas(outer, bg=C_SILVER, highlightthickness=0)
@@ -1040,11 +1065,12 @@ class MainGUI(tk.Tk):
         cf = tk.Frame(canvas, bg=C_SILVER)
         cf_window = canvas.create_window((0, 0), window=cf, anchor='nw')
 
-        # Recompute scrollregion AND clamp the current view to it.
-        # Debounced via a single after_idle slot so multiple <Configure>
-        # events (cf + canvas + accordion toggles can all fire in the same
-        # tick) coalesce into one refresh — was producing visible
-        # "doubling" / scrollbar-thumb-flicker on every group expansion.
+        # Пересчитывает scrollregion И подтягивает текущий просмотр в его
+        # границы. Дебаунсится через один слот after_idle, чтобы несколько
+        # событий <Configure> (cf + canvas + переключение аккордеона могут
+        # сработать в один тик) схлопывались в одно обновление - иначе было
+        # заметное "задвоение" / мерцание бегунка скроллбара при каждом
+        # раскрытии группы.
         _scroll_state = {'pending': False, 'last_w': -1}
 
         def _do_refresh():
@@ -1072,9 +1098,10 @@ class MainGUI(tk.Tk):
         cf.bind('<Configure>', _refresh_scrollregion)
 
         def _on_canvas_configure(e):
-            # Only re-stretch the inner frame when width actually changed —
-            # itemconfig on the same width still triggers a <Configure>
-            # cascade that fed back into refresh and caused the flicker.
+            # Растягиваем внутренний фрейм заново только если ширина
+            # реально изменилась - itemconfig с той же шириной всё равно
+            # порождает каскад <Configure>, который питал обновление
+            # и вызывал мерцание.
             if e.width != _scroll_state['last_w']:
                 _scroll_state['last_w'] = e.width
                 canvas.itemconfig(cf_window, width=e.width)
@@ -1082,28 +1109,28 @@ class MainGUI(tk.Tk):
         canvas.bind('<Configure>', _on_canvas_configure)
         self._effects_refresh_scroll = _refresh_scrollregion
 
-        # Mousewheel scroll only when pointer is over this canvas. Using
-        # bind_all is the only reliable way to catch wheel events that
-        # children would otherwise swallow; pair it with Enter/Leave so
-        # the global handler is only attached while the pointer is here.
+        # Прокрутка колесом мыши только когда курсор над этим канвасом.
+        # bind_all - единственный надёжный способ поймать события колеса,
+        # которые иначе поглотили бы дочерние виджеты; паруем с Enter/Leave,
+        # чтобы глобальный обработчик висел только пока курсор здесь.
         def _wheel(e):
             canvas.yview_scroll(int(-1 * (e.delta / 120)), 'units')
         canvas.bind('<Enter>', lambda e: canvas.bind_all('<MouseWheel>', _wheel))
         canvas.bind('<Leave>', lambda e: canvas.unbind_all('<MouseWheel>'))
 
-        # Canvas refs the navigation contract uses for scroll_to_group.
+        # Ссылки на канвас, которые использует контракт навигации для scroll_to_group.
         self._effects_canvas = canvas
         self._effects_cf = cf
 
-        # Track per-effect block frames so the color-fx hide toggle can
-        # pack_forget / pack them again without rebuilding the whole tree.
+        # Учёт фреймов каждого блока эффекта, чтобы переключатель color-fx hide мог
+        # делать pack_forget / pack заново без пересборки всего дерева.
         self._effect_block_frames: dict = {}
 
-        # CUT LOGIC group — manual fields (these are not effects, but cfg knobs)
+        # Группа CUT LOGIC - вручную заданные поля (это не эффекты, а настройки cfg)
         body = self._acc_group(cf, 'CUT LOGIC', open=True)
         self._build_cut_logic(body)
 
-        # Generated effect groups
+        # Сгенерированные группы эффектов
         by_group = {}
         for spec in EFFECTS:
             by_group.setdefault(spec.group, []).append(spec)
@@ -1125,31 +1152,31 @@ class MainGUI(tk.Tk):
                 self._effect_block_group[s.enable_key] = title
             if group_name == 'OVERLAYS':
                 self._build_overlay_dir_picker(body)
-            # Snapshot child order + pack options so passthrough/color-fx
-            # restoration re-packs hidden blocks back into their original
-            # slots (and geometry) instead of dumping them at the end.
+            # Снимок порядка детей + опций pack, чтобы восстановление
+            # passthrough/color-fx возвращало скрытые блоки на их исходные
+            # места (и геометрию), а не сваливало их в конец.
             self._snapshot_pack_order(body)
 
-        # Apply current hide-color-fx state to freshly built blocks.
+        # Применяем текущее состояние hide-color-fx к только что собранным блокам.
         if self.var_hide_color_fx.get():
             self._apply_hide_color_fx(active=True, take_snapshot=False)
-        # Same for passthrough — if the checkbox was already on (e.g. loaded
-        # from a saved preset), make sure the frame-inserting effect blocks
-        # are hidden right after they're built.
+        # То же для passthrough - если чекбокс уже был включён (например,
+        # загружен из сохранённого пресета), убеждаемся, что блоки
+        # вставляющих кадры эффектов скрыты сразу после сборки.
         if self.vars.get('passthrough_mode') and self.vars['passthrough_mode'].get():
             self._apply_passthrough_hide(active=True, take_snapshot=False)
 
-        # Settle visibility through the single source of truth so any active
-        # search / active-only filter is reflected on a fresh rebuild.
+        # Устанавливаем видимость через единый источник истины, чтобы
+        # активный поиск / фильтр "только активные" отражались при пересборке.
         self._recompute_block_visibility()
 
-    # ─── navigation: search index, navbar, contract, visibility ───
+    # ─── навигация: индекс поиска, панель, контракт, видимость ───
     def _build_search_index(self):
-        """Build a lower-cased haystack per effect for the unified search.
+        """Строит для каждого эффекта строку поиска в нижнем регистре.
 
-        Indexes the effect's display name, its tooltip, and every parameter
-        label + tooltip — so a query matches "as in Google" across name AND
-        descriptions, not just the title.
+        Индексирует отображаемое имя эффекта, его подсказку и подписи +
+        подсказки всех параметров - чтобы запрос совпадал "как в Google"
+        по имени И по описаниям, а не только по заголовку.
         """
         self._search_index: dict = {}
         for spec in EFFECTS:
@@ -1161,18 +1188,18 @@ class MainGUI(tk.Tk):
                 str(x) for x in parts if x).lower()
 
     def _build_effects_navbar(self, parent):
-        """Sticky navigation bar over the effects accordion.
+        """Прилипающая панель навигации над аккордеоном эффектов.
 
-        Pure view controller: it owns its tk Variables and drives the
-        accordion exclusively through the navigation contract
+        Чистый view-контроллер: владеет своими tk-переменными и управляет
+        аккордеоном исключительно через контракт навигации
         (_recompute_block_visibility / expand_all_groups / scroll_to_group).
-        It never touches effect cfg vars, so it cannot affect what a preset
-        serialises.
+        Никогда не трогает cfg-переменные эффектов, поэтому не может
+        повлиять на то, что сериализуется в пресет.
         """
         bar = tk.Frame(parent, bg=C_SILVER, bd=1, relief='groove')
         bar.pack(fill='x', side='top', padx=4, pady=(4, 2))
 
-        # Row 1 — search box + filter toggles + collapse/expand.
+        # Строка 1 - поле поиска + переключатели фильтров + свернуть/развернуть.
         row1 = tk.Frame(bar, bg=C_SILVER)
         row1.pack(fill='x', padx=4, pady=(4, 2))
 
@@ -1184,7 +1211,7 @@ class MainGUI(tk.Tk):
         ent.pack(side='left', padx=(0, 2))
         self.var_fx_search.trace_add(
             'write', lambda *_: self._recompute_block_visibility())
-        # Esc clears the query (mirrors the ✕ button) — a familiar reset.
+        # Esc очищает запрос (дублирует кнопку ✕) - привычный сброс.
         ent.bind('<Escape>', lambda e: self.var_fx_search.set(''))
         clr = tk.Button(row1, text='✕', bg=C_SILVER, fg=C_TEXT,
                         relief='raised', bd=1, padx=2, pady=0,
@@ -1205,7 +1232,7 @@ class MainGUI(tk.Tk):
                              variable=self.var_fx_active_only,
                              style='W95.TCheckbutton')
         ao.pack(side='left', padx=6)
-        # trace (not command=) so programmatic changes also recompute.
+        # trace (а не command=), чтобы программные изменения тоже пересчитывались.
         self.var_fx_active_only.trace_add(
             'write', lambda *_: self._recompute_block_visibility())
         Tooltip(ao,
@@ -1231,10 +1258,11 @@ class MainGUI(tk.Tk):
                 'RGB-каналы исходника. Состояния сохраняются и '
                 'восстанавливаются при снятии галочки.')
 
-        # Row 2 — compact "jump to group" dropdown + collapse/expand toggle.
-        # A flat row of chips would overflow the panel once enough groups
-        # exist, so a single menubutton lists every group and scales without
-        # eating width. The collapse toggle lives here too, on the same level.
+        # Строка 2 - компактный выпадающий список "перейти к группе" +
+        # переключатель свернуть/развернуть. Плоский ряд чипов переполнил
+        # бы панель при достаточном числе групп, поэтому один menubutton
+        # перечисляет все группы и не съедает ширину. Переключатель
+        # сворачивания живёт здесь же, на том же уровне.
         row2 = tk.Frame(bar, bg=C_SILVER)
         row2.pack(fill='x', padx=4, pady=(0, 4))
 
@@ -1292,7 +1320,7 @@ class MainGUI(tk.Tk):
                 'Jump to and expand any effect group.\n──\n'
                 'Перейти к любой группе эффектов и раскрыть её.')
 
-    # ─── navigation contract (driven by the navbar) ───
+    # ─── контракт навигации (управляется панелью) ───
     def expand_group(self, title):
         h = self._acc_groups.get(title)
         if h is not None:
@@ -1317,7 +1345,7 @@ class MainGUI(tk.Tk):
         if h is None or canvas is None:
             return
         self.expand_group(title)
-        # Highlight the chip's target so the user sees where they landed.
+        # Даём геометрии обновиться, чтобы bbox ниже был точным.
         self.update_idletasks()
         bbox = canvas.bbox('all')
         if not bbox:
@@ -1327,18 +1355,18 @@ class MainGUI(tk.Tk):
         canvas.yview_moveto(min(1.0, y / total))
 
     def _recompute_block_visibility(self):
-        """Single source of truth for which effect blocks are mapped.
+        """Единый источник истины для того, какие блоки эффектов показаны.
 
-        Every hiding mechanism feeds into this one decision instead of each
-        calling pack_forget/repack on its own:
+        Каждый механизм скрытия сводится к этому одному решению вместо
+        того, чтобы каждый сам вызывал pack_forget/repack:
 
             visible = not hidden_by_color_fx and not hidden_by_passthrough
                       and matches_search and (not active_only or enabled)
 
-        Semantics (forcing vars off, snapshot/restore) still live in the
-        color-fx / passthrough handlers; this method owns only *view*. Because
-        it never writes cfg vars, presets stay byte-identical regardless of
-        what is filtered out.
+        Семантика (принудительное выключение переменных, снимок/восстановление)
+        по-прежнему живёт в обработчиках color-fx / passthrough; этот метод
+        владеет только *отображением*. Так как он никогда не пишет cfg-переменные,
+        пресеты остаются побайтово идентичными независимо от того, что отфильтровано.
         """
         if not hasattr(self, '_effect_block_frames'):
             return
@@ -1362,8 +1390,9 @@ class MainGUI(tk.Tk):
             enabled = bool(self.vars[key].get()) if key in self.vars else False
             visible = (not hidden_color and not hidden_pass and matches
                        and (not active_only or enabled))
-            # Compare against tracked desired-state, NOT winfo_ismapped — a
-            # block in a collapsed group is unmapped yet still filter-visible.
+            # Сравниваем с отслеживаемым желаемым состоянием, а НЕ с
+            # winfo_ismapped - блок в свёрнутой группе не отображён, но
+            # всё ещё видим для фильтра.
             prev = self._block_visible.get(key, True)
             if visible and not prev:
                 order = getattr(blk.master, '_sb_initial_order', None)
@@ -1377,15 +1406,16 @@ class MainGUI(tk.Tk):
             if visible:
                 groups_with_visible.add(self._effect_block_group.get(key))
 
-        # While filtering, drive group open-state to follow matches and
-        # snapshot the user's manual state so it is restored on clear. This
-        # mirrors the snapshot/restore idiom the hide-toggles already use.
+        # Пока идёт фильтрация, состояние открытости групп следует за
+        # совпадениями, а ручное состояние пользователя сохраняется, чтобы
+        # восстановиться при очистке. Это тот же приём снимок/восстановление,
+        # что уже используют переключатели скрытия.
         if filtering:
             if self._fx_filter_group_snapshot is None:
                 self._fx_filter_group_snapshot = {
                     t: h.is_open() for t, h in self._acc_groups.items()}
             for title, h in self._acc_groups.items():
-                # CUT LOGIC holds no effect blocks — leave it as the user set.
+                # В CUT LOGIC нет блоков эффектов - оставляем как задал пользователь.
                 if title == 'CUT LOGIC':
                     continue
                 h.set_open(title in groups_with_visible, refresh=False)
@@ -1421,15 +1451,16 @@ class MainGUI(tk.Tk):
         if open:
             body.pack(fill='x')
 
-        # Open-state is tracked explicitly, NOT read back from
-        # winfo_ismapped — the latter is stale between pack()/pack_forget()
-        # and the event loop catching up, which makes rapid programmatic
-        # toggles (filter restore → collapse_all) misfire.
+        # Состояние открытости отслеживается явно, а НЕ читается обратно из
+        # winfo_ismapped - последний устаревает между pack()/pack_forget() и
+        # обработкой цикла событий, из-за чего быстрые программные
+        # переключения (восстановление фильтра → collapse_all) сбоят.
         state = {'open': bool(open)}
 
-        # `set_open` is the single primitive both the user toggle and the
-        # navigation contract (expand_group / collapse_all / scroll_to_group)
-        # drive — so programmatic and manual expansion stay byte-identical.
+        # `set_open` - единственный примитив, которым управляют и ручное
+        # переключение пользователем, и контракт навигации
+        # (expand_group / collapse_all / scroll_to_group) - так программное
+        # и ручное раскрытие остаются побайтово идентичными.
         def _set_open(open_, *, refresh=True):
             open_ = bool(open_)
             if open_ == state['open']:
@@ -1467,29 +1498,29 @@ class MainGUI(tk.Tk):
         self._acc_groups[title] = handle
         return body
 
-    # ─── color-fx hide toggle ───
+    # ─── переключатель скрытия color-fx ───
     def _on_toggle_passthrough(self):
-        """Checkbox callback — hide/restore frame-inserting effect blocks."""
+        """Обработчик чекбокса - скрывает/восстанавливает блоки вставляющих кадры эффектов."""
         active = bool(self.vars['passthrough_mode'].get())
         self._apply_passthrough_hide(active=active, take_snapshot=True)
 
     def _apply_passthrough_hide(self, *, active: bool, take_snapshot: bool):
-        """Hide and force-off frame-inserting effects when passthrough is on.
+        """Скрывает и принудительно выключает вставляющие кадры эффекты при включённом passthrough.
 
-        Mirrors `_apply_hide_color_fx`: snapshot prior states on enable,
-        restore them on disable. Snapshot lives in `_passthrough_snapshot`
-        so a user toggling the box back off recovers their original effect
-        choices instead of waking up with everything off.
+        Повторяет `_apply_hide_color_fx`: снимок прежних состояний при
+        включении, восстановление при выключении. Снимок хранится в
+        `_passthrough_snapshot`, чтобы при выключении галочки пользователь
+        получал обратно свой исходный набор эффектов, а не "всё выключено".
         """
         if active:
             if take_snapshot:
                 snap = {}
-                # Some keys (e.g. fx_flash) live in BOTH PASSTHROUGH_HIDDEN_KEYS
-                # and COLOR_EFFECT_KEYS. If hide-color-fx is currently on,
-                # the live var is False (forced off by that mode) — but the
-                # USER's true choice is preserved in `_color_fx_snapshot`.
-                # We must snapshot from there, otherwise restoring later
-                # writes a stale False back into the user's preset.
+                # Некоторые ключи (например fx_flash) состоят и в PASSTHROUGH_HIDDEN_KEYS,
+                # и в COLOR_EFFECT_KEYS. Если hide-color-fx сейчас включён,
+                # живая переменная равна False (принудительно выключена этим режимом) - но
+                # ИСТИННЫЙ выбор пользователя хранится в `_color_fx_snapshot`.
+                # Снимок нужно брать оттуда, иначе восстановление позже
+                # запишет устаревший False обратно в пресет пользователя.
                 color_snap = self._color_fx_snapshot or {}
                 for key in PASSTHROUGH_HIDDEN_KEYS:
                     if key in self.vars:
@@ -1501,21 +1532,22 @@ class MainGUI(tk.Tk):
                             except Exception:
                                 snap[key] = False
                 self._passthrough_snapshot = snap
-            # Force the keys off; block visibility follows via
-            # _recompute_block_visibility (single source of truth).
+            # Принудительно выключаем ключи; видимость блоков следует через
+            # _recompute_block_visibility (единый источник истины).
             for key in PASSTHROUGH_HIDDEN_KEYS:
                 if key in self.vars:
                     try:
                         self.vars[key].set(False)
                     except Exception:
                         pass
-            # Cut Logic widgets that have no meaning in passthrough.
+            # Виджеты Cut Logic, не имеющие смысла в passthrough.
             for w in getattr(self, '_passthrough_cut_widgets', []):
                 if w.winfo_ismapped():
                     w.pack_forget()
-            # Disable the audio file picker — passthrough uses the source
-            # video's own audio track. The user can still see the previous
-            # selection (label retains state), they just can't change it.
+            # Отключаем выбор аудиофайла - passthrough использует
+            # собственную звуковую дорожку исходного видео. Пользователь
+            # всё ещё видит прежний выбор (подпись сохраняет состояние),
+            # просто не может его изменить.
             btn = getattr(self, '_audio_btn', None)
             if btn is not None:
                 btn.state(['disabled'])
@@ -1525,22 +1557,22 @@ class MainGUI(tk.Tk):
             for key in PASSTHROUGH_HIDDEN_KEYS:
                 if key in self.vars and key in snap:
                     if color_active and key in COLOR_EFFECT_KEYS:
-                        # color-fx hide is still in effect for this key — if
-                        # we wrote `snap[key]=True` to the live var, color-fx
-                        # would force it back to False on its next sync, and
-                        # the user's choice would be silently lost when they
-                        # later disable color-fx hide. Write to the
-                        # color-fx snapshot instead so the value survives
-                        # until that mode is exited.
+                        # для этого ключа hide-color-fx всё ещё действует - если
+                        # записать `snap[key]=True` в живую переменную, color-fx
+                        # при следующей синхронизации принудительно вернёт её в
+                        # False, и выбор пользователя незаметно потеряется при
+                        # последующем выключении hide-color-fx. Вместо этого
+                        # пишем в снимок color-fx, чтобы значение дожило
+                        # до выхода из этого режима.
                         self._color_fx_snapshot[key] = snap[key]
                     else:
                         try:
                             self.vars[key].set(snap[key])
                         except Exception:
                             pass
-            # Re-pack cut-only widgets in their ORIGINAL slots, not at
-            # the end. Plain `pack(fill='x')` previously dumped them
-            # below every Cut Logic control because tk.pack appends.
+            # Возвращаем cut-only виджеты на их ИСХОДНЫЕ места, а не в конец.
+            # Обычный `pack(fill='x')` раньше сваливал их ниже всех
+            # элементов Cut Logic, потому что tk.pack добавляет в конец.
             for w in getattr(self, '_passthrough_cut_widgets', []):
                 if not w.winfo_ismapped():
                     order = getattr(w.master, '_sb_initial_order', None)
@@ -1548,7 +1580,7 @@ class MainGUI(tk.Tk):
                         self._repack_in_order(w, order, fill='x')
                     else:
                         w.pack(fill='x')
-            # Re-enable the audio picker.
+            # Снова включаем выбор аудио.
             btn = getattr(self, '_audio_btn', None)
             if btn is not None:
                 btn.state(['!disabled'])
@@ -1557,17 +1589,18 @@ class MainGUI(tk.Tk):
         self._recompute_block_visibility()
 
     def _on_toggle_hide_color_fx(self):
-        """Checkbox callback. Snapshots states + applies, or restores."""
+        """Обработчик чекбокса. Снимает состояния + применяет, либо восстанавливает."""
         active = self.var_hide_color_fx.get()
         self._apply_hide_color_fx(active=active, take_snapshot=True)
 
     def _apply_hide_color_fx(self, *, active: bool, take_snapshot: bool):
-        """Hide+disable all color-altering effects, or restore.
+        """Скрывает+выключает все меняющие цвет эффекты, либо восстанавливает их.
 
-        Owns only the *semantics*: snapshot/restore of enable-state and
-        silence_mode, and forcing the color keys off. Block visibility is
-        delegated to `_recompute_block_visibility`, the single source of
-        truth — this method no longer packs/unpacks anything itself.
+        Владеет только *семантикой*: снимок/восстановление состояния
+        включённости и silence_mode, принудительное выключение цветовых
+        ключей. Видимость блоков делегирована `_recompute_block_visibility`,
+        единому источнику истины - этот метод больше сам ничего не
+        packs/unpacks.
         """
         if active:
             if take_snapshot:
@@ -1584,22 +1617,22 @@ class MainGUI(tk.Tk):
                         self.vars['fx_ascii_color_mode'].get()
                 self._color_fx_snapshot = snap
 
-            # Disable (visibility follows via _recompute_block_visibility).
+            # Выключаем (видимость следует через _recompute_block_visibility).
             for key in COLOR_EFFECT_KEYS:
                 if key in self.vars:
                     try:
                         self.vars[key].set(False)
                     except Exception:
                         pass
-            # Force silence_mode 'dim' off (other modes survive)
+            # Принудительно выключаем silence_mode 'dim' (остальные режимы сохраняются)
             if self.var_silence_mode.get() == 'dim':
                 self.var_silence_mode.set('none')
             self._sync_silence_radio_visibility()
-            # ASCII 'fixed'/'inverted' colour modes recolour the output, so
-            # lock the dropdown to 'original' only while color-fx hide is on.
+            # Режимы ASCII 'fixed'/'inverted' перекрашивают вывод, поэтому
+            # блокируем выпадающий список на 'original', пока включён color-fx hide.
             self._lock_ascii_color_mode(True)
         else:
-            # Restore
+            # Восстанавливаем
             snap = self._color_fx_snapshot or {}
             for key in COLOR_EFFECT_KEYS:
                 if key in self.vars and key in snap:
@@ -1610,7 +1643,7 @@ class MainGUI(tk.Tk):
             prev_silence = snap.get('__silence_mode__')
             if prev_silence:
                 self.var_silence_mode.set(prev_silence)
-            # Unlock the ASCII colour dropdown and restore the user's choice.
+            # Разблокируем выпадающий список ASCII-цвета и восстанавливаем выбор пользователя.
             self._lock_ascii_color_mode(False)
             prev_ascii = snap.get('__ascii_color_mode__')
             if prev_ascii and 'fx_ascii_color_mode' in self.vars:
@@ -1621,11 +1654,12 @@ class MainGUI(tk.Tk):
         self._recompute_block_visibility()
 
     def _lock_ascii_color_mode(self, locked: bool):
-        """Restrict the ASCII colour-mode dropdown to 'original' (locked) or
-        restore its full choice list. 'fixed' and 'inverted' recolour the
-        frame, so they must be unavailable while Hide color-altering is on.
-        Pure UI gating — when locked it forces the value to 'original'; the
-        previous value is snapshotted/restored by the caller.
+        """Ограничивает выпадающий список ASCII цвет-режима до 'original'
+        (locked) или восстанавливает полный список. 'fixed' и 'inverted'
+        перекрашивают кадр, поэтому они недоступны, пока включён
+        Hide color-altering. Чистая UI-блокировка - при locked принудительно
+        ставит 'original'; предыдущее значение снимается/восстанавливается
+        вызывающим кодом.
         """
         combo = getattr(self, '_combos', {}).get('fx_ascii_color_mode')
         if combo is None:
@@ -1641,13 +1675,13 @@ class MainGUI(tk.Tk):
         except tk.TclError:
             pass
 
-    # ─── Quality preset ↔ manual fields sync ───
+    # ─── синхронизация пресета качества ↔ ручных полей ───
     def _on_quality_preset_changed(self):
-        """Quality dropdown changed → write its (crf, preset, tune) into
-        the manual fields. 'Custom' is a marker — it doesn't mutate."""
+        """Выпадающий список качества изменился → записывает (crf, preset, tune)
+        в ручные поля. 'Custom' - это маркер, он ничего не меняет."""
         name = self.var_quality_preset.get()
         spec = QUALITY_PRESETS.get(name)
-        if spec is None:  # Custom or unknown
+        if spec is None:  # Custom или неизвестное значение
             return
         self._applying_quality = True
         try:
@@ -1659,9 +1693,9 @@ class MainGUI(tk.Tk):
             self._applying_quality = False
 
     def _refresh_quality_label(self):
-        """Manual field changed → flip Quality dropdown to whichever
-        preset (if any) now matches, else 'Custom'. Skipped while a
-        preset is mid-apply to avoid trace ping-pong."""
+        """Ручное поле изменилось → переключает выпадающий список качества на
+        подходящий пресет (если есть), иначе 'Custom'. Пропускается, пока
+        идёт применение пресета, чтобы избежать пинг-понга трейсов."""
         if getattr(self, '_applying_quality', False):
             return
         if not hasattr(self, 'quality_combo'):
@@ -1678,7 +1712,7 @@ class MainGUI(tk.Tk):
             self.var_quality_preset.set(label)
 
     def _sync_silence_radio_visibility(self):
-        """Hide the 'Dim' radio button while color-fx hiding is active."""
+        """Скрывает радиокнопку 'Dim', пока активно скрытие color-fx."""
         radios = getattr(self, '_silence_radios', None)
         if not radios:
             return
@@ -1692,11 +1726,11 @@ class MainGUI(tk.Tk):
                     btn.pack(side='left', padx=4)
 
     def _build_cut_logic(self, body):
-        # Widgets that lose their meaning in passthrough mode (no random
-        # sampling → no scene buffer, no cuts → no min-cut filter) are
-        # collected here so `_apply_passthrough_hide` can pack_forget /
-        # pack them as a group, mirroring how color-fx hide handles its
-        # set of effect blocks.
+        # Виджеты, теряющие смысл в режиме passthrough (нет случайного
+        # семплинга → нет буфера сцен, нет нарезки → нет фильтра min-cut)
+        # собираются здесь, чтобы `_apply_passthrough_hide` мог делать
+        # pack_forget / pack над ними как над группой - так же, как
+        # color-fx hide обрабатывает свой набор блоков эффектов.
         self._passthrough_cut_widgets: list = []
 
         scene_hdr = self._row_with_help(body, 'Smart Scene Detection', bi(
@@ -1711,8 +1745,8 @@ class MainGUI(tk.Tk):
                         style='W95.TCheckbutton').pack(anchor='w', padx=24, pady=(0, 4))
         self._passthrough_cut_widgets.extend([scene_hdr, scene_cb_wrap])
 
-        # Always-shown sliders. Ones that only matter outside passthrough
-        # are built separately below so they can be hidden as a group.
+        # Всегда видимые слайдеры. Те, что важны только вне passthrough,
+        # собираются отдельно ниже, чтобы их можно было скрыть группой.
         sliders_always = [
             ('Global Chaos Level', 'chaos_level', 0.0, 1.0, bi(
                 'Master dial. Scales every effect chance by 0.3 + 0.7·CHAOS plus stutter/flash '
@@ -1733,7 +1767,7 @@ class MainGUI(tk.Tk):
             self._row_with_help(body, lbl, tt)
             self._slider(body, key, lo, hi)
 
-        # Cut-only sliders: irrelevant in passthrough.
+        # Слайдеры только для нарезки: не имеют значения в passthrough.
         sliders_cut_only = [
             ('Min Cut Duration (sec)', 'min_cut_duration', 0.0, 0.3, bi(
                 'Drops segments shorter than this. Higher = calmer pacing.',
@@ -1749,8 +1783,8 @@ class MainGUI(tk.Tk):
             self._passthrough_cut_widgets.extend([row, sf])
             cut_only_widgets[key] = (row, sf)
 
-        # Scene Buffer Size only matters when scene-cut detection is on —
-        # grey it out otherwise so the user knows the slider is dormant.
+        # Scene Buffer Size важен только при включённой детекции смен сцен -
+        # иначе делаем серым, чтобы пользователь видел, что слайдер спит.
         sb_pair = cut_only_widgets.get('scene_buffer_size')
         if sb_pair is not None:
             self._bind_dep(list(sb_pair),
@@ -1773,10 +1807,10 @@ class MainGUI(tk.Tk):
             'сетке, но теряется микро-ритмика.'))
         tol_slider = self._slider(body, 'snap_tolerance', 0.01, 0.15, indent=True)
 
-        # Manual BPM override — generates a uniform beat grid from a
-        # user-typed tempo value when snap-to-beat is on. Bypasses librosa's
-        # tempo estimator entirely; useful for tracks with weak onsets or
-        # when the exact target BPM is known.
+        # Ручной override BPM - строит равномерную сетку битов из введённого
+        # пользователем темпа, когда snap-to-beat включён. Полностью
+        # обходит оценщик темпа librosa; полезно для треков со слабыми
+        # онсетами или когда точный целевой BPM уже известен.
         bpm_hdr = self._row_with_help(body, 'Manual BPM Override', bi(
             'Bypass automatic tempo detection and use a hand-typed BPM for the snap-to-beat grid. '
             'Requires Snap onsets to beat grid above to be ON.',
@@ -1792,12 +1826,13 @@ class MainGUI(tk.Tk):
                               textvariable=self._display_vars.get('manual_bpm'))
         bpm_entry.pack(side='left', padx=6)
 
-        # Snap cascade. Beat-snap-tolerance and the entire manual-BPM
-        # subgroup (header label + checkbox + numeric entry) only matter
-        # when snap-to-beat is ON. Inside that subgroup the BPM entry has
-        # an extra dependency on `use_manual_bpm` — disabled even with
-        # snap ON if the user hasn't ticked "Use manual BPM:". The
-        # cascade is encoded directly in the predicate (AND of vars).
+        # Каскад снэпа. Beat-snap-tolerance и вся подгруппа ручного BPM
+        # (заголовок + чекбокс + числовое поле) важны только при
+        # включённом snap-to-beat. Внутри этой подгруппы поле BPM имеет
+        # дополнительную зависимость от `use_manual_bpm` - остаётся
+        # выключенным даже при включённом snap, если пользователь не
+        # отметил "Use manual BPM:". Каскад закодирован прямо в
+        # предикате (И переменных).
         snap_var = self.vars['snap_to_beat']
         manual_var = self.vars['use_manual_bpm']
         self._bind_dep([tol_row, tol_slider, bpm_hdr, bpm_cb],
@@ -1814,17 +1849,18 @@ class MainGUI(tk.Tk):
                 self.vars['manual_bpm'].set(v)
                 self._display_vars['manual_bpm'].set(f'{v:.1f}')
             except (ValueError, KeyError):
-                # Fall back to current var value if the user typed garbage.
+                # Возвращаемся к текущему значению переменной, если пользователь ввёл мусор.
                 self._display_vars['manual_bpm'].set(
                     f"{self.vars['manual_bpm'].get():.1f}")
         bpm_entry.bind('<FocusOut>', _commit_manual_bpm)
         bpm_entry.bind('<Return>', _commit_manual_bpm)
 
-        # Passthrough mode — read frames sequentially from one source video,
-        # analyse its OWN audio track, no cut/sample/random sampling. All
-        # effects keep the 1:1 input→output frame mapping here: Stutter and
-        # Flash switch to replace-mode, Optical Flow and True Datamosh are
-        # ordinary one-in-one-out chain effects.
+        # Режим Passthrough - читает кадры последовательно из одного
+        # исходного видео, анализирует ЕГО СОБСТВЕННУЮ звуковую дорожку,
+        # без нарезки/семплинга/рандома. Все эффекты сохраняют здесь
+        # соответствие кадров 1:1 вход→выход: Stutter и Flash переключаются
+        # в режим замены, Optical Flow и True Datamosh - обычные эффекты
+        # цепочки один-в-один.
         self._row_with_help(body, 'Passthrough Mode', bi(
             "Process the source video 1:1 — no cuts, no resampling, native frame order. "
             "Audio is taken from the video's own track and used both for analysis (effect "
@@ -1843,7 +1879,7 @@ class MainGUI(tk.Tk):
                         command=self._on_toggle_passthrough,
                         style='W95.TCheckbutton').pack(anchor='w', padx=24, pady=(0, 4))
 
-        # Silence
+        # Тишина
         self._row_with_help(body, 'Silence Treatment', bi(
             'How long (>1s) silent stretches are rendered: dim, soft blur, both, or untouched. '
             'Default: none.',
@@ -1851,7 +1887,7 @@ class MainGUI(tk.Tk):
             'или без обработки. По умолчанию: none.'))
         sf = tk.Frame(body, bg=self._parent_bg(body))
         sf.pack(fill='x', padx=20, pady=(2, 6))
-        # Order: None first so it visually reads as the default.
+        # Порядок: None первым, чтобы визуально читалось как значение по умолчанию.
         self._silence_radios = {}
         for val, lbl in [('none', 'None'), ('dim', 'Dim'),
                          ('blur', 'Blur'), ('both', 'Both')]:
@@ -1863,38 +1899,38 @@ class MainGUI(tk.Tk):
             self._silence_radios[val] = rb
         self._sync_silence_radio_visibility()
 
-        # Snapshot the body's child order + pack options so the passthrough
-        # toggle can re-pack cut-only widgets back into their original slots
-        # (with their original indent) instead of dumping them flush-left at
-        # the bottom.
+        # Снимок порядка детей body + опций pack, чтобы переключатель
+        # passthrough мог возвращать cut-only виджеты на исходные места
+        # (с исходным отступом), а не сваливать их прижатыми влево внизу.
         self._snapshot_pack_order(body)
 
     def _build_effect_block(self, parent, spec):
-        """Build the GUI block for one EffectSpec.
+        """Строит GUI-блок для одного EffectSpec.
 
-        Three visibility tiers cooperate inside the returned frame:
-          • header (checkbox + label + `always` toggle) is always visible
-            while the block itself is mapped — it's the user's only handle
-            to turn the effect back on;
-          • `inner` (chance / params / always-on intensity) is HIDDEN while
-            the effect's enable_key is OFF — keeps the panel uncluttered
-            and removes "dead" sliders the user can't influence;
-          • `ai_holder` (always-on intensity) is hidden unless `always` is
-            ON, and lives INSIDE `inner` between the chance row and the
-            params (sentinel anchors the slot) — fixes the previous bug
-            where it appeared below the block separator.
+        Внутри возвращаемого фрейма сотрудничают три уровня видимости:
+          • header (чекбокс + подпись + переключатель `always`) виден всегда,
+            пока сам блок отображён - это единственная ручка пользователя,
+            чтобы снова включить эффект;
+          • `inner` (шанс / параметры / интенсивность always-on) СКРЫТ,
+            пока enable_key эффекта выключен - панель остаётся опрятной
+            и не показывает "мёртвые" слайдеры, на которые пользователь
+            не может повлиять;
+          • `ai_holder` (интенсивность always-on) скрыт, пока `always` не
+            включён, и живёт ВНУТРИ `inner` между строкой шанса и
+            параметрами (sentinel фиксирует слот) - исправляет прежний
+            баг, когда он появлялся ниже разделителя блока.
 
-        The thin separator stays a direct child of `block` (NOT `inner`)
-        so it keeps marking the boundary between blocks even when the
-        effect is off and `inner` is hidden.
+        Тонкий разделитель остаётся прямым потомком `block` (НЕ `inner`),
+        поэтому продолжает отмечать границу между блоками, даже когда
+        эффект выключен и `inner` скрыт.
 
-        Returns the outer frame so callers (hide-color-fx, passthrough)
-        can pack_forget/pack the WHOLE block as a unit.
+        Возвращает внешний фрейм, чтобы вызывающие (hide-color-fx,
+        passthrough) могли делать pack_forget/pack над ВСЕМ блоком целиком.
         """
         block = tk.Frame(parent, bg=C_WHITE)
         block.pack(fill='x')
 
-        # Header row: checkbox + label + tooltip + (optional) always toggle.
+        # Строка заголовка: чекбокс + подпись + подсказка + (опционально) переключатель always.
         hr = tk.Frame(block, bg=C_WHITE)
         hr.pack(fill='x', padx=4, pady=(4, 0))
         cb = ttk.Checkbutton(hr, text=spec.label, variable=self.vars[spec.enable_key],
@@ -1927,8 +1963,8 @@ class MainGUI(tk.Tk):
                      font=('MS Sans Serif', 7, 'italic')).pack(
                 anchor='w', padx=22, pady=(0, 2))
 
-        # `inner` carries every per-effect knob and is hidden whole when
-        # the effect's enable checkbox is OFF.
+        # `inner` несёт все ручки настройки эффекта и целиком скрывается,
+        # когда чекбокс включения эффекта выключен.
         inner = tk.Frame(block, bg=C_WHITE)
 
         chance_widgets: list = []
@@ -1940,11 +1976,11 @@ class MainGUI(tk.Tk):
             ch_slider = self._slider(inner, spec.chance_key, 0.0, 1.0, indent=True)
             chance_widgets = [ch_row, ch_slider]
 
-        # Always-on intensity. Built INSIDE inner so its visual slot sits
-        # between chance and params. A zero-height sentinel pinned right
-        # after it serves as the `before=` anchor when the holder is
-        # toggled visible later — without it, re-pack would land below
-        # the params instead.
+        # Интенсивность always-on. Строится ВНУТРИ inner, поэтому её
+        # визуальное место оказывается между chance и params. Прикреплённый
+        # сразу после неё sentinel нулевой высоты служит якорем `before=`,
+        # когда holder позже переключается на видимый - без него повторный
+        # pack приземлился бы ниже params.
         ai_holder = None
         params_anchor = None
         if spec.supports_always_for_chain():
@@ -1958,7 +1994,7 @@ class MainGUI(tk.Tk):
             params_anchor = tk.Frame(inner, bg=C_WHITE, height=0)
             params_anchor.pack(fill='x')
 
-        # Per-effect parameter controls.
+        # Элементы управления параметрами конкретного эффекта.
         for p in spec.params:
             if p.key in ('fx_paint_canvas_data', 'fx_paint_color_r', 'fx_paint_color_g', 'fx_paint_color_b'):
                 continue
@@ -1975,11 +2011,12 @@ class MainGUI(tk.Tk):
                 self._row_with_help(inner, p.label, p.tooltip)
                 self._slider(inner, p.key, p.lo, p.hi, indent=True)
 
-        # Audio-link checkbox (only for effects that have a paired audio
-        # defect registered in vpc.audio.pipeline.EFFECT_AUDIO_COUPLING).
-        # Lives at the bottom of `inner` so it inherits the effect-off
-        # auto-hide; visibility within `inner` is further gated on
-        # passthrough_mode via `_sync_audio_link` below.
+        # Чекбокс привязки к аудио (только для эффектов, у которых
+        # зарегистрирован парный аудио-дефект в
+        # vpc.audio.pipeline.EFFECT_AUDIO_COUPLING). Живёт внизу `inner`,
+        # чтобы наследовать авто-скрытие при выключенном эффекте;
+        # видимость внутри `inner` дополнительно зависит от passthrough_mode
+        # через `_sync_audio_link` ниже.
         from vpc.audio.pipeline import EFFECT_AUDIO_COUPLING
         audio_link_holder = None
         coupling_entry = EFFECT_AUDIO_COUPLING.get(spec.enable_key)
@@ -1995,22 +2032,22 @@ class MainGUI(tk.Tk):
             for child in audio_link_holder.winfo_children():
                 Tooltip(child, link_tip)
 
-        # Bottom separator — sits in `block`, not `inner`, so it remains
-        # visible while the effect is off and keeps marking boundaries.
+        # Нижний разделитель - лежит в `block`, а не в `inner`, поэтому
+        # остаётся видимым при выключенном эффекте и продолжает отмечать границы.
         sep = tk.Frame(block, bg=C_DARK_GRAY, height=1)
         sep.pack(fill='x', padx=4)
 
-        # Visibility wiring.
-        # `pack_info()` (returns dict; empty when the widget isn't being
-        # managed by `pack`) is the AUTHORITATIVE check here, NOT
-        # `winfo_ismapped()`. The latter reflects actual on-screen
-        # visibility — which requires every ancestor to be mapped too.
-        # During build `_sync_always` runs BEFORE `_sync_inner` packs
-        # the `inner` frame, so `ai_holder.winfo_ismapped()` is False
-        # even when `ai_holder.pack()` was just called: that left the
-        # else-branch's pack_forget unreached, and a moment later when
-        # `_sync_inner` mapped `inner` the still-managed `ai_holder`
-        # surfaced — visible always-int slider despite `always` OFF.
+        # Управление видимостью.
+        # `pack_info()` (возвращает dict; пустой, если виджет не управляется
+        # `pack`) - АВТОРИТЕТНАЯ проверка здесь, а НЕ `winfo_ismapped()`.
+        # Последняя отражает реальную видимость на экране - которая
+        # требует, чтобы все предки тоже были отображены. При сборке
+        # `_sync_always` выполняется ДО того, как `_sync_inner` упаковывает
+        # фрейм `inner`, поэтому `ai_holder.winfo_ismapped()` равен False,
+        # даже если `ai_holder.pack()` только что был вызван: это оставляло
+        # pack_forget в ветке else недостигнутым, и мгновением позже, когда
+        # `_sync_inner` отображал `inner`, всё ещё управляемый `ai_holder`
+        # всплывал наружу - видимый слайдер always-int несмотря на выключенный `always`.
         enable_var = self.vars[spec.enable_key]
 
         def _refresh_scroll():
@@ -2032,7 +2069,7 @@ class MainGUI(tk.Tk):
                 if _is_packed(inner):
                     inner.pack_forget()
             _refresh_scroll()
-            # Keep the "Active only" view live as effects are toggled.
+            # Держим отображение "Active only" актуальным при переключении эффектов.
             ao = getattr(self, 'var_fx_active_only', None)
             if ao is not None and ao.get():
                 self._recompute_block_visibility()
@@ -2045,9 +2082,9 @@ class MainGUI(tk.Tk):
             def _sync_always(*_a):
                 if always_var.get():
                     if not _is_packed(ai_holder):
-                        # `before=params_anchor` keeps ai_holder slotted
-                        # between chance and params instead of bouncing
-                        # to the bottom of `inner` on each toggle.
+                        # `before=params_anchor` держит ai_holder между
+                        # chance и params вместо того, чтобы прыгать
+                        # в конец `inner` при каждом переключении.
                         if (params_anchor is not None
                                 and _is_packed(params_anchor)):
                             ai_holder.pack(fill='x', before=params_anchor)
@@ -2059,9 +2096,9 @@ class MainGUI(tk.Tk):
                 _refresh_scroll()
 
             always_var.trace_add('write', _sync_always)
-            # Chance is meaningless under `always` — grey it out so the
-            # user sees it's pinned. When `inner` is hidden (effect OFF)
-            # the grey state is invisible anyway, which is fine.
+            # Chance не имеет смысла при `always` - делаем серым, чтобы
+            # пользователь видел, что он зафиксирован. Когда `inner` скрыт
+            # (эффект выключен), серое состояние всё равно не видно, и это нормально.
             if chance_widgets:
                 self._bind_dep(chance_widgets,
                                lambda av=always_var: not av.get(),
@@ -2073,9 +2110,9 @@ class MainGUI(tk.Tk):
 
             def _sync_audio_link(*_a, holder=audio_link_holder,
                                  pt_var=passthrough_var):
-                # Visible iff (a) passthrough mode is on. The effect-off
-                # auto-hide is handled by `inner` collapsing — we don't
-                # need to re-check `enable_var` here.
+                # Видим тогда и только тогда, когда включён режим passthrough.
+                # Авто-скрытие при выключенном эффекте обеспечивает сворачивание
+                # `inner` - здесь не нужно повторно проверять `enable_var`.
                 want = bool(pt_var.get()) if pt_var is not None else False
                 if want:
                     if not _is_packed(holder):
@@ -2114,7 +2151,7 @@ class MainGUI(tk.Tk):
         win.configure(bg=C_SILVER)
         self._paint_win = win
 
-        # Dynamically set canvas dimensions based on video source aspect ratio
+        # Размер холста подбирается под соотношение сторон источника видео
         ratio = self._get_source_aspect_ratio()
         if ratio >= 1.0:
             canvas_w = 640
@@ -2126,14 +2163,14 @@ class MainGUI(tk.Tk):
         win.canvas_w = canvas_w
         win.canvas_h = canvas_h
 
-        # Set default geometry with safe minimum height to prevent toolbar clipping
+        # Минимальная высота задана так, чтобы панель инструментов не обрезалась
         win.geometry(f"{canvas_w + 180}x{max(canvas_h + 30, 480)}")
         win.minsize(400, 450)
 
         main_frame = tk.Frame(win, bg=C_SILVER, padx=5, pady=5)
         main_frame.pack(fill='both', expand=True)
 
-        # Toolbar sidebar
+        # Боковая панель инструментов
         toolbar = tk.Frame(main_frame, bg=C_SILVER, bd=2, relief='raised', padx=4, pady=4)
         toolbar.pack(side='left', fill='y', padx=(0, 5))
 
@@ -2194,7 +2231,7 @@ class MainGUI(tk.Tk):
             import platform
             fonts = {}
             if platform.system() == 'Windows':
-                import winreg   # Windows-only module — import inside the guard
+                import winreg   # модуль только для Windows - импорт внутри проверки
                 for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
                     try:
                         key = winreg.OpenKey(hive, r'SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts')
@@ -2224,7 +2261,7 @@ class MainGUI(tk.Tk):
                         winreg.CloseKey(key)
                     except Exception:
                         pass
-            # standard fallback list
+            # стандартный запасной список шрифтов
             fallback = {
                 'Arial': 'arial.ttf',
                 'Courier New': 'cour.ttf',
@@ -2252,7 +2289,7 @@ class MainGUI(tk.Tk):
                 except Exception:
                     return ImageFont.load_default()
 
-        # Text input references
+        # Ссылки на поля ввода текста
         text_entry = None
         font_combo = None
 
@@ -2317,7 +2354,7 @@ class MainGUI(tk.Tk):
         canvas.bind('<B3-Motion>', on_right_drag)
         canvas.bind('<ButtonRelease-3>', on_release)
 
-        # 1. Tools Section
+        # 1. Секция инструментов
         tk.Label(toolbar, text="Tools / Инстр.", font=('MS Sans Serif', 8, 'bold'), bg=C_SILVER).pack(anchor='w', padx=2, pady=2)
         
         tools_frame = tk.Frame(toolbar, bg=C_SILVER)
@@ -2357,7 +2394,7 @@ class MainGUI(tk.Tk):
         Tooltip(btn_eraser, bi("Erase strokes (turns area white)", "Стереть нарисованное (стирает белым цветом)"))
         Tooltip(btn_text, bi("Type text on canvas (click to place)", "Написать текст на холсте (кликните для размещения)"))
 
-        # 1b. Text Options (packed below tools)
+        # 1б. Настройки текста (под инструментами)
         tk.Label(toolbar, text="Text / Текст", font=('MS Sans Serif', 8), bg=C_SILVER).pack(anchor='w', padx=2, pady=(4, 0))
         text_entry = ttk.Entry(toolbar, width=12)
         text_entry.insert(0, "VPC")
@@ -2369,7 +2406,7 @@ class MainGUI(tk.Tk):
         font_combo.pack(fill='x', padx=4, pady=1)
         Tooltip(font_combo, bi("Select text font", "Выберите шрифт текста"))
 
-        # 2. Size Section
+        # 2. Секция размера
         tk.Label(toolbar, text="Size / Размер", font=('MS Sans Serif', 8), bg=C_SILVER).pack(anchor='w', padx=2, pady=(6, 0))
         size_label = tk.Label(toolbar, text=f"{win.brush_size} px", font=('MS Sans Serif', 8), bg=C_SILVER)
         
@@ -2384,7 +2421,7 @@ class MainGUI(tk.Tk):
 
         tk.Frame(toolbar, bg=C_DARK_GRAY, height=2).pack(fill='x', pady=6)
 
-        # 3. Canvas Actions Section (Packed horizontally side-by-side to prevent vertical clipping)
+        # 3. Секция действий с холстом (кнопки в ряд, чтобы не растягивать панель по вертикали)
         tk.Label(toolbar, text="Canvas / Холст", font=('MS Sans Serif', 8, 'bold'), bg=C_SILVER).pack(anchor='w', padx=2, pady=2)
 
         def clear_canvas():
@@ -2409,10 +2446,10 @@ class MainGUI(tk.Tk):
             dialog.resizable(False, False)
             dialog.configure(bg=C_SILVER)
 
-            # Center relative to parent
+            # Центрируем относительно родительского окна
             dialog.geometry("+%d+%d" % (parent.winfo_rootx() + 100, parent.winfo_rooty() + 100))
 
-            choice = [None]  # Mutable box to store selection
+            choice = [None]  # изменяемый контейнер для хранения выбора
 
             tk.Label(
                 dialog,
@@ -2458,7 +2495,7 @@ class MainGUI(tk.Tk):
                 return
 
             try:
-                # Read file bytes first to correctly support Unicode paths on Windows (e.g. Cyrillic characters)
+                # Сначала читаем байты файла, чтобы корректно работать с юникодными путями на Windows (например, кириллицей)
                 with open(path, "rb") as f:
                     file_bytes = np.frombuffer(f.read(), dtype=np.uint8)
                 img_bgr = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
@@ -2474,7 +2511,7 @@ class MainGUI(tk.Tk):
                     edges = cv2.Canny(blurred, 40, 120)
                     outline = 255 - edges
                 else:  # silhouette
-                    # Apply Otsu's thresholding to get a clean black-and-white mask
+                    # Метод Оцу дает чистую черно-белую маску
                     _, binarized = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
                     outline = binarized
                 
@@ -2502,7 +2539,7 @@ class MainGUI(tk.Tk):
 
         tk.Frame(toolbar, bg=C_DARK_GRAY, height=2).pack(fill='x', pady=6)
 
-        # 4. Color Selection Section
+        # 4. Секция выбора цвета
         tk.Label(toolbar, text="Overlay Color / Цвет", font=('MS Sans Serif', 8, 'bold'), bg=C_SILVER).pack(anchor='w', padx=2, pady=2)
 
         color_top_frame = tk.Frame(toolbar, bg=C_SILVER)
@@ -2524,22 +2561,22 @@ class MainGUI(tk.Tk):
 
         update_color_preview()
 
-        # Swatches grid (2 rows of 5 classic Paint colors)
+        # Сетка образцов (2 ряда по 5 классических цветов Paint)
         swatches_frame = tk.Frame(toolbar, bg=C_SILVER)
         swatches_frame.pack(pady=4)
 
         classic_colors = [
-            (0, 0, 0),        # Black
-            (128, 128, 128),  # Dark Gray
-            (255, 0, 0),      # Red
-            (0, 255, 0),      # Green
-            (0, 0, 255),      # Blue
+            (0, 0, 0),        # Черный
+            (128, 128, 128),  # Темно-серый
+            (255, 0, 0),      # Красный
+            (0, 255, 0),      # Зеленый
+            (0, 0, 255),      # Синий
             
-            (255, 255, 255),  # White
-            (192, 192, 192),  # Light Gray
-            (255, 255, 0),    # Yellow
-            (255, 0, 255),    # Magenta
-            (0, 255, 255),    # Cyan
+            (255, 255, 255),  # Белый
+            (192, 192, 192),  # Светло-серый
+            (255, 255, 0),    # Желтый
+            (255, 0, 255),    # Пурпурный
+            (0, 255, 255),    # Голубой
         ]
 
         def select_color(r, g, b):
@@ -2631,14 +2668,14 @@ class MainGUI(tk.Tk):
                 win.refresh_canvas()
 
 
-    # ─── export panel ───
+    # ─── панель экспорта ───
     def _build_export_panel(self, parent):
         for w in parent.winfo_children():
             w.destroy()
         wr = tk.Frame(parent, bg=C_SILVER)
         wr.pack(fill='both', expand=True, padx=4, pady=4)
 
-        # FPS
+        # Частота кадров
         self._row_with_help(wr, 'Frame Rate', bi(
             'Output FPS. Higher = smoother and bigger files.',
             'FPS выходного видео. Выше — плавнее и тяжелее файл.'))
@@ -2649,11 +2686,11 @@ class MainGUI(tk.Tk):
         self.fps_combo.set('24'); self.fps_combo.pack(side='left', padx=4)
         self.fps_combo.bind('<<ComboboxSelected>>',
                             lambda e: self.vars['fps'].set(float(self.fps_combo.get())))
-        # Match-source button: probe the loaded source video's native FPS
-        # via OpenCV and write it into the combobox + cfg var. Useful in
-        # passthrough (so output is bit-exact in time) and outside it (so
-        # the cut pipeline samples at the source's native rate). Read-only
-        # against an empty selection — logs an error instead of crashing.
+        # Кнопка Match source: читает нативный FPS загруженного исходного видео
+        # через OpenCV и подставляет его в комбобокс + cfg. Полезно в режиме
+        # passthrough (чтобы выход был битово точен по времени) и вне его (чтобы
+        # пайплайн нарезки сэмплировал с нативной частотой источника). При
+        # пустом выборе просто пишет ошибку в лог, а не падает.
         match_btn = ttk.Button(fr, text='Match source FPS',
                                command=self._fps_match_source,
                                style='W95.TButton')
@@ -2664,7 +2701,7 @@ class MainGUI(tk.Tk):
             "Считать нативный FPS текущего загруженного видео и поставить его. "
             "Сначала нужно загрузить источник через Load Source Video."))
 
-        # Resolution mode (backlog #2)
+        # Режим разрешения
         self._row_with_help(wr, 'Resolution Mode', bi(
             'preset = pick from 240p–1080p list. '
             'source = output matches the input video pixel-for-pixel. '
@@ -2678,14 +2715,14 @@ class MainGUI(tk.Tk):
                            bg=C_SILVER, fg=C_TEXT, selectcolor=C_WHITE,
                            font=('MS Sans Serif', 9)).pack(side='left', padx=4)
 
-        # Preset combo
+        # Выпадающий список пресетов
         rr = tk.Frame(wr, bg=C_SILVER); rr.pack(fill='x', padx=20, pady=2)
         tk.Label(rr, text='Preset:', bg=C_SILVER, width=10, anchor='w').pack(side='left')
         self.res_combo = ttk.Combobox(rr, values=['240p', '360p', '480p', '720p', '1080p'],
                                       style='W95.TCombobox', width=12)
         self.res_combo.set('720p'); self.res_combo.pack(side='left', padx=4)
 
-        # Custom WxH
+        # Произвольные ширина/высота
         cwf = tk.Frame(wr, bg=C_SILVER); cwf.pack(fill='x', padx=20, pady=2)
         tk.Label(cwf, text='Custom W×H:', bg=C_SILVER, width=12, anchor='w').pack(side='left')
         ttk.Spinbox(cwf, from_=64, to=7680, textvariable=self.vars['custom_w'],
@@ -2694,10 +2731,10 @@ class MainGUI(tk.Tk):
         ttk.Spinbox(cwf, from_=64, to=4320, textvariable=self.vars['custom_h'],
                     width=8).pack(side='left', padx=2)
 
-        # Quality preset — convenience layer that fills CRF / ffmpeg
-        # preset / tune below. Selecting an entry writes those three
-        # fields; touching them by hand flips this dropdown back to
-        # 'Custom'. Manual control is never taken away.
+        # Пресет качества - удобная надстройка, заполняющая CRF / ffmpeg
+        # preset / tune ниже. Выбор пункта записывает эти три поля;
+        # ручное изменение любого из них переключает выпадающий список
+        # обратно в 'Custom'. Ручное управление никогда не блокируется.
         self._row_with_help(wr, 'Quality', bi(
             'Convenience preset that fills CRF, ffmpeg Preset and Tune below. '
             "Pick 'Custom' or just edit any of those manually for full control. "
@@ -2715,7 +2752,7 @@ class MainGUI(tk.Tk):
         self.quality_combo.bind('<<ComboboxSelected>>',
                                 lambda e: self._on_quality_preset_changed())
 
-        # CRF / codec / preset (manual)
+        # CRF / кодек / preset (вручную)
         self._row_with_help(wr, 'Quality CRF', bi(
             '0 = lossless, 18 = visually lossless, 28 = small files, 51 = artifact art.',
             '0 — без потерь, 18 — визуально без потерь, 28 — малый размер, 51 — арт из '
@@ -2782,11 +2819,11 @@ class MainGUI(tk.Tk):
             'Результат кешируется на сессию: тест запускается один раз '
             'на каждый HW-кодек.'))
         cf = tk.Frame(wr, bg=C_SILVER); cf.pack(fill='x', padx=20, pady=2)
-        # Codec list is filtered at startup against `ffmpeg -encoders` —
-        # HW variants (NVENC/QSV/AMF/VideoToolbox) only show up if the
-        # local ffmpeg build actually supports them. The runtime-side
-        # fallback in engine.py covers the case where the encoder is
-        # listed but fails to initialize (no driver, GPU busy, etc.).
+        # Список кодеков фильтруется при старте по `ffmpeg -encoders` -
+        # аппаратные варианты (NVENC/QSV/AMF/VideoToolbox) показываются, только
+        # если локальная сборка ffmpeg их реально поддерживает. Fallback в
+        # engine.py на стороне рантайма покрывает случай, когда кодер
+        # значится в списке, но не смог инициализироваться (нет драйвера, GPU занят и т.п.).
         codec_labels = [s.label for s in available_encoder_specs()]
         self.fmt_combo = ttk.Combobox(
             cf, values=codec_labels,
@@ -2804,9 +2841,9 @@ class MainGUI(tk.Tk):
         self.preset_enc_combo.bind('<<ComboboxSelected>>',
                                    lambda e: self._refresh_quality_label())
 
-        # Tune — x264/x265-only film/grain/animation/stillimage hint.
-        # 'none' means the flag is omitted entirely. Available for non-
-        # x264/x265 codecs but ignored downstream (see sink.py).
+        # Tune - подсказка film/grain/animation/stillimage только для x264/x265.
+        # 'none' означает, что флаг вообще не передаётся. Доступно и для других
+        # кодеков, но там игнорируется дальше по цепочке (см. sink.py).
         self._row_with_help(wr, 'Tune', bi(
             'x264/x265 -tune hint. film = clean live action, grain = preserves '
             'noise (good for datamosh/glitch material), animation, stillimage. '
@@ -2822,15 +2859,15 @@ class MainGUI(tk.Tk):
         self.tune_combo.bind('<<ComboboxSelected>>',
                              lambda e: self._refresh_quality_label())
 
-        # Manual CRF edits → flip quality dropdown to Custom. Trace is
-        # added once here, after var_quality_preset exists. The reentrancy
-        # guard protects against trace firing while a preset is being
-        # applied (which writes crf itself).
+        # Ручное изменение CRF переключает выпадающий список качества в Custom.
+        # Trace добавляется один раз здесь, после появления var_quality_preset.
+        # Защита от реентерабельности не даёт trace сработать во время
+        # применения пресета (который сам пишет crf).
         self.vars['crf'].trace_add('write',
                                    lambda *_: self._refresh_quality_label())
         self._refresh_quality_label()
 
-    # ─── FORMULA panel (TUI-styled, dedicated tab) ───
+    # ─── панель FORMULA (в стиле TUI, отдельная вкладка) ───
     FORMULA_SNIPPETS = [
         ('Identity', 'frame'),
         ('Invert', '255 - frame'),
@@ -2863,16 +2900,17 @@ class MainGUI(tk.Tk):
                         font=font or ('Consolas', 10),
                         **kw)
 
-    # ── BSOD-styled tooltip (yellow-on-blue, monospace) ──
+    # ── подсказка в стиле BSOD (желтое на синем, моноширинный шрифт) ──
     def _bsod_tip(self, widget, text):
-        """Hover tooltip styled like the rest of the BSOD tab.
+        """Всплывающая подсказка в стиле остальной вкладки BSOD.
 
-        Yellow text on the BSOD background with a thin white border —
-        matches the "system error" aesthetic instead of clashing with
-        Win95-yellow tooltips. Bilingual EN/RU divider supported.
+        Желтый текст на фоне BSOD с тонкой белой рамкой - соответствует
+        эстетике "системной ошибки" вместо конфликта с желтыми подсказками
+        Win95. Поддерживается двуязычный разделитель EN/RU.
         """
-        # Use the existing Tooltip helper but post-style the popup. The
-        # Tooltip class creates its label on enter, so we wrap creation.
+        # Используем существующий хелпер Tooltip, но переопределяем стиль
+        # всплывающего окна. Класс Tooltip создает свой label по событию
+        # enter, поэтому оборачиваем создание.
         class _BsodTip(Tooltip):
             def _enter(self_, e):
                 if self_.tip or not self_.text:
@@ -2888,13 +2926,13 @@ class MainGUI(tk.Tk):
         _BsodTip(widget, text)
 
     def _build_formula_panel(self, parent):
-        """FORMULA tab — Win9x BSOD palette, monospace, fully scrollable.
+        """Вкладка FORMULA - палитра Win9x BSOD, моноширинный шрифт, полностью со скроллом.
 
-        Layout sized so nothing escapes horizontally: every long line
-        wraps to the panel width (which is tracked dynamically), the
-        snippet grid drops to 2 columns when the panel is narrow, and
-        every control gets a bilingual hover tooltip — formula authors
-        who don't know NumPy still get pointers per control.
+        Раскладка подобрана так, чтобы ничего не вылезало по горизонтали:
+        каждая длинная строка переносится по ширине панели (отслеживается
+        динамически), сетка сниппетов сжимается до 2 колонок на узкой панели,
+        и у каждого элемента управления есть двуязычная подсказка - авторы
+        формул без знания NumPy всё равно получают подсказки по каждому полю.
         """
         for w in parent.winfo_children():
             w.destroy()
@@ -2909,9 +2947,9 @@ class MainGUI(tk.Tk):
         inner = tk.Frame(canvas, bg=C_BSOD_BG)
         inner_id = canvas.create_window((0, 0), window=inner, anchor='nw')
 
-        # Wrap-length is a moving target — the user can resize the window
-        # at any time. Track every label that needs to wrap and update
-        # them all on canvas <Configure>.
+        # Длина переноса - плавающая величина: пользователь может изменить
+        # размер окна в любой момент. Отслеживаем все подписи, которым нужен
+        # перенос, и обновляем их все по событию canvas <Configure>.
         wrap_labels: list[tk.Label] = []
 
         def _refresh_scroll(_e=None):
@@ -2947,11 +2985,10 @@ class MainGUI(tk.Tk):
             wrap_labels.append(lbl)
             return lbl
 
-        # ── Heading ────────────────────────────────────────────────
-        # The "A problem has been detected..." line is intentional BSOD
-        # cosplay — it's the recognisable Win9x crash text — and acts as
-        # a visual signal that this tab is "the dangerous one." Kept on
-        # request; only its sizing was the problem before.
+        # ── Заголовок ────────────────────────────────────────────────
+        # Строка "A problem has been detected..." - намеренная стилизация
+        # под BSOD (узнаваемый текст краша Win9x), она сигнализирует, что
+        # эта вкладка "опасная". Проблема была только в размерах текста.
         head = tk.Frame(inner, bg=C_BSOD_BG)
         head.pack(fill='x', padx=12, pady=(10, 2))
         _wrap_lbl(head,
@@ -2970,7 +3007,7 @@ class MainGUI(tk.Tk):
                   'крутите цифры. Наведите на [?] для подсказки.',
                   fg=C_BSOD_DIM, font=MONO_S).pack(fill='x', pady=(2, 0))
 
-        # ── Controls row (enable / chance / blend) ────────────────
+        # ── Строка управления (enable / chance / blend) ────────────────
         ctl = tk.Frame(inner, bg=C_BSOD_BG)
         ctl.pack(fill='x', padx=12, pady=(8, 4))
 
@@ -3012,7 +3049,7 @@ class MainGUI(tk.Tk):
                              width=5, anchor='w')
                 v.pack(side='left', padx=(2, 0))
 
-        # ── Editor box ────────────────────────────────────────────
+        # ── Блок редактора ────────────────────────────────────────────
         ed_outer = tk.Frame(inner, bg=C_BSOD_FG, bd=0)
         ed_outer.pack(fill='x', padx=12, pady=(6, 0))
         ed_head = tk.Frame(ed_outer, bg=C_BSOD_FG)
@@ -3051,7 +3088,7 @@ class MainGUI(tk.Tk):
         self.formula_text.bind('<KeyRelease>', self._on_formula_text_changed)
         self.formula_text.bind('<<Modified>>', self._on_formula_text_changed)
 
-        # ── Status line ──────────────────────────────────────────
+        # ── Строка статуса ──────────────────────────────────────────
         self.formula_status_var = tk.StringVar(value='')
         status = tk.Frame(inner, bg=C_BSOD_BG)
         status.pack(fill='x', padx=12, pady=(4, 6))
@@ -3065,7 +3102,7 @@ class MainGUI(tk.Tk):
         self.formula_status_label.pack(side='left', fill='x', expand=True)
         self._update_formula_status()
 
-        # ── Live params a/b/c/d in 2x2 grid ───────────────────────
+        # ── Живые параметры a/b/c/d в сетке 2x2 ───────────────────────
         pbox = tk.Frame(inner, bg=C_BSOD_BG)
         pbox.pack(fill='x', padx=12, pady=(2, 4))
         ph = tk.Frame(pbox, bg=C_BSOD_BG)
@@ -3084,7 +3121,7 @@ class MainGUI(tk.Tk):
 
         grid = tk.Frame(pbox, bg=C_BSOD_BG)
         grid.pack(fill='x')
-        # Per-letter usage hints — short, bilingual, concrete.
+        # Короткие двуязычные подсказки по каждой букве.
         param_tips = {
             'fx_formula_a': 'Free knob #1. Common idiom: amplitude.\n'
                             'Свободная ручка №1. Часто — амплитуда.',
@@ -3113,7 +3150,7 @@ class MainGUI(tk.Tk):
                          bg=C_BSOD_BG, fg=C_BSOD_FG, font=MONO_S,
                          width=5, anchor='w').pack(side='left', padx=(4, 0))
 
-        # ── Snippets — one bilingual hint per snippet ────────────
+        # ── Сниппеты - у каждого двуязычная подсказка ────────────
         sn = tk.Frame(inner, bg=C_BSOD_BG)
         sn.pack(fill='x', padx=12, pady=(8, 4))
         sn_head = tk.Frame(sn, bg=C_BSOD_BG)
@@ -3132,8 +3169,8 @@ class MainGUI(tk.Tk):
             "потом поменяйте цифры — рекомендованный способ освоиться "
             "без чтения документации NumPy.")
 
-        # Per-snippet plain-language explanations (EN + RU). Index aligns
-        # with FORMULA_SNIPPETS; the order is fixed there.
+        # Простые описания для каждого сниппета (EN + RU). Индекс совпадает
+        # с FORMULA_SNIPPETS; порядок задан там.
         snippet_tips = [
             ('Pass-through. Use as a base when you want to blend a small '
              'change on top of the original frame.\n'
@@ -3170,8 +3207,8 @@ class MainGUI(tk.Tk):
         ]
         sg = tk.Frame(sn, bg=C_BSOD_BG)
         sg.pack(fill='x', pady=2)
-        # 5 columns by default; the inner frame is width-tracked, so on
-        # narrow windows the row simply wraps via the canvas scroll.
+        # По умолчанию 5 колонок; внутренний фрейм отслеживает ширину,
+        # поэтому на узких окнах ряд просто переносится через скролл канвы.
         for i, (lbl, expr) in enumerate(self.FORMULA_SNIPPETS):
             r, c = divmod(i, 5)
             btn = tk.Button(
@@ -3186,17 +3223,15 @@ class MainGUI(tk.Tk):
             if i < len(snippet_tips):
                 self._bsod_tip(btn, snippet_tips[i])
 
-        # ── Reference — bilingual cheat-sheet ─────────────────────
+        # ── Справка - двуязычная шпаргалка ─────────────────────
         ref = tk.Frame(inner, bg=C_BSOD_BG)
         ref.pack(fill='x', padx=12, pady=(8, 4))
         self._bsod_label(ref, '[ REFERENCE / СПРАВКА ]',
                          fg=C_BSOD_ACCENT, font=MONO).pack(anchor='w')
-        # Lines must stay under ~40 monospace chars so they fit even on a
-        # 600px panel. The previous version had the description after the
-        # colon on the same line and the example expressions inline with
-        # comments, both of which spilled past the right edge on narrow
-        # windows. Now: short header + value on the row, comments on the
-        # line below the example.
+        # Строки должны быть короче ~40 моноширинных символов, чтобы
+        # помещаться даже на панели шириной 600px, иначе текст вылезает
+        # за правый край на узких окнах. Поэтому: короткий заголовок +
+        # значение в строке, а комментарий - строкой ниже примера.
         ref_text = (
             'EN ── available variables ──\n'
             '  frame    : (H, W, 3) uint8\n'
@@ -3228,7 +3263,7 @@ class MainGUI(tk.Tk):
                            font=MONO_S, justify='left', anchor='w')
         ref_lbl.pack(anchor='w', padx=4, pady=(2, 0))
 
-        # ── Footer ────────────────────────────────────────────────
+        # ── Подвал ────────────────────────────────────────────────
         ft = tk.Frame(inner, bg=C_BSOD_BG)
         ft.pack(fill='x', padx=12, pady=(8, 14))
         _wrap_lbl(ft,
@@ -3239,20 +3274,20 @@ class MainGUI(tk.Tk):
                   fg=C_BSOD_DIM, font=MONO_S).pack(fill='x')
 
     def _bsod_slider(self, parent, key, lo, hi, length=160):
-        """ttk.Scale with click-jump bound — for the BSOD formula tab."""
+        """ttk.Scale с привязанным click-jump - для вкладки формул BSOD."""
         sc = ttk.Scale(parent, from_=lo, to=hi, variable=self.vars[key],
                        orient=tk.HORIZONTAL, length=length)
         sc.pack(side='left', padx=4)
         self._bind_scale_click_jump(sc)
         return sc
 
-    # Back-compat shim — older code paths still referenced _tui_slider.
+    # Обёртка для обратной совместимости - старый код ещё ссылается на _tui_slider.
     def _tui_slider(self, parent, key, lo, hi, length=160):
         return self._bsod_slider(parent, key, lo, hi, length=length)
 
     def _on_formula_text_changed(self, _e=None):
         text = self.formula_text.get('1.0', 'end-1c')
-        # Persist into the StringVar so get_current_config sees it
+        # Сохраняем в StringVar, чтобы get_current_config это видел
         try:
             self.vars['fx_formula_expr'].set(text)
         except Exception:
@@ -3279,7 +3314,7 @@ class MainGUI(tk.Tk):
         self._on_formula_text_changed()
 
     def _sync_formula_editor_from_var(self):
-        """Push the StringVar into the Text widget — used after preset load."""
+        """Переносит StringVar в Text-виджет - используется после загрузки пресета."""
         if not hasattr(self, 'formula_text'):
             return
         text = self.vars['fx_formula_expr'].get() or 'frame'
@@ -3296,16 +3331,16 @@ class MainGUI(tk.Tk):
         tk.Label(wr, text='[ UNKNOWN PARAMETERS — USE WITH CAUTION ]',
                  bg=C_SILVER, fg=C_DARK_GRAY,
                  font=('Courier New', 8, 'italic')).pack(pady=(8, 6), padx=10, anchor='w')
-        # Map knob → unique always-label so order in MYSTERY_KNOBS stays
-        # the source of truth for layout while always-names live next to
-        # the engine-side flags in vpc/mystery.py.
+        # Сопоставляем ручку → уникальную always-подпись: порядок в
+        # MYSTERY_KNOBS остаётся источником истины для раскладки, а
+        # always-имена живут рядом с флагами движка в vpc/mystery.py.
         always_label_by_key = dict(MYSTERY_ALWAYS_LABELS)
         for label, key in MYSTERY_KNOBS:
             self._row_with_help(wr, label, '?', mono=True)
             self._slider(wr, key, 0.0, 1.0)
-            # `key` is `mystery_<KNOB>` — derive the engine knob name and
-            # look up its cryptic always-label. Skip silently if a knob
-            # ever lacks a label (shouldn't happen — guarded by tests).
+            # `key` имеет вид `mystery_<KNOB>` - выводим имя ручки движка и
+            # ищем её криптическую always-подпись. Если у ручки вдруг нет
+            # подписи, молча пропускаем (не должно происходить - есть тесты).
             knob = key[len('mystery_'):]
             always_text = always_label_by_key.get(knob)
             if always_text is None:
@@ -3321,7 +3356,7 @@ class MainGUI(tk.Tk):
                            padx=0, pady=0, bd=0,
                            highlightthickness=0).pack(side='left')
 
-    # ─── file selection ───
+    # ─── выбор файлов ───
     def sel_audio(self):
         p = filedialog.askopenfilename(filetypes=[('Audio', '*.mp3 *.wav')])
         if p:
@@ -3359,17 +3394,17 @@ class MainGUI(tk.Tk):
 
     # ─── drag-and-drop ───
     def _setup_dnd(self):
-        """Enable drag-and-drop file loading via tkinterdnd2 (optional).
+        """Включает загрузку файлов перетаскиванием через tkinterdnd2 (опционально).
 
-        Fully degrades: if the package or its native tkdnd binary isn't present
-        (e.g. a build without it), the app runs exactly as before and users load
-        files through the existing buttons. Drop zones are the video / audio /
-        overlay slots, but any file dropped on any of them is classified by its
-        extension, so the exact target doesn't matter.
+        Деградирует полностью: если пакета или его нативного tkdnd-бинарника
+        нет (например, сборка без него), приложение работает как раньше, файлы
+        загружаются через обычные кнопки. Зоны сброса - слоты видео/аудио/
+        оверлея, но файл, брошенный на любую из них, классифицируется по
+        расширению, так что точная цель не важна.
         """
         try:
             from tkinterdnd2 import TkinterDnD, DND_FILES
-            # Load the tkdnd Tcl package into this (plain tk.Tk) interpreter.
+            # Загружаем Tcl-пакет tkdnd в этот (обычный tk.Tk) интерпретатор.
             TkinterDnD._require(self)
         except Exception:
             return
@@ -3379,7 +3414,7 @@ class MainGUI(tk.Tk):
             w = getattr(self, name, None)
             if w is None:
                 continue
-            # Register the row (bigger drop target) and the label itself.
+            # Регистрируем и строку (более крупную цель), и саму метку.
             for tgt in (getattr(w, 'master', None), w):
                 if tgt is not None and tgt not in targets:
                     targets.append(tgt)
@@ -3399,8 +3434,8 @@ class MainGUI(tk.Tk):
         return getattr(event, 'action', 'copy')
 
     def _handle_dropped_paths(self, paths):
-        """Classify dropped paths by extension and route them to the right slot,
-        mirroring sel_video / sel_audio / sel_ov (labels, tooltips, status dots)."""
+        """Классифицирует брошенные пути по расширению и раскладывает по слотам,
+        повторяя sel_video / sel_audio / sel_ov (метки, тултипы, статус-точки)."""
         try:
             from vpc.render.source import IMAGE_EXTS
             img_exts = {e.lower() for e in IMAGE_EXTS}
@@ -3446,7 +3481,7 @@ class MainGUI(tk.Tk):
             self.overlay_dir = new_folder
             self.lbl_overlay_dir.configure(text=os.path.basename(new_folder))
 
-    # ─── config + preset I/O ───
+    # ─── конфиг + I/O пресетов ───
     def get_current_config(self):
         cfg = {}
         for name, var in self.vars.items():
@@ -3491,10 +3526,11 @@ class MainGUI(tk.Tk):
         return cfg
 
     def apply_preset(self, name):
-        # Skip writes whose value already matches — every var.set fires
-        # every registered trace (effect inner-pack toggles, dep-cascade
-        # greying, scroll refreshes), so redundant writes used to walk
-        # every effect block twice for no visible change.
+        # Пропускаем запись, если значение уже совпадает - каждый var.set
+        # вызывает все зарегистрированные trace (переключение вложенных
+        # блоков эффекта, каскадное затенение зависимостей, обновление
+        # скролла), поэтому лишние записи заставляли дважды обходить
+        # каждый блок эффекта без видимых изменений.
         def _set_if_changed(var, new_val):
             try:
                 if var.get() != new_val:
@@ -3503,18 +3539,18 @@ class MainGUI(tk.Tk):
                 try: var.set(new_val)
                 except Exception: pass
 
-        # Reset to defaults first
+        # Сначала сброс к значениям по умолчанию
         for k, v in self._defaults_all.items():
             if k in self.vars:
                 _set_if_changed(self.vars[k], v)
-        # Empty preset = everything off + silence none.
+        # Пустой пресет = всё выключено + silence none.
         if name == EMPTY_PRESET_NAME:
             for spec in EFFECTS:
                 if spec.enable_key in self.vars:
                     _set_if_changed(self.vars[spec.enable_key], False)
         _set_if_changed(self.var_silence_mode, 'none')
         _set_if_changed(self.var_resolution_mode, 'preset')
-        # Apply overrides
+        # Применяем переопределения
         for key, val in PRESETS.get(name, {}).items():
             if key in self.vars:
                 _set_if_changed(self.vars[key], val)
@@ -3533,7 +3569,7 @@ class MainGUI(tk.Tk):
                 with open(self._PRESETS_PATH, 'r', encoding='utf-8') as f:
                     self._user_presets = json.load(f)
             except (json.JSONDecodeError, OSError):
-                self.log('presets.json corrupt — regenerating')
+                self.log('presets.json corrupt - regenerating')
                 self._generate_builtin_presets_file()
                 self._refresh_presets_listbox()
                 if self._user_presets:
@@ -3541,16 +3577,16 @@ class MainGUI(tk.Tk):
                     self._load_selected_preset()
                 return
 
-            # Migration: drop the old built-in presets but keep any custom
-            # ones the user saved. If after stripping there is no Empty
-            # preset, regenerate the empty-only file.
+            # Миграция: убираем старые встроенные пресеты, но сохраняем
+            # пользовательские. Если после чистки не осталось Empty-пресета,
+            # пересоздаём файл только с ним.
             kept = [p for p in self._user_presets if not p.get('builtin')]
             had_old_builtins = len(kept) != len(self._user_presets)
             has_empty = any(p.get('name') == EMPTY_PRESET_NAME for p in kept)
             if had_old_builtins:
                 self.log('Dropped old built-in presets; user presets kept.')
             if not has_empty:
-                # Build the canonical Empty entry inline.
+                # Собираем канонический Empty-пресет прямо здесь.
                 self.res_combo.set('720p')
                 self.preset_enc_combo.set('medium')
                 self.apply_preset(EMPTY_PRESET_NAME)
@@ -3566,8 +3602,8 @@ class MainGUI(tk.Tk):
             self._load_selected_preset()
 
     def _generate_builtin_presets_file(self):
-        # Now generates ONLY the Empty preset. Custom presets the user
-        # builds get appended via _save_current_preset.
+        # Теперь генерирует ТОЛЬКО Empty-пресет. Пользовательские пресеты
+        # добавляются через _save_current_preset.
         self._user_presets = []
         self.res_combo.set('720p')
         self.preset_enc_combo.set('medium')
@@ -3582,7 +3618,7 @@ class MainGUI(tk.Tk):
             with open(self._PRESETS_PATH, 'w', encoding='utf-8') as f:
                 json.dump(self._user_presets, f, indent=2)
         except OSError as e:
-            self.log(f'ERROR: could not save presets.json — {e}')
+            self.log(f'ERROR: could not save presets.json - {e}')
 
     def _refresh_presets_listbox(self):
         self._presets_listbox.delete(0, tk.END)
@@ -3591,14 +3627,16 @@ class MainGUI(tk.Tk):
             self._presets_listbox.insert(tk.END, disp)
 
     def apply_preset_config(self, cfg, name):
-        # Reset every var to its registry default FIRST, then overlay the saved
-        # config. Without this, any key absent from `cfg` keeps whatever the UI
-        # currently holds — so a preset saved by an older build (missing the
-        # newer fx_viz_*/_drive/_gate/_react keys) would silently leave stale
-        # effects enabled and stale audio-drive/gate wiring active. That is the
-        # "effects I never enabled appear, and tweaks affect the wrong thing"
-        # class of bug. The builtin `apply_preset` already resets first; this
-        # path must match it so a saved config fully determines the state.
+        # СНАЧАЛА сбрасываем все переменные к дефолтам реестра, потом
+        # накладываем сохранённый конфиг. Без этого любой ключ, которого
+        # нет в `cfg`, сохраняет то, что сейчас в UI - так пресет, сохранённый
+        # старой сборкой (без новых ключей fx_viz_*/_drive/_gate/_react),
+        # незаметно оставлял бы включёнными старые эффекты и старую
+        # разводку audio-drive/gate. Это тот самый класс багов "появляются
+        # эффекты, которые я не включал, а правки влияют не на то".
+        # Встроенный `apply_preset` уже делает сброс первым; этот путь
+        # должен ему соответствовать, чтобы сохранённый конфиг полностью
+        # определял состояние.
         for k, v in self._defaults_all.items():
             if k in self.vars:
                 try:
@@ -3611,7 +3649,7 @@ class MainGUI(tk.Tk):
                     self.vars[k].set(v)
                 except Exception:
                     pass
-        # Composite RGB unpack
+        # Распаковка составных RGB
         for compkey, prefix in (('fx_ascii_fg', 'fx_ascii_fg_'),
                                 ('fx_ascii_bg', 'fx_ascii_bg_'),
                                 ('fx_overlay_ck_color', 'fx_overlay_ck_')):
@@ -3624,8 +3662,9 @@ class MainGUI(tk.Tk):
                 key = f'mystery_{k}'
                 if key in self.vars:
                     self.vars[key].set(v)
-        # Restore "always" flags. Older presets predate this field, so
-        # missing entries fall back to False (legacy behaviour).
+        # Восстанавливаем флаги "always". Старые пресеты созданы до
+        # появления этого поля, поэтому отсутствующие записи по умолчанию
+        # False (поведение для совместимости).
         if 'mystery_always' in cfg:
             for k, v in cfg['mystery_always'].items():
                 key = f'always_mystery_{k}'
@@ -3638,11 +3677,12 @@ class MainGUI(tk.Tk):
         self.preset_enc_combo.set(cfg.get('export_preset', 'medium'))
         if hasattr(self, 'fmt_combo') and cfg.get('video_codec'):
             self.fmt_combo.set(cfg['video_codec'])
-        # Tune + Quality dropdown. Apply tune from cfg (default 'none' if
-        # absent — old presets predate this field). Then trust the saved
-        # quality_preset label if present, otherwise re-derive it from
-        # the (crf, export_preset, tune) triple. Apply through the guard
-        # so traces don't fight each other.
+        # Выпадающие списки Tune + Quality. Применяем tune из cfg (по
+        # умолчанию 'none', если отсутствует - старые пресеты созданы до
+        # появления этого поля). Затем доверяем сохранённой метке
+        # quality_preset, если она есть, иначе выводим её заново из тройки
+        # (crf, export_preset, tune). Применяем через guard, чтобы trace
+        # не конфликтовали друг с другом.
         if hasattr(self, 'var_tune'):
             self._applying_quality = True
             try:
@@ -3704,12 +3744,12 @@ class MainGUI(tk.Tk):
         if cur == f'Active: {name}':
             self._active_preset_label.configure(text='Active: —')
 
-    # ─── log helpers ───
+    # ─── помощники лога ───
     def _clear_log(self):
         self.console.delete('1.0', tk.END)
 
     def _copy_log(self):
-        """Copy the whole status log to the clipboard."""
+        """Копирует весь лог статуса в буфер обмена."""
         text = self.console.get('1.0', tk.END).rstrip('\n')
         self.clipboard_clear()
         self.clipboard_append(text)
@@ -3719,13 +3759,13 @@ class MainGUI(tk.Tk):
         self.console.insert(tk.END, f'[{time.strftime("%H:%M:%S")}] > {msg}\n')
         self.console.see(tk.END)
 
-    # ─── FPS match source ───
+    # ─── подстройка FPS под источник ───
     def _fps_match_source(self):
-        """Probe the loaded source video for its native FPS and apply it.
+        """Определяет родной FPS загруженного исходного видео и применяет его.
 
-        Falls back gracefully (no-op + log) if no video is loaded yet or the
-        capture refuses to open. Uses OpenCV directly so this is cheap and
-        does not touch the engine's render path.
+        Аккуратно ничего не делает (+ лог), если видео ещё не загружено или
+        поток не открывается. Использует OpenCV напрямую, поэтому дёшево и
+        не затрагивает путь рендера движка.
         """
         if not self.video_paths:
             self.log('Match FPS: no source video loaded yet.')
@@ -3749,21 +3789,22 @@ class MainGUI(tk.Tk):
         if src_fps <= 0.0:
             self.log('Match FPS: source reports zero/unknown FPS.')
             return
-        # Round to int — the export pipeline expects an integer. Display the
-        # original in the log so the user knows what was rounded if anything.
+        # Округляем до целого - конвейер экспорта ожидает int. В логе
+        # показываем исходное значение, чтобы было видно, что округлилось.
         rounded = int(round(src_fps))
         self.vars['fps'].set(float(rounded))
         if hasattr(self, 'fps_combo'):
             self.fps_combo.set(str(rounded))
         self.log(f'Match FPS: source {src_fps:.3f} → output {rounded} fps.')
 
-    # ─── render ───
+    # ─── рендер ───
     def _get_preview_seconds(self) -> float:
-        """Read preview length from the spinbox, clamped to [1, 90].
+        """Читает длину превью из спинбокса, ограничивает диапазоном [1, 90].
 
-        Isolates the engine from any user-typed garbage in the spinbox
-        (TclError on `.get()` for non-numeric input). Falls back to 5s
-        on any parse failure so a render is still possible.
+        Изолирует движок от любого мусора, введённого пользователем в
+        спинбокс (TclError у `.get()` на нечисловом вводе). При любой
+        ошибке разбора откатывается на 5с, чтобы рендер всё равно был
+        возможен.
         """
         try:
             v = float(self.var_preview_seconds.get())
@@ -3788,8 +3829,8 @@ class MainGUI(tk.Tk):
 
         if mode in ('draft', 'preview'):
             cfg['render_mode'] = mode
-            # Draft is a fixed 5s 480p sanity-check; only PREVIEW honors
-            # the user-controlled length so its role stays predictable.
+            # Draft - фиксированная проверка 5с/480p; только PREVIEW
+            # учитывает заданную пользователем длину, чтобы роли не путались.
             preview_secs = (5.0 if mode == 'draft'
                             else self._get_preview_seconds())
             cfg['max_duration'] = preview_secs
@@ -3800,8 +3841,8 @@ class MainGUI(tk.Tk):
             self.progress.configure(mode='indeterminate'); self.progress.start(10)
         else:
             cfg['render_mode'] = 'final'
-            # Derive container extension from the selected codec label so
-            # the Save dialog and the ffmpeg sink agree on the file type.
+            # Выводим расширение контейнера из выбранной метки кодека,
+            # чтобы диалог сохранения и ffmpeg-сток сходились по типу файла.
             from vpc.render.sink import EXPORT_FORMATS
             fmt = EXPORT_FORMATS.get(cfg.get('video_codec', 'H.264 (MP4)'),
                                      EXPORT_FORMATS['H.264 (MP4)'])
@@ -3812,58 +3853,60 @@ class MainGUI(tk.Tk):
                 initialfile=f'disc_{random.randint(1000, 9999)}.{ext}')
             if not out:
                 return
-            # If user typed a different extension, trust them but warn.
+            # Если пользователь ввёл другое расширение, доверяем, но предупреждаем.
             user_ext = os.path.splitext(out)[1].lower().lstrip('.')
             if user_ext and user_ext != ext:
                 self.log(f'WARNING: extension .{user_ext} does not match codec '
-                         f'container .{ext} — keeping user extension.')
+                         f'container .{ext} - keeping user extension.')
             cfg['output_path'] = out
             cfg['max_duration'] = None
             self.log('Starting FULL RENDER...')
             self.progress.configure(mode='determinate', value=0)
 
         if not self.overlay_dir and cfg.get('fx_overlay'):
-            self.log('WARNING: Overlay folder not set — overlay effect skipped.')
+            self.log('WARNING: Overlay folder not set - overlay effect skipped.')
 
         for btn in (self.btn_draft, self.btn_preview, self.btn_run_full):
             btn.configure(state='disabled')
-        # Cancel button is the inverse: enabled exactly during a render.
+        # Кнопка Cancel работает наоборот: активна ровно во время рендера.
         self.btn_cancel_render.configure(state='normal', text='CANCEL RENDER')
-        # Stop any running playback before render — the render writes to
-        # temp_preview_path, and on Windows a cv2.VideoCapture in the
-        # playback loop holds the file open, causing ffmpeg to fail or
-        # cv2 to read corrupt data and segfault on the second draft.
+        # Останавливаем воспроизведение перед рендером - рендер пишет в
+        # temp_preview_path, а на Windows cv2.VideoCapture в цикле
+        # воспроизведения держит файл открытым, из-за чего ffmpeg падает
+        # или cv2 читает битые данные и падает с segfault на втором draft.
         if mode in ('draft', 'preview'):
             self.stop_and_clear_playback()
-            # Windows 11 uses the Media Foundation (MSMF) backend for
-            # cv2.VideoCapture. MSMF releases the OS file handle
-            # asynchronously through MF worker threads AFTER cap.release()
-            # returns, so even after the playback thread joins, the handle
-            # can still be alive for ~100-200 ms. ffmpeg needs GENERIC_WRITE
-            # access to overwrite the file; if MSMF still holds it with
-            # FILE_SHARE_READ (no write sharing), ffmpeg gets
-            # ERROR_SHARING_VIOLATION and the render silently fails or
-            # crashes. Poll via CreateFile until the file is writable.
+            # Windows 11 использует бэкенд Media Foundation (MSMF) для
+            # cv2.VideoCapture. MSMF освобождает файловый хендл ОС
+            # асинхронно через рабочие потоки MF ПОСЛЕ возврата
+            # из cap.release(), поэтому даже после join потока
+            # воспроизведения хендл может жить ещё ~100-200 мс.
+            # ffmpeg нужен доступ GENERIC_WRITE для перезаписи
+            # файла; если MSMF всё ещё держит его с FILE_SHARE_READ
+            # (без разделения на запись), ffmpeg получает
+            # ERROR_SHARING_VIOLATION и рендер молча падает или
+            # крашится. Опрашиваем через CreateFile, пока файл не
+            # станет доступен для записи.
             if sys.platform == 'win32' and os.path.exists(self.temp_preview_path):
                 _wait_file_writable(self.temp_preview_path)
         threading.Thread(target=self._render_thread, args=(cfg,), daemon=True).start()
 
     def cancel_render(self):
-        """Request cooperative abort of the running render.
+        """Запрашивает кооперативную остановку текущего рендера.
 
-        Engine checks `self.abort` at segment / frame / pad boundaries
-        (see vpc/render/engine.py). Setting the flag from the GUI thread
-        is safe — CPython makes attribute writes atomic under the GIL,
-        and the worker thread reads the same attribute.
+        Движок проверяет `self.abort` на границах сегмента / кадра / пада
+        (см. vpc/render/engine.py). Установка флага из потока GUI безопасна -
+        CPython делает запись атрибута атомарной под GIL, а рабочий
+        поток читает тот же атрибут.
 
-        Note: scene-detection runs synchronously before the segment loop
-        and has no abort checkpoint, so cancellation may take up to the
-        scene-detect phase to actually fire.
+        Замечание: определение сцен выполняется синхронно до цикла по
+        сегментам и не имеет точки проверки abort, поэтому отмена
+        может сработать только после этой фазы.
         """
         eng = self.engine
         if eng is not None and not eng.abort:
             eng.abort = True
-            self.log('Cancel requested — finishing current frame and closing sink...')
+            self.log('Cancel requested - finishing current frame and closing sink...')
             self.btn_cancel_render.configure(state='disabled', text='CANCELLING...')
 
     def _render_thread(self, cfg):
@@ -3876,17 +3919,17 @@ class MainGUI(tk.Tk):
                 self.after(0, self.progress_var.set, value)
 
         engine = BreakcoreEngine(cfg, progress_callback=on_progress)
-        # Publish the engine reference BEFORE engine.run() so a fast Cancel
-        # click between thread start and run() entry still lands the abort.
+        # Публикуем ссылку на движок ДО engine.run(), чтобы быстрый
+        # клик по Cancel между стартом потока и входом в run() всё равно сработал.
         self.engine = engine
         try:
             ok = engine.run(render_mode=cfg['render_mode'],
                             max_output_duration=cfg.get('max_duration'))
             label = 'PREVIEW' if is_preview else 'FULL RENDER'
             if engine.abort or not ok:
-                # Don't auto-delete the partial output — for full renders
-                # the user picked the path themselves and could have
-                # overwritten an existing file. Just log the path.
+                # Не удаляем частичный результат автоматически - для
+                # полного рендера путь выбирал сам пользователь и мог перезаписать
+                # существующий файл. Просто логируем путь.
                 self.after(0, self.log,
                            f"--- {label} CANCELLED. Partial output left at: "
                            f"{cfg['output_path']} ---")
@@ -3909,16 +3952,16 @@ class MainGUI(tk.Tk):
                 self.after(0, self.progress.configure,
                            {'mode': 'determinate', 'value': 0})
 
-    # ─── transport (preview player) ───
+    # ─── транспорт (плеер превью) ───
     def _apply_player_volume(self):
-        """Push the effective (mute-aware) volume to the live player."""
+        """Передаёт эффективную (с учётом mute) громкость живому плееру."""
         if self._player is not None:
             self._player.set_volume(0.0 if self._muted else self._volume)
 
     def _on_volume_change(self):
-        """Volume slider callback — applied to the player live (the audio
-        callback reads gain per block). Moving the slider also implicitly
-        un-mutes (matches every other media player on the planet)."""
+        """Колбэк слайдера громкости - применяется к плееру на лету (аудио-
+        колбэк читает gain на каждый блок). Движение слайдера также неявно
+        снимает mute (как у любого другого медиаплеера)."""
         v = max(0.0, min(1.0, self.var_volume.get() / 100.0))
         if self._muted and v > 0.0:
             self._muted = False
@@ -3938,14 +3981,15 @@ class MainGUI(tk.Tk):
 
     def _toggle_mute(self):
         if self._muted:
-            # If the user manually dragged the slider to 0 *before* hitting
-            # MUTE, _volume_pre_mute is 0 and UNMUTE would silently leave
-            # the slider at 0 (looks broken). Snap to a sensible default.
+            # Если пользователь вручную дотащил слайдер до 0 *перед*
+            # нажатием MUTE, _volume_pre_mute равен 0, и UNMUTE молча
+            # оставил бы слайдер на 0 (выглядит как баг). Ставим разумное
+            # значение по умолчанию.
             restore = self._volume_pre_mute if self._volume_pre_mute > 0.01 else 0.8
             self._muted = False
             self._volume = restore
-            # Setting var_volume fires _on_volume_change, which re-applies the
-            # volume to the player.
+            # Установка var_volume вызывает _on_volume_change, который
+            # заново применяет громкость к плееру.
             self.var_volume.set(restore * 100.0)
             self.btn_mute.configure(text='MUTE')
         else:
@@ -3955,31 +3999,31 @@ class MainGUI(tk.Tk):
             self.btn_mute.configure(text='UNMUTE')
             self._apply_player_volume()
 
-    # ─── playback ───
-    # Settle delay between stop_and_clear_playback() and re-opening the
-    # capture / re-spawning threads. Gives the OS a moment to release the
-    # previous file handle on the temp preview before we read it again
-    # (especially on Windows, where a still-mapped file can refuse a new
-    # VideoCapture open). Empirically 150ms is enough.
+    # ─── воспроизведение ───
+    # Задержка между stop_and_clear_playback() и повторным открытием
+    # захвата / перезапуском потоков. Даёт ОС момент на освобождение
+    # предыдущего файлового хендла temp preview перед повторным чтением
+    # (особенно на Windows, где ещё замапленный файл может отказать в
+    # новом открытии VideoCapture). Эмпирически 150мс достаточно.
     _PLAYBACK_RESTART_MS = 150
 
     def start_playback(self, path):
-        """Two-phase start. Phase 1 (here, sync on Tk): tear down any
-        previous playback and request controls disabled. Phase 2 runs via
-        `after()` so the settle delay doesn't freeze the GUI thread —
-        previously this used `time.sleep(0.15)` and visibly stuttered Tk
-        on every preview start.
+        """Двухфазный запуск. Фаза 1 (здесь, синхронно в Tk): останавливаем
+        предыдущее воспроизведение и запрашиваем отключение управления.
+        Фаза 2 идёт через `after()`, чтобы задержка на устакивание не
+        замораживала поток GUI - раньше использовался `time.sleep(0.15)`,
+        что заметно подтормаживало Tk на каждом старте превью.
         """
         self.stop_and_clear_playback()
         self.after(self._PLAYBACK_RESTART_MS,
                    lambda: self._start_playback_phase2(path))
 
     def _extract_preview_wav(self, path):
-        """Extract the clip's audio to a temp PCM wav for the master clock.
+        """Извлекает аудио клипа во временный PCM wav для мастер-часов.
 
-        soundfile can't read the mp4 directly, and the audio-mastered player
-        needs raw PCM. Returns the wav path or None (silent preview on
-        failure)."""
+        soundfile не умеет читать mp4 напрямую, а плееру с аудио-мастерингом
+        нужен сырой PCM. Возвращает путь к wav или None (беззвучное превью
+        при ошибке)."""
         wav_fd, wav_path = tempfile.mkstemp(suffix='.wav')
         os.close(wav_fd)
         try:
@@ -4007,17 +4051,18 @@ class MainGUI(tk.Tk):
             self._cleanup_preview_wav()
             return
         self.log('Playback started (audio-synced, looping).')
-        # Enable transport controls. Mute/Volume only meaningful when the
-        # audio backend (sounddevice + soundfile) is available.
+        # Включаем элементы транспорта. Mute/Volume имеют смысл только
+        # если доступен аудио-бэкенд (sounddevice + soundfile).
         self.btn_pause.configure(state='normal', text='PAUSE')
         self.btn_clear_monitor.configure(state='normal')
         self.btn_mute.configure(state=('normal' if _AUDIO_OK else 'disabled'),
                                 text='MUTE')
 
     def _present_frame(self, rgb):
-        """Player worker-thread callback: build the Tk image and hand it to
-        the GUI thread. Building the PhotoImage off the Tk thread keeps the UI
-        responsive; only the cheap widget assignment runs on the main thread."""
+        """Колбэк рабочего потока плеера: собирает Tk-изображение и
+        передаёт его в поток GUI. Сборка PhotoImage вне потока Tk сохраняет
+        отзывчивость интерфейса; в основном потоке выполняется только
+        дешёвое присваивание виджету."""
         try:
             imgtk = ImageTk.PhotoImage(image=Image.fromarray(rgb))
         except Exception:
@@ -4042,8 +4087,8 @@ class MainGUI(tk.Tk):
             self._player.stop()
             self._player = None
         self._cleanup_preview_wav()
-        # Reset transport state. _muted/_volume_pre_mute persist across
-        # previews intentionally (user-set preference).
+        # Сбрасываем состояние транспорта. _muted/_volume_pre_mute
+        # намеренно сохраняются между превью (это настройка пользователя).
         self.btn_pause.configure(state='disabled', text='PAUSE')
         self.btn_mute.configure(state='disabled')
         self.btn_clear_monitor.configure(state='disabled')

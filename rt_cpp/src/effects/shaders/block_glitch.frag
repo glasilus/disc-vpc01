@@ -13,7 +13,7 @@ void main() {
     float r          = hash2(block);
     vec2  uv         = vUV;
     if (r < uIntensity * 0.4) {
-        // Shift this block
+        // Сдвигаем этот блок
         vec2 shift = vec2(hash2(block + 0.5) - 0.5, hash2(block + 1.5) - 0.5) * 0.15 * uIntensity;
         uv += shift;
     }

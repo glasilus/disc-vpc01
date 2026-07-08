@@ -1,20 +1,20 @@
-"""Declarative effect registry.
+"""Декларативный реестр эффектов.
 
-Single source of truth for every effect: id, parameters, defaults, ranges,
-trigger types, GUI labels, tooltips. Engine, GUI and config validation all
-read from this list - adding a new effect means adding one EffectSpec entry.
+Единый источник истины по каждому эффекту: id, параметры, дефолты, диапазоны,
+типы триггеров, подписи и тултипы для GUI. Движок, GUI и валидация конфига
+читают из этого списка - чтобы добавить эффект, достаточно одной записи
+EffectSpec.
 
-Public API:
-    EFFECTS              - list[EffectSpec], every registered effect
-    GROUP_ORDER          - list[str], display order of groups in GUI
-    find_spec(effect_id) - lookup helper
-    build_chain(cfg)     - turn a flat cfg dict into a list[BaseEffect]
-    iter_cfg_keys()      - yield every cfg key the registry expects
-    default_cfg()        - flat dict of all defaults, GUI-ready
+Публичный API:
+    EFFECTS              - list[EffectSpec], все зарегистрированные эффекты
+    GROUP_ORDER           - list[str], порядок групп в GUI
+    find_spec(effect_id) - поиск спека по id
+    build_chain(cfg)     - собрать список[BaseEffect] из плоского cfg-словаря
+    iter_cfg_keys()      - перебрать все ключи cfg, которые ожидает реестр
+    default_cfg()        - плоский словарь дефолтов, готовый для GUI
 
-Backward compatibility: the cfg keys produced (fx_xxx, fx_xxx_chance, ...)
-are identical to those used by the original flat engine - old presets still
-load.
+Ключи cfg (fx_xxx, fx_xxx_chance, ...) совпадают с теми, что были в старом
+плоском движке, поэтому старые пресеты по-прежнему загружаются.
 """
 from __future__ import annotations
 
@@ -36,62 +36,61 @@ from .effects.visualizer import (
 
 
 # ──────────────────────────────────────────────────────────────────────────
-#   Param + Effect specs
+#   Спеки параметров и эффектов
 # ──────────────────────────────────────────────────────────────────────────
 
 
 @dataclass
 class ParamSpec:
-    """Description of one tunable parameter of an effect."""
-    key: str                       # cfg-dict key, e.g. 'fx_psort_int'
-    label: str                     # GUI label, e.g. 'Pixel Sort Intensity'
-    default: Any                   # default value
-    lo: float = 0.0                # GUI slider min
-    hi: float = 1.0                # GUI slider max
+    """Описание одного настраиваемого параметра эффекта."""
+    key: str                       # ключ в cfg-словаре, напр. 'fx_psort_int'
+    label: str                     # подпись в GUI, напр. 'Pixel Sort Intensity'
+    default: Any
+    lo: float = 0.0                # мин. значения слайдера
+    hi: float = 1.0                # макс. значения слайдера
     kind: str = 'float'            # 'float' | 'int' | 'choice' | 'rgb' | 'string'
-    choices: Optional[List[str]] = None      # for kind='choice'
-    kwarg: Optional[str] = None    # ctor kwarg name (None = not passed to ctor)
-    indent: bool = True            # GUI: indent under main checkbox
-    tooltip: str = ''              # short description of how it shapes output
+    choices: Optional[List[str]] = None      # варианты для kind='choice'
+    kwarg: Optional[str] = None    # имя kwarg конструктора (None = в конструктор не передаётся)
+    indent: bool = True            # GUI: с отступом под главным чекбоксом
+    tooltip: str = ''              # короткое описание, как параметр влияет на результат
 
 
 @dataclass
 class EffectSpec:
-    """Description of one effect - source of truth for engine + GUI."""
-    id: str                                  # stable id, e.g. 'pixel_sort'
-    label: str                               # GUI display name
-    group: str                               # GUI group, e.g. 'CORE FX'
-    cls: Optional[type] = None               # effect class (None for "special" entries)
-    enable_key: str = ''                     # cfg flag key, e.g. 'fx_psort'
+    """Описание одного эффекта - источник истины для движка и GUI."""
+    id: str                                  # стабильный id, напр. 'pixel_sort'
+    label: str                               # отображаемое имя в GUI
+    group: str                               # группа в GUI, напр. 'CORE FX'
+    cls: Optional[type] = None               # класс эффекта (None у "особых" записей)
+    enable_key: str = ''                     # ключ флага включения в cfg, напр. 'fx_psort'
     enabled_default: bool = False
-    chance_key: Optional[str] = None         # cfg chance key; None = always-on (chance=1.0)
+    chance_key: Optional[str] = None         # ключ chance в cfg; None = always-on (chance=1.0)
     default_chance: float = 0.5
     params: List[ParamSpec] = field(default_factory=list)
-    trigger_types: Optional[List[SegmentType]] = None  # None → use class default
-    note: str = ''                           # short inline note in GUI
-    tooltip: str = ''                        # long description for hover/[?] popup
-    chance_scaled_by_chaos: bool = True      # apply _ch() scaling to chance
-    chain_kind: str = 'normal'               # 'normal' (added to chain) | 'special' (engine-handled) | 'mystery'
+    trigger_types: Optional[List[SegmentType]] = None  # None → использовать дефолт класса
+    note: str = ''                           # короткая пометка в GUI
+    tooltip: str = ''                        # длинное описание для hover/[?] попапа
+    chance_scaled_by_chaos: bool = True      # применять к chance масштабирование от _ch()
+    chain_kind: str = 'normal'               # 'normal' (идёт в цепочку) | 'special' (обрабатывает движок) | 'mystery'
     requires_overlay_dir: bool = False
     extra_factory: Optional[Callable[[dict], dict]] = None
-    # extra_factory(cfg) returns extra kwargs (e.g. overlay_frames, chroma_key)
-    intensity_max_kwarg: Optional[str] = None  # if param like fx_xxx_int maps to intensity_max
-    supports_always: bool = True             # whether the per-effect "always-on" override applies
+    # extra_factory(cfg) возвращает дополнительные kwargs (например overlay_frames, chroma_key)
+    intensity_max_kwarg: Optional[str] = None  # если параметр вида fx_xxx_int маппится на intensity_max
+    supports_always: bool = True             # применим ли для эффекта override "always-on"
 
-    # ── always-on cfg keys (auto-derived from enable_key) ──
+    # ── ключи cfg для always-on (выводятся из enable_key) ──
     @property
     def always_key(self) -> str:
-        """cfg key for the per-effect always-on flag (e.g. 'fx_psort_always')."""
+        """Ключ в cfg для персонального флага always-on (напр. 'fx_psort_always')."""
         return self.enable_key + '_always' if self.enable_key else ''
 
     @property
     def always_int_key(self) -> str:
-        """cfg key for the fixed intensity used when always-on is active."""
+        """Ключ в cfg для фиксированной интенсивности при активном always-on."""
         return self.enable_key + '_always_int' if self.enable_key else ''
 
-    # ----- helpers -----
     def supports_always_for_chain(self) -> bool:
-        """True iff the per-effect always-on override is meaningful for this spec."""
+        """True, если override always-on вообще имеет смысл для этого спека."""
         return self.supports_always and self.chain_kind == 'normal' and self.cls is not None
 
     def all_keys(self) -> List[str]:
@@ -107,7 +106,7 @@ class EffectSpec:
         return keys
 
     def build_kwargs(self, cfg: dict) -> dict:
-        """Construct ctor kwargs from a flat cfg dict."""
+        """Собрать kwargs конструктора из плоского cfg-словаря."""
         kw: dict = {}
         for p in self.params:
             if p.kwarg is None:
@@ -125,7 +124,7 @@ class EffectSpec:
 
 
 # ──────────────────────────────────────────────────────────────────────────
-#   Group order for GUI
+#   Порядок групп в GUI
 # ──────────────────────────────────────────────────────────────────────────
 
 GROUP_ORDER: List[str] = [
@@ -136,26 +135,28 @@ GROUP_ORDER: List[str] = [
     'COMPLEX',
     'SIGNAL DOMAIN',
     'WARP',
-    'BROKEN',            # decoder/memory-corruption family
-    'VIRUS',             # Win95-virus aesthetic
+    'BROKEN',            # семейство "сломанный декодер"/повреждение памяти
+    'VIRUS',             # эстетика Win95-вируса
     'PAINT',
-    'VISUALIZER',        # audio-reactive music visualizers (WMP-style)
+    'VISUALIZER',        # аудио-реактивные визуализаторы в духе WMP
     'OVERLAYS',
-    'FORMULA',           # rendered as its own dedicated tab, not in the accordion
+    'FORMULA',           # отдельная вкладка, не часть аккордеона
 ]
 
 
-# Display labels for the effect groups. The internal group keys (above and on
-# every EffectSpec.group) stay constant - they drive grouping logic, the
-# accordion's hidden-group filter, and the navbar's jump targets - while these
-# strings are what the GUI actually shows. Presets never reference groups
-# (they key on fx_* enable keys), so renaming here is fully preset-safe.
+# Отображаемые названия групп эффектов. Внутренние ключи групп (выше и в
+# каждом EffectSpec.group) остаются неизменными - на них завязана логика
+# группировки, фильтр скрытых групп в аккордеоне и переходы в навбаре, а вот
+# эти строки - то, что реально видит пользователь в GUI. Пресеты никогда не
+# ссылаются на группы (они привязаны к ключам fx_* enable), так что
+# переименование здесь ничего не сломает.
 #
-# The names read left-to-right as a corrupting signal chain:
+# Названия читаются слева направо как цепочка деградации сигнала:
 #   SOURCE FEED → RASTER FAULT → TAPE ROT → FEEDBACK BUS → DSP KERNEL →
 #   GEOMETRY FAULT → CODEC ROT → MALWARE → (PAINT) → (OVERLAYS)
-# with a shared vocabulary: FAULT = sudden glitch, ROT = gradual decay.
-# A key absent here (CUT LOGIC, OVERLAYS, FORMULA) displays under its own name.
+# с общим словарём: FAULT = внезапный глитч, ROT = постепенный распад.
+# Группы, которых нет в этом словаре (CUT LOGIC, OVERLAYS, FORMULA),
+# отображаются под своим исходным именем.
 GROUP_DISPLAY_NAMES: dict = {
     'CORE FX': 'SOURCE FEED',
     'GLITCH': 'RASTER FAULT',
@@ -170,12 +171,12 @@ GROUP_DISPLAY_NAMES: dict = {
 }
 
 
-# Groups that the effects accordion should NOT render (they get a dedicated tab).
+# Группы, которые аккордеон эффектов не рисует (у них своя отдельная вкладка).
 ACCORDION_HIDDEN_GROUPS = {'FORMULA'}
 
 
 # ──────────────────────────────────────────────────────────────────────────
-#   Helpers for tedious chance/int param patterns
+#   Хелперы для рутинных паттернов chance/int параметров
 # ──────────────────────────────────────────────────────────────────────────
 
 
@@ -185,16 +186,17 @@ def _chance_scale(chaos: float, base: float) -> float:
 
 
 def bi(en: str, ru: str) -> str:
-    """Build a bilingual tooltip. EN goes first, RU after the dividing line.
+    """Собрать двуязычный tooltip. Сначала EN, после разделителя - RU.
 
-    The dedicated divider lets a future GUI language switcher slice the string
-    cleanly. Until then, both languages render in the same balloon.
+    Разделитель нужен на будущее - если в GUI появится переключатель языка,
+    строку можно будет разрезать по нему. Пока же обе версии показываются
+    в одном и том же всплывающем окне.
     """
     return f'{en}\n──\n{ru}'
 
 
 # ──────────────────────────────────────────────────────────────────────────
-#   Overlay extras factory - needs overlay frames + ChromaKey from cfg
+#   Фабрика доп. параметров оверлея - нужны кадры оверлея и ChromaKey из cfg
 # ──────────────────────────────────────────────────────────────────────────
 
 
@@ -348,7 +350,7 @@ def _paint_extras(cfg: dict) -> dict:
 
 
 # ──────────────────────────────────────────────────────────────────────────
-#   THE REGISTRY - every tunable effect lives here
+#   РЕЕСТР - здесь описан каждый настраиваемый эффект
 # ──────────────────────────────────────────────────────────────────────────
 
 
@@ -388,7 +390,7 @@ EFFECTS: List[EffectSpec] = [
         id='ghost', label='Ghost Trails', group='CORE FX',
         cls=core.GhostTrailsEffect,
         enable_key='fx_ghost', enabled_default=False,
-        chance_key=None,                 # always-on when enabled
+        chance_key=None,                 # always-on при включении
         params=[ParamSpec('fx_ghost_int', 'Opacity', 0.5, 0.0, 1.0,
                           kwarg='intensity_max', indent=False,
                           tooltip=bi(
@@ -1199,7 +1201,7 @@ EFFECTS: List[EffectSpec] = [
         ),
     ),
 
-    # ── WARP (the four newly-integrated effects) ───────────────────────
+    # ── WARP ─────────────────────────────────────────────────────────
     EffectSpec(
         id='deriv_warp', label='Deriv Warp (gradient flow)', group='WARP',
         cls=warp.DerivWarpEffect,
@@ -1654,9 +1656,9 @@ EFFECTS: List[EffectSpec] = [
         ),
     ),
 
-    # ── VISUALIZER (WINDOWS MEDIA PLAYER - audio-reactive) ──────────────
-    # Each renderer draws a visual from the per-frame audio bands (seg.live)
-    # and the shared Composite Mode decides how it meets the source frame.
+    # ── VISUALIZER (WINDOWS MEDIA PLAYER - реагирует на аудио) ──────────
+    # Каждый рендерер рисует картинку по аудио-полосам текущего кадра (seg.live),
+    # а общий Composite Mode решает, как она смешивается с исходным кадром.
     EffectSpec(
         id='viz_bars', label='Spectrum Bars', group='VISUALIZER',
         cls=SpectrumBarsEffect, enable_key='fx_viz_bars', enabled_default=False,
@@ -1859,7 +1861,7 @@ EFFECTS: List[EffectSpec] = [
 
 
 # ──────────────────────────────────────────────────────────────────────────
-#   Lookup + iteration helpers
+#   Хелперы поиска и обхода
 # ──────────────────────────────────────────────────────────────────────────
 
 
@@ -1890,27 +1892,26 @@ def iter_cfg_keys() -> Iterable[Tuple[str, Any]]:
 
 
 # ──────────────────────────────────────────────────────────────────────────
-#   Engine-side: build the chain from a flat cfg dict
+#   Сторона движка: собрать цепочку эффектов из плоского cfg-словаря
 # ──────────────────────────────────────────────────────────────────────────
 
 
 def build_chain(cfg: dict) -> List[BaseEffect]:
-    """Construct the ordered effect chain for a render from a flat cfg dict.
+    """Собрать упорядоченную цепочку эффектов для рендера из плоского cfg-словаря.
 
-    Mirrors the original engine order - effects appear in the same order as
-    EFFECTS so any preset chained behaviour (e.g. Cascade after individual
-    glitches) is preserved.
+    Эффекты идут в том же порядке, что и в EFFECTS, поэтому цепное поведение
+    пресетов (например Cascade после отдельных глитчей) сохраняется.
 
-    `chance` is scaled by chaos_level via the same formula as the original
-    engine (`base * (0.3 + 0.7 * chaos)`) for every effect that opted in.
+    `chance` масштабируется через chaos_level по формуле
+    `base * (0.3 + 0.7 * chaos)` для каждого эффекта, который это поддерживает.
 
-    Per-effect always-on (backlog #1):
-        cfg[fx_xxx_always]      - when True, this effect:
-                                  · ignores its trigger_types (fires on every segment),
-                                  · ignores its chance slider (chance = 1.0),
-                                  · uses a fixed intensity (no audio scaling).
-        cfg[fx_xxx_always_int]  - that fixed intensity, in [0, 1].
-        Other effects in the chain remain unaffected by this override.
+    Per-effect always-on:
+        cfg[fx_xxx_always]      - если True, этот эффект:
+                                  · игнорирует trigger_types (срабатывает на каждом сегменте),
+                                  · игнорирует слайдер chance (chance = 1.0),
+                                  · использует фиксированную интенсивность (без аудио-скейлинга).
+        cfg[fx_xxx_always_int]  - эта фиксированная интенсивность, в диапазоне [0, 1].
+        На остальные эффекты цепочки этот override не влияет.
     """
     chaos = float(cfg.get('chaos_level', 0.5))
     chain: List[BaseEffect] = []
@@ -1926,7 +1927,7 @@ def build_chain(cfg: dict) -> List[BaseEffect]:
         always_on = (spec.supports_always_for_chain()
                      and bool(cfg.get(spec.always_key, False)))
 
-        # Compute chance (overridden to 1.0 in always-on mode)
+        # В always-on режиме chance всегда 1.0
         if always_on:
             chance = 1.0
         elif spec.chance_key is None:
@@ -1946,7 +1947,7 @@ def build_chain(cfg: dict) -> List[BaseEffect]:
             fx = spec.cls(**sane)
 
         if always_on:
-            # Bypass triggers, pin intensity to the user-set fixed value.
+            # Игнорируем триггеры, фиксируем интенсивность на значении из настроек.
             fixed = float(cfg.get(spec.always_int_key, 0.6))
             fx.trigger_types = list(SegmentType)
             fx.intensity_min = fixed
@@ -1955,10 +1956,10 @@ def build_chain(cfg: dict) -> List[BaseEffect]:
         elif spec.trigger_types is not None:
             fx.trigger_types = list(spec.trigger_types)
 
-        # Generic audio-reactivity wiring. Defaults reproduce today's
-        # behaviour, so effects that don't expose these params (and old
-        # presets) are unaffected. Only effects that declare the matching
-        # ParamSpec surface the control in the GUI.
+        # Общая обвязка аудио-реактивности. Дефолты повторяют текущее
+        # поведение, так что эффекты без этих параметров (и старые пресеты)
+        # не затрагиваются. Контрол в GUI появляется только у эффектов,
+        # объявивших соответствующий ParamSpec.
         fx.audio_drive = cfg.get(spec.enable_key + '_drive', 'segment')
         fx.beat_gate = cfg.get(spec.enable_key + '_gate', 'off')
         _react_val = cfg.get(spec.enable_key + '_react', 'off')
@@ -1977,7 +1978,7 @@ def default_cfg() -> dict:
     cfg: dict = {}
     for k, v in iter_cfg_keys():
         cfg[k] = v
-    # Composite RGB defaults - stored in cfg as lists (matches old format)
+    # RGB-дефолты для composite - хранятся в cfg списками (совместимость со старым форматом)
     cfg['fx_ascii_fg'] = [
         cfg.get('fx_ascii_fg_r', 0), cfg.get('fx_ascii_fg_g', 255), cfg.get('fx_ascii_fg_b', 0)]
     cfg['fx_ascii_bg'] = [

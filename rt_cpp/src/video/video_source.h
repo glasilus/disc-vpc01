@@ -14,20 +14,20 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
-// Pool size = max decoded frames in flight per source. 12 ≈ 0.4 sec at
-// 30 fps, plenty of slack for the random-cut frame picker. Larger values
-// just waste VRAM and CPU memory without improving cut variety
-// perceptibly (consecutive frames of the same shot look ~identical).
+// Размер пула = максимум декодированных кадров в полете на один источник.
+// 12 ≈ 0.4 сек при 30 fps - с запасом для случайного выбора кадра при cut.
+// Больше смысла не имеет: только жрет VRAM и RAM, а разнообразие cut'ов
+// заметно не растет (соседние кадры одного плана выглядят почти одинаково).
 static constexpr int kTexPoolSize = 12;
 
-// One decoded frame stored in CPU memory (RGB24, ready to upload)
+// Один декодированный кадр в CPU-памяти (RGB24, готов к заливке на GPU)
 struct DecodedFrame {
     std::vector<uint8_t> pixels;
     int width  = 0;
     int height = 0;
 };
 
-// Manages decoding of a single video file + a pool of GL textures
+// Декодирует один видеофайл и держит пул GL-текстур для него
 class VideoSource {
 public:
     explicit VideoSource(const std::string& path);
@@ -36,18 +36,18 @@ public:
     bool is_open() const { return open_; }
     const std::string& path() const { return path_; }
 
-    // Returns a GL texture ID with a decoded frame at NATIVE resolution
-    // (caller must NOT delete). Writes out the texture dimensions through
-    // out_w/out_h if non-null - needed by the canvas-placement shader for
-    // correct aspect handling. The target_w/target_h args are kept for
-    // backwards compatibility but ignored.
+    // Возвращает ID GL-текстуры с декодированным кадром в НАТИВНОМ разрешении
+    // (вызывающий код не должен ее удалять). Если out_w/out_h не null, туда
+    // пишутся размеры текстуры - они нужны шейдеру размещения на канвасе для
+    // корректного аспекта. Аргументы target_w/target_h оставлены для
+    // совместимости сигнатуры, но игнорируются.
     GLuint get_random_frame(int target_w, int target_h, int* out_w = nullptr, int* out_h = nullptr);
     GLuint get_sequential_frame(int target_w, int target_h, int* out_w = nullptr, int* out_h = nullptr);
 
     int native_width()  const { return src_w_; }
     int native_height() const { return src_h_; }
 
-    // Call once per frame from render thread to pump pending GPU uploads
+    // Вызывать раз в кадр из render-потока, чтобы прокачать отложенные загрузки на GPU
     void pump_uploads();
 
 private:
@@ -60,7 +60,7 @@ private:
     std::string path_;
     bool        open_ = false;
 
-    // FFmpeg handles
+    // Хендлы FFmpeg
     AVFormatContext* fmt_ctx_   = nullptr;
     AVCodecContext*  codec_ctx_ = nullptr;
     SwsContext*      sws_ctx_   = nullptr;
@@ -68,28 +68,29 @@ private:
     AVFrame*         rgb_frame_ = nullptr;
     int              video_stream_idx_ = -1;
     int64_t          duration_ts_      = 0;
-    int              src_w_ = 0, src_h_ = 0;   // native video dimensions
-    int              dec_w_ = 0, dec_h_ = 0;   // capped decode dimensions
-    double           src_fps_ = 30.0;          // native frame rate (paces uploads)
-    double           last_upload_time_ = 0.0;  // glfwGetTime() of last GPU upload
+    int              src_w_ = 0, src_h_ = 0;   // нативные размеры видео
+    int              dec_w_ = 0, dec_h_ = 0;   // размеры декодирования (с ограничением сверху)
+    double           src_fps_ = 30.0;          // нативный fps (задает темп заливки на GPU)
+    double           last_upload_time_ = 0.0;  // glfwGetTime() последней заливки на GPU
 public:
-    // Loop counter: incremented every time the decoder seeks back to start.
-    // VideoPool reads this to advance round-robin between sources.
+    // Счетчик циклов: растет каждый раз, когда декодер прыгает обратно в начало.
+    // VideoPool читает его, чтобы продвигать round-robin между источниками.
     int              loop_count() const { return loop_count_; }
     double           native_fps()  const { return src_fps_; }
 
-    // Asks the decoder thread to seek to a random position. Returns
-    // immediately (non-blocking). The pool uses this on cut events to make
-    // each cut land on a different part of the video - visual response stays
-    // 1 render frame because get_random_frame still returns a cached tex
-    // before the seek lands.
+    // Просит поток декодера прыгнуть на случайную позицию. Возвращается
+    // сразу же (неблокирующий вызов). Пул использует это на cut-событиях,
+    // чтобы каждый cut попадал в другую часть видео - визуально отклик
+    // укладывается в 1 render-кадр, потому что get_random_frame до завершения
+    // seek все еще отдает закэшированную текстуру.
     void             request_seek_random() { seek_request_.store(true); queue_cv_.notify_all(); }
 private:
     std::atomic<int>  loop_count_{0};
     std::atomic<bool> seek_request_{false};
 
-    // GL texture pool - dimensions tracked per-slot because decode runs at
-    // native resolution (which can vary if we ever cache mixed-size frames).
+    // Пул GL-текстур - размеры хранятся отдельно на каждый слот, потому что
+    // декодирование идет в нативном разрешении (оно может отличаться между
+    // кадрами, если когда-нибудь начнем кэшировать кадры разного размера).
     GLuint tex_pool_[kTexPoolSize] = {};
     int    tex_w_[kTexPoolSize] = {};
     int    tex_h_[kTexPoolSize] = {};
@@ -97,11 +98,11 @@ private:
     int    tex_ready_count_ = 0;
     int    seq_idx_         = 0;
 
-    // Background decode thread
+    // Фоновый поток декодирования
     std::thread              decode_thread_;
     std::atomic<bool>        stop_thread_{false};
     std::mutex               queue_mutex_;
     std::condition_variable  queue_cv_;
-    std::deque<DecodedFrame> ready_queue_;  // CPU frames awaiting GPU upload
+    std::deque<DecodedFrame> ready_queue_;  // CPU-кадры, ждущие заливки на GPU
     int target_w_ = 1280, target_h_ = 720;
 };

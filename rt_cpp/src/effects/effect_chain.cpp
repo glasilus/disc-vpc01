@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <functional>
 
-// Embedded shader sources (generated headers on include path via CMake)
+// Исходники шейдеров зашиты в бинарник - заголовки генерирует CMake
 #include "passthrough_frag.h"
 #include "canvas_place_frag.h"
 #include "deriv_warp_frag.h"
@@ -32,28 +32,29 @@
 #include "fractal_noise_frag.h"
 #include "self_disp_frag.h"
 #include "ascii_frag.h"
-// Wired-in classics (shaders existed but were never compiled/hooked up).
+// Классика, которую наконец подключили (шейдеры лежали, но не собирались)
 #include "rgb_shift_frag.h"
 #include "kali_mirror_frag.h"
 #include "fisheye_frag.h"
 #include "vhs_tracking_frag.h"
 #include "pixel_drift_frag.h"
-// Datamosh family (temporal; feed off the previous chain output).
+// Семейство datamosh-эффектов (временные, берут кадр из предыдущего прохода цепочки)
 #include "pframe_lag_frag.h"
 #include "mvec_bloom_frag.h"
 #include "self_cannibalize_frag.h"
-// Generative visualizers (authored to a fixed audio-uniform contract).
+// Генеративные визуализаторы (написаны под фиксированный набор audio-uniform'ов)
 #include "viz_plasma_frag.h"
 #include "viz_radial_frag.h"
 #include "viz_bars_frag.h"
 #include "viz_alchemy_frag.h"
 
-// ── fx_key mapping ────────────────────────────────────────────────────────────
+// ── таблица fx_key ────────────────────────────────────────────────────────────
 
-// SINGLE source of truth for effect metadata. Order MUST match the FxId enum.
-// NOTE: "fx_derivwarp" replaces the old "fx_rgb"; old presets simply lack it.
-// tip = a short, plain description of how the effect LOOKS (shown as a GUI
-// tooltip on hover), not how it works internally.
+// Единственный источник метаданных по эффектам. Порядок строк ДОЛЖЕН совпадать
+// с enum FxId. "fx_derivwarp" заменил старый "fx_rgb" - в старых пресетах
+// этого ключа просто нет.
+// tip - короткое описание того, как эффект ВЫГЛЯДИТ (тултип в GUI при наведении),
+// а не как он устроен внутри.
 struct FxInfo { const char* key; const char* label; const char* group; const char* tip; };
 static const FxInfo kFxInfo[(int)FxId::COUNT] = {
     { "fx_derivwarp",   "Deriv Warp",       "WARP",       "Picture flows and tears along its own motion, a liquid datamosh-style warp." },  // 0
@@ -103,12 +104,12 @@ const char* const kFxGroupOrder[] = {
 };
 const int kFxGroupOrderCount = (int)(sizeof(kFxGroupOrder) / sizeof(kFxGroupOrder[0]));
 
-// ── Keyboard / display order ──────────────────────────────────────────────────
-// Built once from kFxGroupOrder: for each group in order, append every effect
-// belonging to it (in enum order); any effect whose group isn't listed is
-// appended at the end so it can never become unreachable. This is the exact
-// order the GUI renders the effect list in, so slot index == display position,
-// which makes each Q..P key bank highlight a contiguous run.
+// ── Порядок клавиш / отображения ────────────────────────────────────────────
+// Строится один раз из kFxGroupOrder: для каждой группы по порядку добавляются
+// все её эффекты (в порядке enum); эффект без известной группы уходит в конец,
+// чтобы не стать недостижимым. Это тот же порядок, в котором GUI рисует список
+// эффектов, поэтому индекс слота == позиция на экране, и каждая банка клавиш
+// Q..P подсвечивает непрерывный диапазон.
 struct FxKeyOrder {
     int slot_to_id[(int)FxId::COUNT];
     int id_to_slot[(int)FxId::COUNT];
@@ -118,7 +119,7 @@ struct FxKeyOrder {
             for (int i = 0; i < (int)FxId::COUNT; ++i)
                 if (std::strcmp(fx_group((FxId)i), kFxGroupOrder[g]) == 0)
                     slot_to_id[n++] = i;
-        // Safety net: any ungrouped effect gets appended.
+        // Подстраховка: любой эффект без группы добавляется в конец.
         for (int i = 0; i < (int)FxId::COUNT; ++i) {
             bool seen = false;
             for (int k = 0; k < n; ++k) if (slot_to_id[k] == i) { seen = true; break; }
@@ -138,7 +139,7 @@ int fx_id_to_slot(int id) {
     return kKeyOrder.id_to_slot[id];
 }
 
-// ── FboPair ───────────────────────────────────────────────────────────────────
+// ── FboPair ──────────────────────────────────────────────────────────────────
 
 void FboPair::create(int w, int h) {
     width = w; height = h;
@@ -164,7 +165,7 @@ void FboPair::destroy() {
     width = height = 0;
 }
 
-// ── EffectChain ───────────────────────────────────────────────────────────────
+// ── EffectChain ──────────────────────────────────────────────────────────────
 
 static GLuint compile_shader_src(GLenum type, const char* src) {
     GLuint s = glCreateShader(type);
@@ -225,11 +226,10 @@ void EffectChain::setup_quad() {
     glBindVertexArray(0);
 }
 
-// Dense-to-sparse ASCII chars (16 levels).
-// Each entry is 8 columns of an 8×8 bitmap font row.
-// We use a hand-crafted minimal font for: @#%=+-. (space) + 8 more density chars.
-// Encoded as 8 rows × 8 bytes per character, 16 characters total.
-// Font data: chars ordered from DENSE (@) to SPARSE (space)
+// ASCII-символы от плотного к разреженному (16 уровней).
+// Каждая запись - 8×8 битмап-шрифт, закодированный построчно.
+// Самодельный минимальный шрифт: @#%=+-. (пробел) + ещё 8 символов плотности.
+// 8 строк × 8 байт на символ, всего 16 символов, от DENSE (@) до SPARSE (пробел).
 static const uint8_t kFontData[16][8][8] = {
     // 0: @ (very dense)
     {{0,0,0,0,0,0,0,0},{0,0,1,1,1,1,0,0},{0,1,1,0,0,1,1,0},{0,1,0,1,1,1,1,0},
@@ -282,7 +282,7 @@ static const uint8_t kFontData[16][8][8] = {
 };
 
 void EffectChain::create_ascii_font_tex() {
-    // Build 128×8 R8 texture: 16 chars × 8px wide, 8 rows tall
+    // Собираем текстуру 128×8 R8: 16 символов по 8px шириной, 8 строк высотой
     const int CHARS = 16, CHAR_W = 8, CHAR_H = 8;
     const int W = CHARS * CHAR_W, H = CHAR_H;
     uint8_t pixels[H][W] = {};
@@ -311,9 +311,9 @@ bool EffectChain::init(int w, int h) {
     main_fbo_.create(w, h);
     accum_fbo_.create(w, h);
 
-    // Dry buffer: a single FBO+tex sized to the canvas. We blit the canvas-
-    // placed input into it before any effects run, then sample from it in the
-    // final master_intensity dry/wet mix pass.
+    // Dry-буфер: один FBO+текстура размером с канвас. Перед запуском любых
+    // эффектов в него блитится уже размещённый на канвасе кадр, чтобы потом
+    // взять его в финальном dry/wet-миксе по master_intensity.
     glGenTextures(1, &dry_tex_);
     glBindTexture(GL_TEXTURE_2D, dry_tex_);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
@@ -328,7 +328,7 @@ bool EffectChain::init(int w, int h) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    // Pre-allocate history textures + FBOs
+    // Заранее выделяем текстуры и FBO для истории кадров
     glGenTextures(kHistoryLen, hist_tex_);
     glGenFramebuffers(kHistoryLen, hist_fbo_);
     for (int i = 0; i < kHistoryLen; ++i) {
@@ -347,12 +347,12 @@ bool EffectChain::init(int w, int h) {
 
     create_ascii_font_tex();
 
-    // Compile all programs
+    // Компилируем все программы
     prog_pass_        = compile_program(k_vert, k_passthrough_frag);
     prog_place_       = compile_program(k_vert, k_canvas_place_frag);
 
-    // Inline dry/wet mix shader: lerp between two textures by uMix.
-    // Gated by chroma key on uDry if uGatingMode != 0.
+    // Inline-шейдер dry/wet микса: лерп двух текстур по uMix.
+    // Если uGatingMode != 0, дополнительно гейтится хромакеем по uDry.
     static const char* k_mix_frag =
         "#version 330 core\n"
         "in vec2 vUV; out vec4 fragColor;\n"
@@ -434,7 +434,7 @@ bool EffectChain::init(int w, int h) {
 void EffectChain::resize(int w, int h) {
     main_fbo_.destroy();  main_fbo_.create(w, h);
     accum_fbo_.destroy(); accum_fbo_.create(w, h);
-    // Resize history textures
+    // Меняем размер текстур истории
     for (int i = 0; i < kHistoryLen; ++i) {
         glBindTexture(GL_TEXTURE_2D, hist_tex_[i]);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
@@ -477,15 +477,15 @@ void EffectChain::destroy() {
     if (quad_vbo_) { glDeleteBuffers(1, &quad_vbo_);      quad_vbo_ = 0; }
 }
 
-// ── History management ────────────────────────────────────────────────────────
+// ── Управление историей кадров ─────────────────────────────────────────────
 
 void EffectChain::push_history() {
-    // GPU-side copy: blit main_fbo_.read_tex() into hist_fbo_[hist_idx_]
-    // using glBlitFramebuffer (fast, no pixel read-back to CPU)
+    // Копия на GPU: блитим main_fbo_.read_tex() в hist_fbo_[hist_idx_] через
+    // glBlitFramebuffer - быстро, без читбэка пикселей на CPU.
     int w = main_fbo_.width, h = main_fbo_.height;
 
-    // We need a source FBO. The main ping-pong FBOs are owned by main_fbo_.
-    // The current read side is main_fbo_.fbo[main_fbo_.current].
+    // Нужен исходный FBO. Ping-pong FBO принадлежат main_fbo_,
+    // текущая сторона для чтения - main_fbo_.fbo[main_fbo_.current].
     GLuint src_fbo = main_fbo_.fbo[main_fbo_.current];
     GLuint dst_fbo = hist_fbo_[hist_idx_];
 
@@ -499,13 +499,13 @@ void EffectChain::push_history() {
 }
 
 GLuint EffectChain::history_tex(int age) const {
-    // age 0 = most recent, age 1 = one frame older, etc.
-    if (!hist_full_ && age >= hist_idx_) return main_fbo_.read_tex(); // fallback
+    // age 0 = самый свежий кадр, age 1 = на кадр старше, и т.д.
+    if (!hist_full_ && age >= hist_idx_) return main_fbo_.read_tex(); // ещё не накопили историю
     int slot = (hist_idx_ - 1 - age + kHistoryLen * 2) % kHistoryLen;
     return hist_tex_[slot];
 }
 
-// ── Shader pass helper ────────────────────────────────────────────────────────
+// ── Хелпер для шейдерного прохода ────────────────────────────────────────────
 
 void EffectChain::pass(GLuint prog, GLuint src_tex,
                        const std::function<void(GLuint)>& set_uniforms) {
@@ -513,7 +513,7 @@ void EffectChain::pass(GLuint prog, GLuint src_tex,
     glViewport(0, 0, main_fbo_.width, main_fbo_.height);
     glUseProgram(prog);
 
-    // Bind src as texture unit 0 (uTex)
+    // Привязываем src как texture unit 0 (uTex)
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, src_tex);
     glUniform1i(glGetUniformLocation(prog, "uTex"), 0);
@@ -526,7 +526,7 @@ void EffectChain::pass(GLuint prog, GLuint src_tex,
     main_fbo_.swap();
 }
 
-// Convenience: set uniform helpers
+// Короткие обёртки для установки uniform-ов
 static inline void u1f(GLuint p, const char* n, float v)           { glUniform1f(glGetUniformLocation(p,n),v); }
 static inline void u1i(GLuint p, const char* n, int   v)           { glUniform1i(glGetUniformLocation(p,n),v); }
 static inline void u2f(GLuint p, const char* n, float a, float b)  { glUniform2f(glGetUniformLocation(p,n),a,b); }
@@ -542,8 +542,9 @@ static bool fires(float chance) {
     return ((float)rand() / (float)RAND_MAX) < chance;
 }
 
-// Per-effect envelope decay time constant (seconds). Snappy hits (flash) fall
-// fast; smears/feedback linger. Everything else uses a musical ~180 ms tail.
+// Постоянная времени затухания огибающей для каждого эффекта (в секундах).
+// Резкие удары (flash) гаснут быстро; смазы/feedback тянутся дольше.
+// Всё остальное - на музыкальном хвосте ~180 мс.
 static float fx_decay_tau(FxId id) {
     switch (id) {
         case FxId::FLASH:       return 0.05f;
@@ -553,7 +554,8 @@ static float fx_decay_tau(FxId id) {
         case FxId::GHOST:       return 0.30f;
         case FxId::TEMPORALRGB: return 0.25f;
         case FxId::FEEDBACK:    return 0.45f;
-        // Datamosh compounds over frames - let it linger so the melt builds.
+        // Datamosh накапливается от кадра к кадру - даём ему тянуться дольше,
+        // чтобы "плавление" успевало нарастать.
         case FxId::PFRAME_LAG:
         case FxId::MVEC_BLOOM:
         case FxId::SELF_CANNIBALIZE: return 0.40f;
@@ -561,13 +563,13 @@ static float fx_decay_tau(FxId id) {
     }
 }
 
-// ── Envelope model ──────────────────────────────────────────────────────────
-// Replaces the old per-frame Bernoulli firing (which made effects strobe and
-// depend on frame rate). Each enabled effect gets a 0..1 envelope:
-//   Beat/Auto  → attack to `trig_level` on a musical event (gated by chance),
-//                then exponential decay - a smooth hit that fades, not a flicker.
-//   Sustained  → continuously tracks audio loudness (no strobe).
-//   Manual     → always full-on (VJ holds it), ignores audio.
+// ── Модель огибающей ─────────────────────────────────────────────────────────
+// Заменяет старую покадровую схему Бернулли (из-за неё эффекты стробили и
+// зависели от frame rate). У каждого включённого эффекта есть огибающая 0..1:
+//   Beat/Auto  - атака до trig_level по музыкальному событию (с шансом chance),
+//                затем экспоненциальный спад - плавный удар, а не мерцание.
+//   Sustained  - непрерывно следит за громкостью звука (без строба).
+//   Manual     - всегда включён на максимум (VJ держит вручную), звук игнорирует.
 void EffectChain::update_envelopes(const Segment& seg, const AudioStats& stats,
                                    float chaos, float dt, EffectParams params[]) {
     bool beat_edge = stats.beat && !prev_beat_;
@@ -581,7 +583,7 @@ void EffectChain::update_envelopes(const Segment& seg, const AudioStats& stats,
     float seg_env    = std::sqrt(std::clamp(seg.intensity, 0.f, 1.f));
     float trig_level = std::clamp(0.5f + 0.5f * chaos, 0.f, 1.f);
     dt = std::clamp(dt, 0.f, 0.1f);
-    float attack = 1.f - std::exp(-dt / 0.04f);   // ~40 ms smoothing
+    float attack = 1.f - std::exp(-dt / 0.04f);   // сглаживание ~40 мс
 
     for (int i = 0; i < (int)FxId::COUNT; ++i) {
         EffectParams& p = params[i];
@@ -606,8 +608,9 @@ void EffectChain::update_envelopes(const Segment& seg, const AudioStats& stats,
     }
 }
 
-// Only these effects sample the frame-history ring; when none are enabled we
-// skip the per-frame history blit entirely (a full-canvas copy every frame).
+// Только эти эффекты читают кольцо истории кадров; если ни один не включён,
+// покадровый блит истории вообще пропускаем (иначе это копия всего канваса
+// каждый кадр впустую).
 bool EffectChain::needs_history(EffectParams params[]) const {
     static const FxId consumers[] = {
         FxId::GHOST, FxId::STUTTER, FxId::INTERLACE,
@@ -640,14 +643,14 @@ GLuint EffectChain::apply(
     const int W = main_fbo_.width, H = main_fbo_.height;
     constexpr float kEps = 0.004f;
 
-    // Advance every effect's audio-reactive envelope for this frame. After this,
-    // strength(id) = env_[id] * intensity gives the smooth 0..1 amount to apply.
+    // Продвигаем аудио-огибающую каждого эффекта на этот кадр. После этого
+    // strength(id) = env_[id] * intensity дает плавную величину применения 0..1.
     update_envelopes(seg, stats, chaos, dt, params);
     auto strength = [&](FxId id) -> float {
         return std::clamp(env_[(int)id] * params[(int)id].intensity, 0.f, 1.f);
     };
 
-    // Normalized audio aggregates for the generative visualizers (0..1).
+    // Нормализованные аудио-агрегаты для генеративных визуализаторов (0..1).
     float vbass = 0.f, vmid = 0.f, vtreb = 0.f;
     for (int i = 0; i < 4;  ++i) vbass += stats.bins[i];       vbass *= 0.25f;
     for (int i = 4; i < 10; ++i) vmid  += stats.bins[i];       vmid  /= 6.f;
@@ -667,9 +670,9 @@ GLuint EffectChain::apply(
         });
     };
 
-    // Place the input onto the canvas with correct aspect handling. If we
-    // don't have usable dimensions yet (no decoded frame this tick) or the
-    // placement shader didn't compile, fall back to a straight blit.
+    // Размещаем входное изображение на канвасе с учётом aspect ratio. Если
+    // размеры ещё не готовы (в этот тик кадр не декодирован) или шейдер
+    // размещения не скомпилировался - откатываемся к простому блиту.
     if (src_w > 0 && src_h > 0 && input_tex != 0 && prog_place_ != 0) {
         pass(prog_place_, input_tex, [&](GLuint p){
             glUniform2f(glGetUniformLocation(p, "uSrcSize"),    (float)src_w, (float)src_h);
@@ -680,9 +683,9 @@ GLuint EffectChain::apply(
         pass(prog_pass_, input_tex, [](GLuint){});
     }
 
-    // Snapshot the canvas-placed input as the "dry" reference for the final
-    // master_intensity blend. glBlitFramebuffer is well-defined for same-size
-    // color blits and avoids an extra fullscreen quad.
+    // Сохраняем размещённый на канвасе кадр как "dry"-референс для финального
+    // микса по master_intensity. glBlitFramebuffer корректно работает для
+    // блитов одинакового размера и не требует лишнего fullscreen quad.
     if (dry_fbo_ != 0) {
         glBindFramebuffer(GL_READ_FRAMEBUFFER, main_fbo_.read_fbo());
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, dry_fbo_);
@@ -691,13 +694,13 @@ GLuint EffectChain::apply(
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
-    // Grab history references (safe - all pre-allocated)
-    GLuint h0 = history_tex(0);  // 1 frame ago
-    GLuint h1 = history_tex(1);  // 2 frames ago
-    GLuint h2 = history_tex(2);  // 3 frames ago
-    GLuint h3 = history_tex(3);  // 4 frames ago
+    // Берём ссылки на историю (безопасно - все текстуры выделены заранее)
+    GLuint h0 = history_tex(0);  // кадр назад
+    GLuint h1 = history_tex(1);  // 2 кадра назад
+    GLuint h2 = history_tex(2);  // 3 кадра назад
+    GLuint h3 = history_tex(3);  // 4 кадра назад
 
-    // ── Temporal / smear effects ──────────────────────────────────────────────
+    // ── Временные эффекты / смазы ─────────────────────────────────────────────
 
     if (float fi = strength(FxId::GHOST); fi > kEps) {
         pass(prog_ghost_, main_fbo_.read_tex(), [&](GLuint p){
@@ -722,8 +725,9 @@ GLuint EffectChain::apply(
     }
 
     if (float fi = strength(FxId::TEMPORALRGB); fi > kEps) {
-        // Envelope peaks on the beat, then decays - use older history frames
-        // while it's strong for a wider split that closes back up as it fades.
+        // Огибающая пикует на бите и затем спадает - пока она сильная, берём
+        // более старые кадры истории для широкого расщепления каналов,
+        // которое сужается обратно по мере затухания.
         bool strong = env_[(int)FxId::TEMPORALRGB] > 0.5f;
         GLuint tex_g = strong ? h2 : h0;
         GLuint tex_r = strong ? h3 : h1;
@@ -734,7 +738,7 @@ GLuint EffectChain::apply(
         });
     }
 
-    // ── Datamosh-like warps ───────────────────────────────────────────────────
+    // ── Искажения в духе datamosh ─────────────────────────────────────────────
 
     if (float fi = strength(FxId::DERIVWARP); fi > kEps) {
         pass(prog_derivwarp_, main_fbo_.read_tex(), [&](GLuint p){
@@ -769,13 +773,13 @@ GLuint EffectChain::apply(
         });
     }
 
-    // ── Feedback accumulator ──────────────────────────────────────────────────
+    // ── Аккумулятор feedback ──────────────────────────────────────────────────
 
     if (float fi = strength(FxId::FEEDBACK); fi > kEps) {
         GLuint cur   = main_fbo_.read_tex();
         GLuint prev_accum = accum_fbo_.read_tex();
 
-        // Write new accumulator = blend(cur, prev_accum)
+        // Пишем новый аккумулятор = blend(cur, prev_accum)
         glBindFramebuffer(GL_FRAMEBUFFER, accum_fbo_.write_fbo());
         glViewport(0,0,W,H);
         glUseProgram(prog_feedback_);
@@ -783,9 +787,9 @@ GLuint EffectChain::apply(
         glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, prev_accum); glUniform1i(glGetUniformLocation(prog_feedback_,"uAccum"),1);
         u1f(prog_feedback_,"uIntensity", fi);
 
-        // Modulate scale and rotation by bass/mid frequencies for analog video feedback
-        float scale = 0.98f + stats.bass * 0.04f;   // pulsating zoom around 1.0
-        float rot = 0.005f + stats.mid * 0.03f;     // dynamic swirl based on mid hits
+        // Модулируем масштаб и поворот басами/мидами для эффекта аналогового видео-feedback
+        float scale = 0.98f + stats.bass * 0.04f;   // пульсирующий zoom вокруг 1.0
+        float rot = 0.005f + stats.mid * 0.03f;     // вращение, завязанное на средние частоты
         u1f(prog_feedback_,"uFeedbackScale", scale);
         u1f(prog_feedback_,"uFeedbackRotation", rot);
 
@@ -795,7 +799,7 @@ GLuint EffectChain::apply(
         pass(prog_pass_, accum_fbo_.read_tex(), [](GLuint){});
     }
 
-    // ── Channel / color effects ───────────────────────────────────────────────
+    // ── Канальные / цветовые эффекты ──────────────────────────────────────────
 
     if (float fi = strength(FxId::COLORBLEED); fi > kEps) {
         pass(prog_colorbleed_, main_fbo_.read_tex(), [&](GLuint p){
@@ -830,8 +834,8 @@ GLuint EffectChain::apply(
         pass(prog_pixsort_, main_fbo_.read_tex(), [&](GLuint p){
             u1f(p,"uIntensity", fi);
             u2f(p,"uResolution",(float)W,(float)H);
-            // Dynamic sort direction based on segment type:
-            // Noise -> Horizontal, Impact/Drop -> Vertical
+            // Направление сортировки зависит от типа сегмента:
+            // Noise -> горизонталь, Impact/Drop -> вертикаль
             if (seg.type == SegmentType::NOISE) {
                 u2f(p,"uSortDir", 1.0f, 0.0f);
             } else {
@@ -878,7 +882,7 @@ GLuint EffectChain::apply(
         });
     }
 
-    // ── Wired-in classics (kaleidoscope / rgb split / fisheye / vhs / drift) ──
+    // ── Штатная классика (калейдоскоп / rgb split / fisheye / vhs / drift) ────
 
     if (float fi = strength(FxId::RGBSHIFT); fi > kEps) {
         pass(prog_rgbshift_, main_fbo_.read_tex(), [&](GLuint p){
@@ -912,7 +916,7 @@ GLuint EffectChain::apply(
         });
     }
 
-    // ── Datamosh family (feed off the previous chain output via history) ──────
+    // ── Семейство datamosh (питаются предыдущим выходом цепочки через историю) ──
 
     if (float fi = strength(FxId::PFRAME_LAG); fi > kEps) {
         pass(prog_pframe_lag_, main_fbo_.read_tex(), [&](GLuint p){
@@ -942,7 +946,7 @@ GLuint EffectChain::apply(
         });
     }
 
-    // ── Flash (white/black hit) ───────────────────────────────────────────────
+    // ── Flash (вспышка бело/чёрным) ───────────────────────────────────────────
 
     if (float fi = strength(FxId::FLASH); fi > kEps) {
         float white = (rand() % 2) ? 1.f : 0.f;
@@ -952,25 +956,25 @@ GLuint EffectChain::apply(
         });
     }
 
-    // ── ASCII (visual transform - runs after all glitch) ─────────────────────
+    // ── ASCII (визуальная трансформация - идёт после всех глитчей) ───────────
 
     if (float fi = strength(FxId::ASCII); fi > kEps) {
         pass(prog_ascii_, main_fbo_.read_tex(), [&](GLuint p){
             bind_tex(p, 1, ascii_font_tex_, "uFontAtlas");
             u2f(p,"uResolution",(float)W,(float)H);
             u1f(p,"uIntensity", fi);
-            u1f(p,"uColor",     1.0f);  // keep original colors
+            u1f(p,"uColor",     1.0f);  // сохраняем исходные цвета
         });
     }
 
-    // ── Generative visualizers (draw imagery FROM audio, over the canvas) ─────
+    // ── Генеративные визуализаторы (рисуют картинку ИЗ звука поверх канваса) ──
 
     if (float fi = strength(FxId::VIZ_PLASMA);  fi > kEps) viz_pass(prog_viz_plasma_,  fi);
     if (float fi = strength(FxId::VIZ_RADIAL);  fi > kEps) viz_pass(prog_viz_radial_,  fi);
     if (float fi = strength(FxId::VIZ_BARS);    fi > kEps) viz_pass(prog_viz_bars_,    fi);
     if (float fi = strength(FxId::VIZ_ALCHEMY); fi > kEps) viz_pass(prog_viz_alchemy_, fi);
 
-    // ── Overlay composite ─────────────────────────────────────────────────────
+    // ── Композитинг оверлея ────────────────────────────────────────────────────
 
     if (params[(int)FxId::OVERLAYS].enabled && overlay_tex && overlay_alpha > 0.01f) {
         pass(prog_overlay_, main_fbo_.read_tex(), [&](GLuint p){
@@ -985,8 +989,8 @@ GLuint EffectChain::apply(
         });
     }
 
-    // ── Master intensity blend (dry/wet) ──────────────────────────────────────
-    // master_intensity = 1 → fully effected; 0 → original placed input.
+    // ── Микс по master intensity (dry/wet) ────────────────────────────────────
+    // master_intensity = 1 -> полностью с эффектами; 0 -> исходный кадр.
     bool run_mix = (master_intensity < 0.999f) || (chroma.gate_fx && chroma.mode != ChromaMode::None);
     if (run_mix && prog_mix_ != 0 && dry_tex_ != 0) {
         GLuint wet = main_fbo_.read_tex();
@@ -1001,7 +1005,7 @@ GLuint EffectChain::apply(
 
         int gating_mode = 0;
         if (chroma.gate_fx && chroma.mode != ChromaMode::None) {
-            gating_mode = chroma.gate_mode + 1; // 1 = Foreground, 2 = Background
+            gating_mode = chroma.gate_mode + 1; // 1 = передний план, 2 = фон
         }
         u1i(prog_mix_, "uGatingMode", gating_mode);
 
@@ -1018,9 +1022,9 @@ GLuint EffectChain::apply(
         main_fbo_.swap();
     }
 
-    // ── Push current result into history ring ─────────────────────────────────
-    // Skip the full-canvas blit entirely unless some enabled effect actually
-    // samples history - otherwise it's ~6 MB/frame of pure waste at 1080p.
+    // ── Кладём текущий результат в кольцо истории ─────────────────────────────
+    // Полный блит канваса пропускаем, если ни один включённый эффект не читает
+    // историю - иначе это ~6 МБ/кадр чистых трат на 1080p.
     if (needs_history(params)) push_history();
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);

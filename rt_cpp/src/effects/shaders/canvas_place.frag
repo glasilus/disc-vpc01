@@ -1,13 +1,14 @@
 #version 330 core
 
-// Places a source texture onto the canvas using one of four aspect modes.
-// Pixels outside the source region are rendered as solid black (letterbox /
-// pillarbox). All coordinate math is in normalized canvas UV.
+// Размещает исходную текстуру на канве одним из четырёх режимов
+// соотношения сторон. Пиксели вне области источника закрашиваются чёрным
+// (letterbox / pillarbox). Вся координатная математика - в нормализованных
+// UV канвы.
 //
-//   uMode = 0  Contain - fit entirely inside canvas, letterbox/pillarbox
-//   uMode = 1  Cover   - fill canvas, crop overflow
-//   uMode = 2  Stretch - ignore aspect, fill canvas
-//   uMode = 3  Native  - 1:1 pixel mapping centered on canvas
+//   uMode = 0  Contain - целиком внутри канвы, letterbox/pillarbox
+//   uMode = 1  Cover   - заполняет канву, обрезает лишнее
+//   uMode = 2  Stretch - игнорирует соотношение сторон, растягивает
+//   uMode = 3  Native  - маппинг 1:1, по центру канвы
 
 in  vec2 vUV;
 out vec4 fragColor;
@@ -19,9 +20,10 @@ uniform int  uMode;
 
 void main() {
     if (uMode == 2) {
-        // Stretch: fill canvas. Still V-flip the source sample - sws_scale is
-        // top-left and GL is bottom-left, the same flip every other branch in
-        // this shader applies. Without it Stretch shows the image upside down.
+        // Stretch: заполняем канву. V всё равно переворачиваем - sws_scale
+        // пишет от верхнего левого угла, а GL сэмплирует от нижнего левого,
+        // тот же переворот применяют все остальные ветки этого шейдера.
+        // Без него Stretch показывал бы картинку вверх ногами.
         fragColor = texture(uTex, vec2(vUV.x, 1.0 - vUV.y));
         return;
     }
@@ -29,8 +31,8 @@ void main() {
     float srcA = uSrcSize.x / uSrcSize.y;
     float canA = uCanvasSize.x / uCanvasSize.y;
 
-    // frac = fraction of canvas that the source occupies.
-    // 1.0 on an axis means the source fills that axis exactly.
+    // frac = доля канвы, которую занимает источник.
+    // 1.0 по оси значит, что источник ровно заполняет эту ось.
     vec2 frac;
     if (uMode == 3) {
         // native 1:1
@@ -45,15 +47,16 @@ void main() {
         else             frac = vec2(1.0, canA / srcA);
     }
 
-    // Map canvas UV into source UV, centered.
+    // Переводим UV канвы в UV источника, по центру.
     vec2 uv = (vUV - 0.5) / frac + 0.5;
 
     if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {
         fragColor = vec4(0.0, 0.0, 0.0, 1.0);
     } else {
-        // sws_scale writes the source frame top-left, GL samples bottom-left.
-        // Flip V here (and only here) so subsequent effect passes - which read
-        // GL-convention FBO textures - don't double-flip the result.
+        // sws_scale пишет исходный кадр от верхнего левого угла, GL сэмплирует
+        // от нижнего левого. Переворачиваем V здесь и только здесь, чтобы
+        // последующие проходы эффектов (читающие FBO-текстуры в конвенции GL)
+        // не переворачивали результат повторно.
         fragColor = texture(uTex, vec2(uv.x, 1.0 - uv.y));
     }
 }

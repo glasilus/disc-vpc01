@@ -4,7 +4,7 @@
 #include <cstdlib>
 
 void VideoPool::add_source(const std::string& path) {
-    // Avoid duplicates
+    // Не добавляем дубликаты
     if (std::find(paths_.begin(), paths_.end(), path) != paths_.end()) return;
     auto src = std::make_unique<VideoSource>(path);
     if (src->is_open()) {
@@ -26,8 +26,8 @@ void VideoPool::clear() {
 void VideoPool::set_active(int idx) {
     if (idx < 0 || idx >= (int)sources_.size()) {
         active_idx_ = -1;
-        // Reset baseline so released focus continues from the current source
-        // rather than instantly hopping based on stale loop counts.
+        // Сбрасываем baseline, чтобы после снятия фокуса воспроизведение
+        // продолжилось с текущего источника, а не прыгнуло по устаревшему счетчику циклов.
         if (!sources_.empty() && round_robin_ < (int)sources_.size()) {
             rr_loop_baseline_ = sources_[round_robin_]->loop_count();
         }
@@ -45,10 +45,10 @@ GLuint VideoPool::get_random_frame(int w, int h, int* out_w, int* out_h) {
     int idx = (active_idx_ >= 0 && active_idx_ < (int)sources_.size())
             ? active_idx_
             : rand() % (int)sources_.size();
-    // Hybrid cut: instant visual change via the cached tex pool (1 render
-    // frame latency), real "jump to a different part of the video" lands a
-    // few frames later via the background seek. Seek is non-blocking so the
-    // render thread never stalls.
+    // Гибридный cut: мгновенная смена картинки идет через пул закэшированных
+    // текстур (задержка в 1 render-кадр), а настоящий переход на другую часть
+    // видео докатывается чуть позже через фоновый seek. Seek неблокирующий,
+    // так что render-поток не подвисает.
     sources_[idx]->request_seek_random();
     return sources_[idx]->get_random_frame(w, h, out_w, out_h);
 }
@@ -61,9 +61,10 @@ GLuint VideoPool::get_sequential_frame(int w, int h, int* out_w, int* out_h) {
     } else {
         if (round_robin_ >= (int)sources_.size()) round_robin_ = 0;
         idx = round_robin_;
-        // Hop to the next source only after the current one has looped.
-        // Without this guard round_robin_ used to advance every render frame,
-        // producing rapid cross-source flicker rather than sequential play.
+        // Переключаемся на следующий источник только после того, как текущий
+        // отыграл цикл. Без этой проверки round_robin_ продвигался на каждом
+        // render-кадре, и вместо последовательного проигрывания получалось
+        // мельтешение между источниками.
         int live_loops = sources_[idx]->loop_count();
         if (live_loops > rr_loop_baseline_) {
             round_robin_      = (round_robin_ + 1) % (int)sources_.size();

@@ -1,7 +1,7 @@
-"""Unit tests for the encoder catalogue and rate-control mapping.
+"""Юнит-тесты каталога энкодеров и маппинга rate-control.
 
-These DO NOT spawn ffmpeg or require any HW; they exercise the pure
-mapping functions and the catalogue's structural invariants.
+Здесь ffmpeg не запускается и железо не требуется - тестируются только
+чистые функции маппинга и структурные инварианты каталога.
 """
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pytest
 from vpc.render import encoders as enc
 
 
-# ----- catalogue invariants -----
+# ----- инварианты каталога -----
 
 def test_catalogue_labels_are_unique():
     labels = [s.label for s in enc.ENCODER_TABLE]
@@ -18,9 +18,9 @@ def test_catalogue_labels_are_unique():
 
 
 def test_soft_codecs_always_present_in_available():
-    """Even if `ffmpeg -encoders` probing fails, the soft floor must
-    keep libx264/libx265/libvpx-vp9/prores_ks listed — otherwise the
-    GUI would have no codec to offer."""
+    """Даже если проба `ffmpeg -encoders` не удалась, программный минимум
+    должен оставить libx264/libx265/libvpx-vp9/prores_ks в списке - иначе
+    GUI будет нечего предложить."""
     specs = enc.available_specs()
     vcodecs = {s.vcodec for s in specs}
     assert {'libx264', 'libx265', 'libvpx-vp9', 'prores_ks'} <= vcodecs
@@ -42,10 +42,10 @@ def test_find_spec_unknown_label_returns_none():
     assert enc.find_spec('Nonexistent (XYZ)') is None
 
 
-# ----- rate-control mapping -----
+# ----- маппинг rate-control -----
 
 def _spec(family: str) -> enc.EncoderSpec:
-    """Pick any catalogue entry from the given family for testing."""
+    """Взять любую запись каталога из заданного семейства для теста."""
     for s in enc.ENCODER_TABLE:
         if s.family == family:
             return s
@@ -71,12 +71,12 @@ def test_rc_x265_same_shape_as_x264():
 def test_rc_nvenc_uses_p_preset_cq_and_vbr():
     s = _spec('nvenc_h264')
     a = enc.build_rate_control_args(s, crf=20, preset='medium', tune='grain')
-    # NVENC ignores tune (we don't expose its tune knob here).
+    # NVENC игнорирует tune (свой параметр tune мы для него не выставляем).
     assert '-tune' not in a
     assert '-rc' in a and 'vbr' in a
     assert '-cq' in a and '20' in a
     assert '-b:v' in a and '0' in a
-    # Preset must be a p1..p7 token.
+    # Preset должен быть токеном вида p1..p7.
     p_idx = a.index('-preset') + 1
     assert a[p_idx].startswith('p') and a[p_idx][1:].isdigit()
 
@@ -87,8 +87,8 @@ def test_rc_nvenc_preset_mapping_keeps_speed_order():
     slow = enc.build_rate_control_args(s, crf=20, preset='slow', tune=None)
     fp = int(fast[fast.index('-preset') + 1][1:])
     sp = int(slow[slow.index('-preset') + 1][1:])
-    # NVENC: lower p-number = faster, higher = better quality. So the
-    # x264 'slow' must map to a higher p-number than 'fast'.
+    # NVENC: чем меньше номер p, тем быстрее, чем больше - тем лучше качество.
+    # Поэтому x264 'slow' должен мапиться на больший номер p, чем 'fast'.
     assert fp < sp
 
 
@@ -109,7 +109,7 @@ def test_rc_amf_uses_quality_and_cqp():
 
 
 def test_rc_videotoolbox_inverts_crf_to_qv():
-    """VT scale runs the other way — lower CRF must produce higher q."""
+    """У VT шкала обратная - меньший CRF должен давать больший q."""
     s = _spec('vt_h264')
     low = enc.build_rate_control_args(s, crf=10, preset='medium', tune=None)
     high = enc.build_rate_control_args(s, crf=40, preset='medium', tune=None)
@@ -129,7 +129,7 @@ def test_rc_vp9_uses_deadline_not_preset():
 
 
 def test_rc_prores_emits_nothing_extra():
-    """Quality is locked by the static -profile:v 3 in extra_v."""
+    """Качество зафиксировано статическим -profile:v 3 в extra_v."""
     s = _spec('prores')
     assert enc.build_rate_control_args(
         s, crf=18, preset='medium', tune='grain') == []

@@ -1,15 +1,14 @@
-"""HW-encoder smoke test.
+"""Смоук-тест HW-энкодеров.
 
-Activated by `RUN_HW_SMOKE=1`. Synthesises a 3s testsrc + sine fixture
-and renders it once with each available HW encoder. We assert the
-resulting file exists and has the expected frame count — the same
-contract as the regression test, just sweeping codecs.
+Включается через `RUN_HW_SMOKE=1`. Генерирует фикстуру testsrc + sine
+на 3с и рендерит её по разу на каждом доступном HW-энкодере. Проверяем,
+что файл появился и содержит ожидаемое число кадров - тот же контракт,
+что и в регрессионном тесте, только по всем кодекам сразу.
 
-The point isn't to benchmark (run `tools/bench_render.py` for that),
-it's to confirm the integration didn't break: argv composition, sink
-fallback path, ETA loop. If a HW encoder dies at init, the engine's
-fallback branch should take over and the file should still be produced
-via libx264.
+Это не бенчмарк (для замеров есть `tools/bench_render.py`), а проверка,
+что интеграция не сломалась: сборка argv, путь фолбэка синка, цикл ETA.
+Если HW-энкодер падает при инициализации, должен сработать фолбэк
+движка и файл всё равно должен получиться через libx264.
 """
 from __future__ import annotations
 
@@ -87,7 +86,7 @@ def test_hw_encoder_produces_valid_output(tmp_path, codec_label):
     ok = eng.run(render_mode=RENDER_FINAL, max_output_duration=3.0)
     assert ok, f'engine.run returned False for {codec_label}'
     assert out.exists() and out.stat().st_size > 1000, codec_label
-    # Frame-count contract holds whether we used HW or the fallback.
+    # Контракт по числу кадров одинаков что для HW, что для фолбэка.
     frames = _ffprobe_frames(str(out))
     expected = round(3.0 * 24)
     assert abs(frames - expected) <= 2, (

@@ -1,4 +1,4 @@
-"""FormulaEffect — backlog item #3."""
+"""Тесты для FormulaEffect."""
 import numpy as np
 import pytest
 
@@ -30,11 +30,11 @@ def test_invert_expression():
 
 
 def test_safe_against_attribute_access():
-    """Sandbox should reject __builtins__-only attribute escapes."""
+    """Песочница должна блокировать попытки достучаться до __builtins__."""
     fx = FormulaEffect(expression="__import__('os')", enabled=True, chance=1.0)
     f = make_frame()
     out = fx.apply(f, make_seg(), False)
-    # Falls back to original frame on error
+    # При ошибке эффект откатывается на исходный кадр
     assert np.array_equal(out, f)
 
 
@@ -50,7 +50,7 @@ def test_blend_with_original():
                        enabled=True, chance=1.0)
     f = make_frame()
     out = fx.apply(f, make_seg(), False)
-    # blend=1.0 → output is original
+    # blend=1.0 - на выходе исходный кадр
     assert np.array_equal(out, f)
 
 

@@ -1,8 +1,8 @@
 """
-Integration test — requires real video and audio files.
-Set environment variables TEST_VIDEO and TEST_AUDIO to file paths before running.
+Интеграционный тест - нужны реальные видео и аудио файлы.
+Перед запуском задай переменные окружения TEST_VIDEO и TEST_AUDIO с путями к файлам.
 
-Example (Windows CMD):
+Пример (Windows CMD):
     set TEST_VIDEO=path\to\video.mp4 && set TEST_AUDIO=path\to\audio.mp3 && python -m pytest tests/test_engine.py -v -s
 """
 import os

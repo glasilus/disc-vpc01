@@ -1,7 +1,7 @@
-"""Audio defects: pure-function pipeline that mangles WAV samples to
-match the visual effects active in passthrough mode.
+"""Аудио-дефекты: пайплайн чистых функций, портящих WAV-сэмплы так,
+чтобы это соответствовало видеоэффектам, активным в режиме passthrough.
 
-Public surface:
+Публичный API:
   defects.defect_vhs_tape, defects.defect_self_echo,
   defects.defect_cursor_clicks, defects.defect_bsod_static
   pipeline.EFFECT_AUDIO_COUPLING

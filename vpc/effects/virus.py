@@ -1,14 +1,13 @@
-"""Win95-virus-aesthetic effects: things that look like a 90s machine
-under malware attack rather than a video glitch.
+"""Эффекты в эстетике Win95-вируса: похоже на заражённую малварью машину
+90-х, а не на видео-глитч.
 
-  - CursorStormEffect: a swarm of fake Win95 mouse pointers crawling
-    over the frame, leaving short trails.
-  - BSODShredEffect: random horizontal bands of the frame are replaced
-    with fragments of bluescreen text.
+  - CursorStormEffect: рой фейковых курсоров Win95, ползающих по кадру
+    с короткими хвостами.
+  - BSODShredEffect: случайные горизонтальные полосы кадра заменяются
+    обрывками текста синего экрана.
 
-Both share the in-module helpers `_make_cursor_sprite()` and
-`_BSOD_LINES` so adding more virus-style effects later doesn't have to
-reinvent the chrome.
+Оба используют общие хелперы `_make_cursor_sprite()` и `_BSOD_LINES`,
+чтобы для новых virus-эффектов не пришлось изобретать всё заново.
 """
 from __future__ import annotations
 
@@ -23,16 +22,16 @@ from .base import BaseEffect, _ensure_uint8
 
 
 # ──────────────────────────────────────────────────────────────────────────
-#   Win95 cursor sprite — built once, cached at module scope.
+#   Спрайт курсора Win95 - строится один раз, кешируется на уровне модуля.
 # ──────────────────────────────────────────────────────────────────────────
 #
-# Hand-coded 16x22 bitmap of the canonical Win95 arrow pointer.
-# Glyphs:
-#     '#' = black border
-#     '.' = white fill
-#     ' ' = transparent
-# The shape comes from the standard cursor image distributed with NT4 /
-# Win95: a sharp arrow with a short tail and a single-pixel black border.
+# Битмап 16x22, вручную нарисованный по образу стандартной стрелки Win95.
+# Глифы:
+#     '#' = чёрная обводка
+#     '.' = белая заливка
+#     ' ' = прозрачно
+# Форма повторяет стандартный курсор из NT4/Win95: острая стрелка с
+# коротким хвостом и однопиксельной чёрной обводкой.
 _CURSOR_BITMAP = [
     '#               ',
     '##              ',
@@ -60,10 +59,10 @@ _CURSOR_BITMAP = [
 
 
 def _make_cursor_sprite() -> Tuple[np.ndarray, np.ndarray]:
-    """Return (rgb, alpha) arrays for the Win95 arrow pointer.
+    """Возвращает (rgb, alpha) массивы для стрелки-курсора Win95.
 
-    rgb is uint8 HxWx3, alpha is uint8 HxW with 0 = transparent and
-    255 = opaque. Computed once at import; subsequent calls are free.
+    rgb - uint8 HxWx3, alpha - uint8 HxW, где 0 = прозрачно, 255 = непрозрачно.
+    Считается один раз при импорте, дальше просто переиспользуется.
     """
     h = len(_CURSOR_BITMAP)
     w = max(len(r) for r in _CURSOR_BITMAP)
@@ -85,10 +84,10 @@ _CURSOR_RGB, _CURSOR_ALPHA = _make_cursor_sprite()
 
 def _blit_sprite(frame: np.ndarray, rgb: np.ndarray, alpha: np.ndarray,
                  x: int, y: int, opacity: float = 1.0) -> None:
-    """Alpha-blit `rgb` onto `frame` at top-left (x, y), in place.
+    """Альфа-блит `rgb` на `frame`, левый верхний угол в (x, y), на месте.
 
-    Off-screen positions are clipped silently — overdraw at edges of the
-    frame is the desired look (cursors crawling off the side).
+    Выход за границы кадра просто обрезается без ошибок - курсоры,
+    уползающие за край, это часть задуманного вида.
     """
     h_f, w_f = frame.shape[:2]
     h_s, w_s = rgb.shape[:2]
@@ -111,7 +110,7 @@ def _blit_sprite(frame: np.ndarray, rgb: np.ndarray, alpha: np.ndarray,
 
 
 class _Pointer:
-    """Single brownian-walking cursor with its own short trail history."""
+    """Один курсор с броуновским блужданием и собственным коротким хвостом."""
 
     __slots__ = ('x', 'y', 'vx', 'vy', 'trail')
 
@@ -123,8 +122,8 @@ class _Pointer:
         self.trail: Deque[Tuple[int, int]] = deque(maxlen=6)
 
     def step(self, w: int, h: int, jitter: float) -> None:
-        # Per-frame velocity perturbation; clamp speed so cursors don't
-        # run away off-screen instantly. Bounce off frame edges.
+        # Случайное возмущение скорости на каждом кадре; ограничиваем
+        # скорость, чтобы курсор не улетал моментально. Отскок от краёв.
         self.vx += (random.random() - 0.5) * jitter
         self.vy += (random.random() - 0.5) * jitter
         speed_sq = self.vx * self.vx + self.vy * self.vy
@@ -143,13 +142,13 @@ class _Pointer:
 
 
 class CursorStormEffect(BaseEffect):
-    """Swarm of Win95 cursors crawling over the picture with brief
-    trails. Number of cursors and motion jitter scale with intensity.
+    """Рой курсоров Win95, ползающих по картинке с короткими хвостами.
+    Количество курсоров и амплитуда дрожания растут с интенсивностью.
 
-    Stateful: pointer positions persist across frames so motion is
-    continuous. The pointer count is recomputed per-segment, which lets
-    intensity changes through audio segments grow / shrink the swarm
-    without a hard reset.
+    Хранит состояние: позиции курсоров сохраняются между кадрами, так
+    что движение непрерывное. Количество курсоров пересчитывается на
+    каждом сегменте, поэтому смена интенсивности между аудио-сегментами
+    плавно меняет размер роя без жёсткого сброса.
     """
 
     def __init__(self, enabled: bool = True, chance: float = 1.0,
@@ -167,23 +166,22 @@ class CursorStormEffect(BaseEffect):
             return frame
         h, w = frame.shape[:2]
 
-        # Number of pointers grows with intensity; never less than 1
-        # when the effect fires at all so the user always sees something.
+        # Число курсоров растёт с интенсивностью; при сработавшем эффекте
+        # всегда минимум 1, чтобы что-то было видно.
         target_n = max(1, int(round(intensity * self.max_pointers)))
-        # Add or trim pointers — not a hard reset, so existing motion
-        # stays smooth across slider changes.
+        # Добавляем/убираем курсоры постепенно, а не жёстким сбросом -
+        # так движение остаётся плавным при изменении слайдера.
         while len(self._pointers) < target_n:
             self._pointers.append(_Pointer(w, h))
         while len(self._pointers) > target_n:
             self._pointers.pop()
 
         out = frame.copy()
-        # Higher intensity = wilder motion = scarier "infestation" feel.
+        # Чем выше интенсивность, тем безумнее движение.
         jitter = 0.6 + intensity * 1.6
         for p in self._pointers:
             p.step(w, h, jitter)
-            # Trail first (oldest = most translucent), pointer last so it
-            # always sits on top of its own tail.
+            # Сначала хвост (старые точки прозрачнее), курсор поверх всего.
             for i, (tx, ty) in enumerate(p.trail):
                 fade = (i + 1) / (len(p.trail) + 1)
                 _blit_sprite(out, _CURSOR_RGB, _CURSOR_ALPHA,
@@ -198,8 +196,8 @@ class CursorStormEffect(BaseEffect):
 # ──────────────────────────────────────────────────────────────────────────
 
 
-# Authentic-looking bluescreen scraps. Picked at random per band; the
-# mix of titles, hex addresses and dump prose sells the effect.
+# Правдоподобные обрывки синего экрана. Выбираются случайно на каждую полосу;
+# смесь заголовков, hex-адресов и текста дампа продаёт эффект.
 _BSOD_LINES: List[str] = [
     '*** STOP: 0x0000007E (0xC0000005, 0x804E12C8, 0xF7AB68C4)',
     'A problem has been detected and Windows has been shut down',
@@ -218,16 +216,16 @@ _BSOD_LINES: List[str] = [
     'UNEXPECTED_KERNEL_MODE_TRAP',
 ]
 
-# Classic NT bluescreen background; close to the canonical RGB(0, 0, 168).
+# Классический фон NT-синего экрана, близко к каноничному RGB(0, 0, 168).
 _BSOD_BG = (0, 0, 168)
 _BSOD_FG = (255, 255, 255)
 
 
 class BSODShredEffect(BaseEffect):
-    """Slices random horizontal bands out of the frame and replaces them
-    with bluescreen-styled text. Number of bands and per-band height
-    scale with intensity. Stateless per-frame: every frame picks fresh
-    bands so the effect strobes / shreds.
+    """Вырезает случайные горизонтальные полосы кадра и заменяет их
+    текстом в стиле синего экрана. Число полос и их высота растут с
+    интенсивностью. Без состояния между кадрами: каждый кадр берёт
+    новые полосы, отсюда эффект мерцания/рваности.
     """
 
     def __init__(self, enabled: bool = True, chance: float = 1.0,
@@ -245,8 +243,8 @@ class BSODShredEffect(BaseEffect):
         h, w = frame.shape[:2]
         n_bands = max(1, int(round(intensity * self.max_bands)))
         out = frame.copy()
-        # Font scale & line spacing tuned so a single line nests inside
-        # the smallest band we draw without overlapping the next band.
+        # Масштаб шрифта и межстрочный интервал подобраны так, чтобы
+        # строка помещалась даже в самую тонкую полосу без наложения.
         font = cv2.FONT_HERSHEY_PLAIN
         font_scale = 1.0
         line_h = 14
@@ -256,12 +254,12 @@ class BSODShredEffect(BaseEffect):
             band_h = min(band_h, max(line_h * 2, h // 4))
             y0 = random.randint(0, max(0, h - band_h))
             out[y0:y0 + band_h] = _BSOD_BG
-            # How many text lines fit in the band; minus a 4px top margin.
+            # Сколько строк текста влезает в полосу с учётом отступа 4px сверху.
             n_lines = max(1, (band_h - 4) // line_h)
             for li in range(n_lines):
                 line = random.choice(_BSOD_LINES)
-                # Truncate so it never extends beyond the right edge —
-                # cv2.putText silently overflows otherwise.
+                # Обрезаем, чтобы не вылезало за правый край -
+                # cv2.putText сам по себе просто рисует за пределами кадра.
                 while line and self._text_width(line, font, font_scale) > w - 8:
                     line = line[:-2]
                 if not line:

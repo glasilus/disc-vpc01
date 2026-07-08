@@ -1,4 +1,4 @@
-"""Spectrum visualizers: linear equalizer bars and radial corona."""
+"""Спектральные визуализаторы: линейный эквалайзер и радиальная корона."""
 from __future__ import annotations
 
 import cv2
@@ -15,7 +15,7 @@ def _resample_bins(bins: np.ndarray, n: int) -> np.ndarray:
 
 
 class SpectrumBarsEffect(VisualizerEffect):
-    """Classic WMP equalizer: per-band bars with peak-hold smoothing."""
+    """Классический эквалайзер WMP: полосы по частотным диапазонам."""
 
     def __init__(self, n_bands=24, color=(0, 255, 0), mirror=False, **kw):
         super().__init__(**kw)
@@ -43,7 +43,7 @@ class SpectrumBarsEffect(VisualizerEffect):
 
 
 class RadialSpectrumEffect(VisualizerEffect):
-    """Equalizer bars wrapped around a circle — a pulsing corona."""
+    """Полосы эквалайзера, обёрнутые вокруг круга - пульсирующая корона."""
 
     def __init__(self, rays=48, color=(0, 255, 128), rotate=0.0, **kw):
         super().__init__(**kw)

@@ -1,16 +1,16 @@
-"""Tests for the WINDOWS MEDIA PLAYER audio-reactive visualizer group."""
+"""Тесты группы аудио-реактивных визуализаторов WINDOWS MEDIA PLAYER."""
 import numpy as np
 import pytest
 
 
-# ── helpers ───────────────────────────────────────────────────────────────
+# хелперы
 def _fake_sample(val=0.8):
     from vpc.render.reactor import AudioSample
     from vpc.analyzer import N_BINS
     return AudioSample(val, val, val, val, True, np.full(N_BINS, val, np.float32), 0.0)
 
 
-# ── Task 1: analyzer feature track ─────────────────────────────────────────
+# фичи анализатора
 def test_audiofeatures_shape_contract():
     from vpc.analyzer import AudioFeatures, N_BINS
     n = 50
@@ -38,7 +38,7 @@ def test_analyze_returns_features(tmp_path):
     assert feats.bass.max() > 0 and feats.high.max() > 0
 
 
-# ── Task 2: reactor ────────────────────────────────────────────────────────
+# reactor
 def test_reactor_interpolates_and_smooths():
     from vpc.analyzer import AudioFeatures, N_BINS
     from vpc.render.reactor import AudioReactor
@@ -64,14 +64,14 @@ def test_reactor_synth_fallback_animates():
     assert (a.bass, a.mid) != (b.bass, b.mid)
 
 
-# ── Task 3: engine wiring ──────────────────────────────────────────────────
+# подключение к движку
 def test_segment_has_live_field():
     from vpc.analyzer import Segment, SegmentType
     s = Segment(0, 1, 1, SegmentType.SUSTAIN, 0.5, 0.1, 0.1, 0.0)
     assert hasattr(s, "live") and s.live is None
 
 
-# ── Task 4: compositor ─────────────────────────────────────────────────────
+# композитор
 def test_composite_replace_and_over():
     from vpc.effects.visualizer.compose import composite
     src = np.full((16, 16, 3), 40, np.uint8)
@@ -99,10 +99,10 @@ def test_read_sample_fallback_when_no_live():
     from vpc.effects.visualizer.reactive import read_sample
     s = Segment(0, 1, 1, SegmentType.SUSTAIN, 0.5, 0.1, 0.1, 0.0)
     sample = read_sample(s)
-    assert sample.bins.max() > 0   # modulated by intensity, non-blank
+    assert sample.bins.max() > 0   # промодулировано интенсивностью, не пустое
 
 
-# ── Tasks 5-7: renderers ───────────────────────────────────────────────────
+# рендереры
 def test_spectrum_renderers_nonempty():
     from vpc.effects.visualizer.spectrum import SpectrumBarsEffect, RadialSpectrumEffect
     for cls in (SpectrumBarsEffect, RadialSpectrumEffect):
@@ -145,7 +145,7 @@ def test_visualizer_package_exports_eight():
 
 
 def test_visualizer_full_apply_pipeline():
-    """End-to-end: a renderer applied to a real frame via the BaseEffect path."""
+    """End-to-end: рендерер применён к реальному кадру через BaseEffect.apply()."""
     from vpc.analyzer import Segment, SegmentType
     from vpc.effects.visualizer.spectrum import SpectrumBarsEffect
     frame = np.full((90, 120, 3), 30, np.uint8)
@@ -157,7 +157,7 @@ def test_visualizer_full_apply_pipeline():
     assert out.max() > 0
 
 
-# ── Task 8: registry ───────────────────────────────────────────────────────
+# реестр
 def test_registry_has_wmp_group():
     from vpc.registry import GROUP_ORDER, GROUP_DISPLAY_NAMES, EFFECTS
     assert 'VISUALIZER' in GROUP_ORDER
@@ -196,7 +196,7 @@ def test_old_preset_loads_without_viz():
     assert all('Visualizer' not in type(fx).__name__ for fx in chain)
 
 
-# ── always / always-on-intensity consistency ────────────────────────────────
+# консистентность интенсивности
 def test_visualizer_intensity_scales():
     from vpc.analyzer import Segment, SegmentType
     from vpc.effects.visualizer.spectrum import SpectrumBarsEffect

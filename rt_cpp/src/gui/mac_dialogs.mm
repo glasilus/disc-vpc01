@@ -1,12 +1,12 @@
-// Cocoa file/folder pickers for the macOS build. Compiled as Objective-C++
-// (.mm) and linked against the Cocoa framework. NSOpenPanel must run on the
-// main thread - the GUI calls these from the render/main thread, which is
-// where GLFW already lives, so that requirement is satisfied.
+// Диалоги выбора файла/папки на Cocoa для macOS-сборки. Компилируется как
+// Objective-C++ (.mm) и линкуется с фреймворком Cocoa. NSOpenPanel обязан
+// выполняться в главном потоке - GUI вызывает эти функции из
+// render/main-потока, где и так уже живёт GLFW, так что требование выполнено.
 //
-// We deliberately do NOT restrict file types: filtering via the deprecated
-// -setAllowedFileTypes: (or the newer UTType API) adds version-specific code,
-// and the video pool already rejects anything FFmpeg can't open. Letting the
-// user pick freely keeps this file tiny and warning-free across SDK versions.
+// Типы файлов намеренно не фильтруются: -setAllowedFileTypes: устарел,
+// а новый UTType API тянет за собой версионно-зависимый код, и видео-пул
+// и так отбрасывает всё, что не открывает FFmpeg. Свободный выбор файла
+// держит этот файл маленьким и без предупреждений компилятора на любых SDK.
 #import <Cocoa/Cocoa.h>
 #include "native_dialogs.h"
 

@@ -1,15 +1,15 @@
-"""Warp-family effects: gradient flow, vortex spiral, fractal noise, self-displace.
+"""Семейство warp-эффектов: градиентный поток, вихрь, фрактальный шум, self-displace.
 
-These four effects exist as a CPU-only family of motion-vector distortions —
-direct alternatives to optical-flow datamoshing. Each one uses a different
-displacement-field source: previous-frame Sobel gradient, Gaussian-falloff
-spiral, fBm noise, and the past frame's own colour channels.
+Эти четыре эффекта - CPU-only альтернатива optical-flow датамошингу,
+построенная на разных источниках поля смещений: собеловский градиент
+предыдущего кадра, спираль с гауссовым затуханием, fBm-шум и цветовые
+каналы прошлого кадра.
 
-All warps maintain a per-effect frame counter (`_t`) that advances on every
-call to `apply()` regardless of whether the effect fires. The counter drives
-slow phase modulations (Lissajous-moving centres, evolving 3-D noise slice,
-breathing amplitude) so the displacement field is in continuous motion
-within a sustained segment instead of snapping to a new static field.
+У всех есть общий счётчик кадров (`_t`), который тикает при каждом вызове
+`apply()` независимо от того, сработал эффект или нет. Он двигает медленные
+фазовые модуляции (центр по фигуре Лиссажу, срез 3D-шума, дыхание амплитуды),
+чтобы поле смещений было в непрерывном движении на протяжении сегмента,
+а не застывало статичным паттерном.
 """
 from __future__ import annotations
 
@@ -25,19 +25,19 @@ _GRID_CACHE: dict = {}
 
 
 def _grid(h: int, w: int):
-    """Return cached (xs, ys) coordinate grids for shape (h, w).
+    """Возвращает закешированные координатные сетки (xs, ys) для формы (h, w).
 
-    Always-on warp effects allocate ~80-150 MB of float32 grids per frame.
-    Caching by (h, w) keeps two arrays alive instead — a constant memory
-    footprint vs. per-frame allocations that the GC can't keep up with.
-    The cached arrays are read-only by convention (callers always do
-    `xs - cx` / `xs + dx` which produces a new array).
+    Без кеша always-on warp-эффекты выделяли бы ~80-150 МБ float32-сеток
+    на каждый кадр. Кеш по (h, w) держит живыми всего два массива вместо
+    постоянных аллокаций, с которыми GC не успевает справляться.
+    Закешированные массивы по соглашению read-only (вызывающий код всегда
+    делает `xs - cx` / `xs + dx`, что создаёт новый массив).
     """
     key = (h, w)
     g = _GRID_CACHE.get(key)
     if g is None:
-        # Cap the cache: more than ~3 distinct sizes means draft+preview+
-        # final all alive at once, which is the most we ever expect.
+        # Ограничиваем кеш: больше ~3 разных размеров означало бы, что
+        # одновременно живы draft+preview+final, а больше нам не нужно.
         if len(_GRID_CACHE) > 4:
             _GRID_CACHE.clear()
         xs = np.tile(np.arange(w, dtype=np.float32), (h, 1))
@@ -50,7 +50,7 @@ def _grid(h: int, w: int):
 
 
 class _Warpable(BaseEffect):
-    """Mixin: monotonic frame counter advanced on every apply()."""
+    """Миксин: монотонный счётчик кадров, растёт на каждом apply()."""
     def __init__(self, **kw):
         super().__init__(**kw)
         self._t = 0
@@ -61,11 +61,12 @@ class _Warpable(BaseEffect):
 
 
 class DerivWarpEffect(_Warpable):
-    """Sobel-of-prev-frame as a motion-vector field with a slow rotational drift.
+    """Собелевский градиент предыдущего кадра как поле векторов смещения,
+    плюс медленный вращательный дрейф.
 
-    The Sobel gradient gives the local "where is the edge" direction; on top
-    of that we add a slow swirl whose strength oscillates with time so the
-    field never freezes into a still pattern even on a static input.
+    Градиент Собеля даёт локальное направление "где край"; поверх него
+    накладывается медленное закручивание с колеблющейся во времени силой,
+    чтобы поле не застывало даже на статичном входе.
     """
     trigger_types = [SegmentType.IMPACT, SegmentType.NOISE,
                      SegmentType.DROP, SegmentType.SUSTAIN]
@@ -101,15 +102,15 @@ class DerivWarpEffect(_Warpable):
             gy = cv2.resize(gy, (w, h))
 
         max_mag = float(np.sqrt(gx ** 2 + gy ** 2).max()) + 1e-6
-        # Time-varying amplitude — breathes ±25% around the base.
+        # Амплитуда плавает во времени - дышит ±25% вокруг базового значения.
         breath = 1.0 + 0.25 * np.sin(self._t * 0.13)
         disp_scale = intensity * 40.0 * breath
         dx = (gx / max_mag) * disp_scale
         dy = (gy / max_mag) * disp_scale
 
-        # Slow rotational drift superimposed on top of the Sobel field.
-        # The whole frame rocks back and forth around its centre while the
-        # local gradient warp does its thing.
+        # Медленный вращательный дрейф поверх собелевского поля: весь кадр
+        # покачивается вокруг центра, пока локальный градиентный warp
+        # делает своё дело.
         cx, cy = w * 0.5, h * 0.5
         xs_g, ys_g = _grid(h, w)
         swirl_amp = intensity * 0.06 * np.sin(self._t * 0.07)
@@ -133,11 +134,11 @@ class DerivWarpEffect(_Warpable):
 
 
 class VortexWarpEffect(_Warpable):
-    """Gaussian-falloff spiral whose centre wanders on a Lissajous curve.
+    """Спираль с гауссовым затуханием, центр которой блуждает по фигуре Лиссажу.
 
-    Centre, angular speed and falloff sigma all evolve with `_t`, so the
-    spiral is never the same two frames in a row — it precesses, the
-    rotation rate breathes, and the affected region swells and shrinks.
+    Центр, угловая скорость и сигма затухания эволюционируют вместе с `_t`,
+    поэтому спираль никогда не повторяется от кадра к кадру: прецессирует,
+    скорость вращения дышит, а затронутая область то растёт, то сжимается.
     """
     trigger_types = [SegmentType.BUILD, SegmentType.IMPACT,
                      SegmentType.SUSTAIN, SegmentType.DROP]
@@ -146,28 +147,28 @@ class VortexWarpEffect(_Warpable):
         h, w = frame.shape[:2]
         intensity = self.scaled_intensity(seg)
         t = self._t * 0.04
-        # Lissajous-wandering centre — never repeats over short timescales.
+        # Центр блуждает по фигуре Лиссажу - не повторяется на коротких интервалах.
         cx = w * (0.5 + 0.20 * np.sin(t * 1.0))
         cy = h * (0.5 + 0.18 * np.sin(t * 1.3 + 0.7))
         sigma = min(w, h) * (0.35 + 0.15 * np.sin(t * 0.6))
-        # Direction reverses periodically so the swirl breathes.
+        # Направление периодически меняется, отсюда дыхание вихря.
         rot_mod = np.sin(t * 0.9)
 
         xs_g, ys_g = _grid(h, w)
         xs = xs_g - cx
         ys = ys_g - cy
         r_sq = xs * xs + ys * ys
-        # Soft-cap angle so always-on + max intensity can't push a single
-        # pixel through arbitrarily large rotations (was 5 rad → 286°).
+        # Мягкое ограничение угла, чтобы always-on с максимальной интенсивностью
+        # не проворачивал пиксель на произвольно большой угол (было 5 рад → 286°).
         angle = (intensity * 3.5 * rot_mod
                  * np.exp(-r_sq / (2.0 * sigma * sigma + 1e-6))).astype(np.float32)
         cos_a = np.cos(angle, dtype=np.float32)
         sin_a = np.sin(angle, dtype=np.float32)
         map_x = np.clip(xs * cos_a - ys * sin_a + cx, 0, w - 1).astype(np.float32)
         map_y = np.clip(xs * sin_a + ys * cos_a + cy, 0, h - 1).astype(np.float32)
-        # Belt-and-suspenders: scrub any NaN/Inf that crept in from a
-        # degenerate sigma or angle. cv2.remap on NaN coords is a hard SIGSEGV
-        # on some Windows OpenCV builds.
+        # На всякий случай вычищаем NaN/Inf, которые могли просочиться из
+        # вырожденной sigma или угла. cv2.remap на NaN-координатах даёт
+        # жёсткий SIGSEGV на некоторых Windows-сборках OpenCV.
         np.nan_to_num(map_x, copy=False, nan=0.0, posinf=w - 1.0, neginf=0.0)
         np.nan_to_num(map_y, copy=False, nan=0.0, posinf=h - 1.0, neginf=0.0)
 
@@ -186,12 +187,11 @@ class VortexWarpEffect(_Warpable):
 
 
 class FractalNoiseWarpEffect(_Warpable):
-    """Domain-warped fractal noise field that flows through a 3-D noise volume.
+    """Поле фрактального шума, текущее через 3D-объём шума.
 
-    The displacement field is sampled from `opensimplex.noise3` with a slowly
-    advancing z-coordinate (`_t·dt`). That makes the field a continuous
-    cross-section of an animated 3-D fluid — it streams instead of being
-    reseeded as a still pattern per segment.
+    Поле смещений сэмплируется из `opensimplex.noise3` с медленно растущей
+    z-координатой (`_t·dt`). Получается непрерывный срез анимированного
+    3D-"флюида" - поле течёт, а не пересоздаётся заново на каждом сегменте.
     """
     trigger_types = list(SegmentType)
 
@@ -200,17 +200,17 @@ class FractalNoiseWarpEffect(_Warpable):
         self.octaves = octaves
 
     def _make_flow_field(self, h, w, t, octaves, draft):
-        """Build dx, dy by summing octaves of opensimplex noise3.
+        """Строит dx, dy суммированием октав opensimplex noise3.
 
-        Sampled on a coarse grid via the C-vectorised `noise3array`, then
-        upsampled with linear interp. The z-coordinate scales with `_t`,
-        so the field flows continuously instead of being reseeded.
+        Сэмплируется на грубой сетке через векторизованный на C `noise3array`,
+        затем апсемплится линейной интерполяцией. z-координата растёт с `_t`,
+        поэтому поле течёт непрерывно, а не пересоздаётся заново.
         """
         dx = np.zeros((h, w), dtype=np.float32)
         dy = np.zeros((h, w), dtype=np.float32)
         amp = 1.0
         scale = 16 if draft else 8
-        # Two independent z-channels so dx and dy don't move in lockstep.
+        # Два независимых z-канала, чтобы dx и dy не двигались синхронно.
         z_x = np.asarray([t * 0.05], dtype=np.float64)
         z_y = np.asarray([t * 0.05 + 17.3], dtype=np.float64)
         for _ in range(octaves):
@@ -237,8 +237,8 @@ class FractalNoiseWarpEffect(_Warpable):
         for arr in (dx, dy):
             m = float(np.abs(arr).max()) + 1e-6
             arr /= m
-        # Amplitude pulses on top of the flowing field — gives a subtle
-        # "tide" feel instead of a constant-strength push.
+        # Амплитуда пульсирует поверх текущего поля - даёт ощущение
+        # "прилива" вместо постоянного по силе толчка.
         pulse = 1.0 + 0.3 * np.sin(self._t * 0.11)
         disp = intensity * 60.0 * pulse
         dx *= disp
@@ -253,7 +253,7 @@ class FractalNoiseWarpEffect(_Warpable):
 
 
 class SelfDisplaceEffect(_Warpable):
-    """Past frame's RGB channels used as XY displacement vectors, breathing."""
+    """RGB-каналы прошлого кадра используются как векторы смещения XY, с дыханием."""
     trigger_types = [SegmentType.IMPACT, SegmentType.NOISE, SegmentType.DROP,
                      SegmentType.BUILD, SegmentType.SUSTAIN]
 
@@ -264,7 +264,7 @@ class SelfDisplaceEffect(_Warpable):
         self._history = []
 
     def apply(self, frame, seg, draft):
-        # Always append to history regardless of fire decision.
+        # История пополняется всегда, независимо от того, сработал ли эффект.
         self._history.append(frame.copy())
         if len(self._history) > self.history_len + 1:
             self._history.pop(0)
@@ -282,8 +282,8 @@ class SelfDisplaceEffect(_Warpable):
                 return frame
             return src
 
-        # Depth and amplitude breathe with time so the displacement keeps
-        # changing even on a long static SUSTAIN segment.
+        # Глубина и амплитуда дышат во времени, чтобы смещение продолжало
+        # меняться даже на длинном статичном SUSTAIN-сегменте.
         breath = 0.7 + 0.3 * np.sin(self._t * 0.09)
         cross = 0.7 + 0.3 * np.cos(self._t * 0.05)
         dyn_depth = max(1, min(self.history_len,

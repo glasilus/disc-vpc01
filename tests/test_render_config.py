@@ -1,4 +1,4 @@
-"""RenderConfig wrapper tests."""
+"""Тесты обёртки RenderConfig."""
 import pytest
 
 from vpc.render.config import RenderConfig, RENDER_DRAFT, RENDER_FINAL
@@ -27,14 +27,14 @@ def test_resolution_draft_override():
 
 def test_resolution_match_source():
     rc = RenderConfig({'resolution_mode': 'source'})
-    # Even dimensions pass through unchanged.
+    # чётные размеры проходят без изменений
     assert rc.output_size(RENDER_FINAL, source_size=(1234, 568)) == (1234, 568)
 
 
 def test_resolution_match_source_rounds_odd_to_even():
-    """yuv420p chroma subsampling requires even dims — odd source sizes
-    must be rounded down by one pixel to keep ffmpeg from refusing the
-    pipe."""
+    """yuv420p требует чётных размеров из-за субдискретизации цветности,
+    поэтому нечётные размеры источника округляются вниз на один пиксель -
+    иначе ffmpeg откажется принимать поток."""
     rc = RenderConfig({'resolution_mode': 'source'})
     assert rc.output_size(RENDER_FINAL, source_size=(1234, 567)) == (1234, 566)
     assert rc.output_size(RENDER_FINAL, source_size=(1235, 567)) == (1234, 566)
@@ -72,8 +72,8 @@ def test_passthrough_default_off():
 
 
 def test_validate_passthrough_audio_optional():
-    """In passthrough mode the audio is extracted from the video, so
-    `audio_path` is no longer required for a config to validate."""
+    """В режиме passthrough аудио достаётся из видео, поэтому `audio_path`
+    для валидности конфига больше не обязателен."""
     rc = RenderConfig({
         'passthrough_mode': True,
         'video_paths': ['/y.mp4'],

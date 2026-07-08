@@ -1,15 +1,15 @@
-"""Quality presets — convenience layer over manual CRF/preset/tune.
+"""Пресеты качества - надстройка над ручными CRF/preset/tune.
 
-These are *suggestions*. The GUI keeps the manual CRF / ffmpeg-preset /
-tune controls fully editable; picking a preset just fills those fields in
-one click. Selecting any preset value writes the three keys; touching any
-of the three by hand flips the preset selector to 'Custom' so the user
-sees that the dropdown no longer matches what's set.
+Это просто *подсказки*. GUI держит ручные поля CRF / ffmpeg-preset / tune
+полностью редактируемыми; выбор пресета заполняет их одним кликом. Выбор
+пресета пишет все три ключа сразу; ручное изменение любого из трёх
+переключает селектор пресета на 'Custom', чтобы юзер видел, что дропдаун
+больше не соответствует выставленным значениям.
 
-`tune` is x264/x265-only. We restrict the menu to values supported by
-both encoders (`film`, `grain`, `animation`, `stillimage`) so a preset
-swap can't break a render when the user later switches codec. `none`
-means: don't pass `-tune` at all.
+`tune` работает только для x264/x265. Меню ограничено значениями,
+поддерживаемыми обоими кодеками (`film`, `grain`, `animation`,
+`stillimage`), чтобы смена пресета не сломала рендер при переключении
+кодека. `none` значит: не передавать `-tune` вообще.
 """
 from __future__ import annotations
 
@@ -19,37 +19,39 @@ from typing import Optional
 CUSTOM = 'Custom'
 
 QUALITY_PRESETS = {
-    # Marker — picking 'Custom' does NOT mutate any field. It exists so
-    # the dropdown has a stable label when manual values diverge from any
-    # preset.
+    # Маркер - выбор 'Custom' НЕ меняет ни одно поле. Существует, чтобы у
+    # дропдауна была стабильная метка, когда ручные значения не совпадают
+    # ни с одним пресетом.
     CUSTOM:    None,
-    # Heavy: archival-grade, generous bitrate, grain-tuned for
-    # noise/datamosh material that "smooth" tunes would smear.
+    # Тяжёлый: архивное качество, щедрый битрейт, tune под зерно - для
+    # шумного/датамош-материала, который "гладкие" tune размажут.
     'Archive': {'crf': 17, 'export_preset': 'slow',   'tune': 'grain'},
-    # Default. Visually lossless for most material at sensible speed.
+    # По умолчанию. Визуально lossless для большинства материала при
+    # разумной скорости.
     'High':    {'crf': 20, 'export_preset': 'medium', 'tune': 'none'},
-    # Web-safe size, fast encode.
+    # Веб-совместимый размер, быстрое кодирование.
     'Web':     {'crf': 23, 'export_preset': 'fast',   'tune': 'none'},
-    # Smallest reasonable file, still watchable.
+    # Минимальный вменяемый файл, ещё смотрибельно.
     'Compact': {'crf': 26, 'export_preset': 'fast',   'tune': 'none'},
 }
 
-# Keys a preset writes — used by the GUI's 'is current state == preset?' check.
+# Ключи, которые пишет пресет - используются GUI в проверке "совпадает ли
+# текущее состояние с пресетом?".
 PRESET_KEYS = ('crf', 'export_preset', 'tune')
 
-# tune values exposed in the GUI dropdown.
+# Значения tune, показываемые в дропдауне GUI.
 TUNE_VALUES = ('none', 'film', 'grain', 'animation', 'stillimage')
 
 
 def preset_names() -> list[str]:
-    """Order shown in the dropdown."""
+    """Порядок показа в дропдауне."""
     return [CUSTOM, 'Archive', 'High', 'Web', 'Compact']
 
 
 def matches(name: str, *, crf: int, export_preset: str,
             tune: str) -> bool:
-    """True if (crf, preset, tune) exactly equal the named preset.
-    `Custom` never matches — it's the fallback label."""
+    """True, если (crf, preset, tune) точно равны названному пресету.
+    `Custom` никогда не совпадает - это резервная метка."""
     spec = QUALITY_PRESETS.get(name)
     if not spec:
         return False
@@ -59,7 +61,7 @@ def matches(name: str, *, crf: int, export_preset: str,
 
 
 def detect_preset(*, crf: int, export_preset: str, tune: str) -> str:
-    """Return the preset name whose (crf, preset, tune) match, or 'Custom'."""
+    """Возвращает имя пресета с совпадающими (crf, preset, tune), либо 'Custom'."""
     for name in QUALITY_PRESETS:
         if name == CUSTOM:
             continue
@@ -69,12 +71,12 @@ def detect_preset(*, crf: int, export_preset: str, tune: str) -> str:
 
 
 def tune_supported(vcodec: str) -> bool:
-    """`-tune` is only meaningful for libx264/libx265."""
+    """`-tune` имеет смысл только для libx264/libx265."""
     return vcodec in ('libx264', 'libx265')
 
 
 def normalize_tune(value: Optional[str]) -> str:
-    """Coerce arbitrary cfg input to a legal TUNE_VALUES entry."""
+    """Приводит произвольное значение из конфига к допустимому TUNE_VALUES."""
     if value is None:
         return 'none'
     v = str(value).strip().lower()

@@ -1,5 +1,5 @@
-"""Tests for audio-reactive wiring of existing effects (Audio Drive / Beat
-Gate / bespoke react) built on the per-frame seg.live track."""
+"""Тесты аудио-реактивной обвязки эффектов (Audio Drive / Beat Gate /
+кастомный react), построенной поверх покадрового трека seg.live."""
 import numpy as np
 import pytest
 
@@ -20,14 +20,14 @@ def _seg(intensity=0.5, bass=0.0, mid=0.0, high=0.0, beat=False, onset=0.0,
 
 
 class _Marker(BaseEffect):
-    """Minimal effect that fires on every segment type and marks the frame."""
+    """Минимальный эффект, срабатывающий на любом типе сегмента и метящий кадр."""
     trigger_types = list(SegmentType)
 
     def _apply(self, frame, seg, draft):
         return (frame + 1).astype(np.uint8)
 
 
-# ── Audio Drive (scaled_intensity) ─────────────────────────────────────────
+# ── Audio Drive (scaled_intensity) ──
 def test_audio_drive_selects_band():
     fx = _Marker(); fx.intensity_min = 0.0; fx.intensity_max = 1.0
     seg = _seg(intensity=0.2, bass=0.9, mid=0.3, high=0.1)
@@ -37,35 +37,35 @@ def test_audio_drive_selects_band():
     assert abs(fx.scaled_intensity(seg) - 0.9) < 1e-6
     fx.audio_drive = 'high'
     assert abs(fx.scaled_intensity(seg) - 0.1) < 1e-6
-    fx.audio_drive = 'auto'          # loudest band = bass
+    fx.audio_drive = 'auto'          # самая громкая полоса - bass
     assert abs(fx.scaled_intensity(seg) - 0.9) < 1e-6
 
 
 def test_audio_drive_falls_back_without_live():
     fx = _Marker(); fx.intensity_min = 0.0; fx.intensity_max = 1.0
     fx.audio_drive = 'bass'
-    seg = _seg(intensity=0.33, with_live=False)   # no seg.live
-    assert abs(fx.scaled_intensity(seg) - 0.33) < 1e-6   # never dead
+    seg = _seg(intensity=0.33, with_live=False)   # без seg.live
+    assert abs(fx.scaled_intensity(seg) - 0.33) < 1e-6   # не должно занулять
 
 
-# ── Beat Gate ──────────────────────────────────────────────────────────────
+# ── Beat Gate ──
 def test_beat_gate_blocks_offbeat_frames():
     frame = np.full((8, 8, 3), 100, np.uint8)
     fx = _Marker(enabled=True, chance=1.0); fx.beat_gate = 'beat'
     off = fx.apply(frame, _seg(beat=False), draft=False)
     on = fx.apply(frame, _seg(beat=True), draft=False)
-    assert np.array_equal(off, frame)          # blocked → unchanged
-    assert on.max() == 101                      # passed → marked
+    assert np.array_equal(off, frame)          # заблокирован → кадр не тронут
+    assert on.max() == 101                      # прошёл → помечен
 
 
 def test_beat_gate_passes_when_no_live():
     frame = np.full((8, 8, 3), 100, np.uint8)
     fx = _Marker(enabled=True, chance=1.0); fx.beat_gate = 'beat'
     out = fx.apply(frame, _seg(with_live=False), draft=False)
-    assert out.max() == 101                     # never muted on no-audio path
+    assert out.max() == 101                     # без аудио-данных гейт не должен глушить
 
 
-# ── build_chain generic wiring ─────────────────────────────────────────────
+# ── build_chain: общая обвязка ──
 def _get(chain, name):
     return next(f for f in chain if type(f).__name__ == name)
 
@@ -82,7 +82,7 @@ def test_build_chain_wires_reactivity_attrs():
     assert _get(chain, 'ResonantRowsEffect').react is True
 
 
-# ── registry params + preset safety ────────────────────────────────────────
+# ── параметры реестра и совместимость со старыми пресетами ──
 def test_reactive_params_registered_with_safe_defaults():
     from vpc.registry import default_cfg
     cfg = default_cfg()
@@ -104,15 +104,15 @@ def test_old_preset_without_reactive_keys_builds():
             del cfg[k]
     cfg['fx_mosaic'] = True
     cfg['fx_resonant'] = True
-    chain = build_chain(cfg)                 # must not raise
+    chain = build_chain(cfg)                 # не должно падать
     m = _get(chain, 'MosaicPulseEffect')
     assert m.audio_drive == 'segment' and m.beat_gate == 'off' and m.react is False
 
 
-# ── bespoke Signal Domain react ────────────────────────────────────────────
+# ── кастомный react эффектов Signal Domain ──
 def test_resonant_react_runs_and_reads_centroid():
     from vpc.effects.signal import ResonantRowsEffect, _SCIPY_OK, _spectral_centroid
-    # centroid helper: energy skewed to high bins → centroid near 1
+    # _spectral_centroid: энергия смещена в высокие bins → центроид близок к 1
     hi = np.zeros(N_BINS, np.float32); hi[-3:] = 1.0
     assert _spectral_centroid(hi) > 0.7
     if not _SCIPY_OK:
@@ -130,7 +130,7 @@ def test_fft_phase_react_runs():
     seg = _seg(high=0.8, bins=bins, onset=0.5, seg_type=SegmentType.NOISE, intensity=0.7)
     out = fx.apply(np.random.randint(0, 255, (24, 32, 3), np.uint8), seg, False)
     assert out.shape == (24, 32, 3) and out.dtype == np.uint8
-    # ring index cache populated for the rfft2 shape
+    # кеш ring index должен заполниться под форму rfft2
     assert len(fx._ring_idx) >= 1
 
 
@@ -152,6 +152,6 @@ def test_feedback_react_clears_on_beat():
     fx.react = True; fx.intensity_min = 0.0; fx.intensity_max = 1.0
     A = np.full((8, 8, 3), 50, np.uint8)
     B = np.full((8, 8, 3), 200, np.uint8)
-    fx.apply(A, _seg(mid=0.9, intensity=0.9), False)          # init accumulator
+    fx.apply(A, _seg(mid=0.9, intensity=0.9), False)          # инициализируем аккумулятор
     out = fx.apply(B, _seg(mid=0.9, intensity=0.9, beat=True), False)
-    assert np.array_equal(out, B)                              # beat cleared → fresh B
+    assert np.array_equal(out, B)                              # бит сбросил аккумулятор → чистый B

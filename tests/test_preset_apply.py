@@ -1,11 +1,11 @@
-"""Regression tests for preset application (apply_preset_config).
+"""Регрессионные тесты применения пресета (apply_preset_config).
 
-The load path must fully determine the UI state from the saved config: any
-key absent from the saved preset has to fall back to its registry default,
-NOT keep whatever the UI currently holds. A preset saved by an older build
-(missing the newer fx_viz_*/_drive/_gate/_react keys) used to silently leave
-stale effects enabled and stale audio wiring active — phantom effects in the
-render that the user never enabled.
+Загрузка обязана полностью определять состояние UI из сохранённого
+конфига: любой ключ, отсутствующий в пресете, должен откатываться к
+дефолту из реестра, а НЕ сохранять то, что сейчас держит UI. Пресет,
+сохранённый старой сборкой (без новых ключей fx_viz_*/_drive/_gate/_react),
+раньше молча оставлял старые эффекты включёнными и старую аудио-проводку
+активной - в рендере всплывали эффекты, которые пользователь не включал.
 """
 import pytest
 
@@ -26,34 +26,35 @@ def app():
 
 
 def test_partial_preset_resets_absent_keys(app):
-    """Loading a config missing the new-feature keys must reset them to
-    defaults, not preserve dirty UI state."""
-    # Dirty the UI as if the user had been experimenting.
+    """Загрузка конфига без ключей новых фич обязана сбросить их к
+    дефолтам, а не сохранить "грязное" состояние UI."""
+    # Пачкаем UI, будто пользователь до этого поэкспериментировал.
     app.vars['fx_viz_plasma'].set(True)
     app.vars['fx_viz_plasma_mode'].set('warp')
     app.vars['fx_rgb_drive'].set('bass')
     app.vars['fx_feedback_react'].set('on')
     app.vars['fx_negative_gate'].set('onset')
 
-    # A minimal "old-version" preset that enables only RGB shift and knows
-    # nothing about the newer keys.
+    # Минимальный пресет "старой версии" - включает только RGB shift и
+    # ничего не знает о более новых ключах.
     old_cfg = {'fx_rgb': True, 'fx_rgb_chance': 0.7}
     app.apply_preset_config(old_cfg, 'old')
 
-    # Absent keys fell back to registry defaults.
+    # Отсутствующие ключи откатились к дефолтам реестра.
     assert app.vars['fx_viz_plasma'].get() is False
     assert app.vars['fx_rgb_drive'].get() == 'segment'
     assert app.vars['fx_feedback_react'].get() == 'off'
     assert app.vars['fx_negative_gate'].get() == 'off'
 
-    # And the render chain no longer contains the phantom visualizer.
+    # И цепочка рендера больше не содержит фантомный визуализатор.
     chain = [type(c).__name__ for c in build_chain(app.get_current_config())]
     assert 'PlasmaFieldEffect' not in chain
 
 
 def test_full_roundtrip_is_identity(app):
-    """A full config saved this version must load back byte-identical —
-    reset-then-overlay must not perturb same-version presets."""
+    """Полный конфиг, сохранённый этой версией, должен загрузиться
+    побитово идентичным - сброс-и-наложение не должен портить пресеты
+    той же версии."""
     app.vars['fx_rgb'].set(True)
     app.vars['fx_psort'].set(True)
     app.vars['fx_psort_int'].set(0.77)
@@ -70,8 +71,9 @@ def test_full_roundtrip_is_identity(app):
 
 
 def test_vhstape_dust_is_string_choice(app):
-    """The Dust toggle is a string 'off'/'on' choice, not a bool — otherwise
-    its combobox shows True/False and the '== on' factory check never fires."""
+    """Переключатель Dust - строковый выбор 'off'/'on', а не bool: иначе
+    в комбобоксе показывались бы True/False и проверка '== on' в фабрике
+    никогда бы не срабатывала."""
     v = app.vars['fx_vhstape_dust']
     assert v.get() == 'off'
     from vpc.registry import find_spec

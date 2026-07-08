@@ -1,9 +1,9 @@
-"""Unit tests for the preview-length clamp.
+"""Тесты клампинга длины превью.
 
-The helper isolates the engine from any garbage typed into the spinbox.
-We avoid spinning up a full Tk root by binding the unbound method to a
-lightweight stand-in object that mimics the only attribute the helper
-touches: `var_preview_seconds.get()`.
+Хелпер защищает движок от любого мусора, введённого в спинбокс.
+Полноценный Tk-рут не поднимаем: вместо этого вызываем несвязанный метод
+на лёгком объекте-заглушке, у которого есть только то, что использует
+хелпер - атрибут `var_preview_seconds.get()`.
 """
 from types import SimpleNamespace
 import tkinter as tk

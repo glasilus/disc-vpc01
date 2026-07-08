@@ -1,9 +1,10 @@
-"""Self-contained ffmpeg setup helpers used by BreakcoreEngine.
+"""Автономные хелперы для настройки ffmpeg, используемые BreakcoreEngine.
 
-Extracted from `engine.py` so the orchestrator stays focused on the render
-pipeline. Each function here is a pure helper — it does not touch engine
-state, only the filesystem + ffmpeg subprocess. The engine wraps each call
-in a thin method that supplies its `log` callback.
+Вынесены из `engine.py`, чтобы оркестратор оставался сфокусирован на самом
+пайплайне рендера. Каждая функция здесь - чистый хелпер: не трогает
+состояние движка, работает только с файловой системой и субпроцессом
+ffmpeg. Движок оборачивает каждый вызов тонким методом, который прокидывает
+свой `log`-колбэк.
 """
 from __future__ import annotations
 
@@ -27,22 +28,23 @@ LogFn = Callable[[str], None]
 
 
 def extract_audio_track(video_path: str, log: LogFn) -> Optional[str]:
-    """Demux the audio of `video_path` into a temp WAV; return its path.
+    """Демультиплексирует аудио из `video_path` во временный WAV, возвращает путь к нему.
 
-    Returns None if the video has no audio stream or extraction fails — in
-    that case the engine still renders, but with no segments and no audio
-    in the output.
+    Возвращает None, если в видео нет аудиодорожки или извлечение не удалось -
+    в этом случае движок всё равно рендерит, но без сегментов и без звука
+    на выходе.
 
-    Stereo 44.1 kHz s16 is preserved deliberately: this WAV is BOTH analysed
-    AND muxed back into the rendered video as the audio track. Downsampling
-    here would be audible (mono panorama collapse, lost high-end). The
-    analyzer does its own downsample on the in-memory waveform.
+    Стерео 44.1 кГц s16 сохраняется намеренно: этот WAV одновременно и
+    анализируется, и вмуксовывается обратно в результат как аудиодорожка.
+    Понижение частоты здесь было бы слышно (схлопывание стерео-панорамы,
+    потеря верхов). Анализатор делает собственный даунсемпл уже на
+    waveform в памяти.
     """
     tmp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
     tmp.close()
-    # Probe duration cheaply so we can scale the ffmpeg timeout. The old
-    # hard 120 s ceiling killed extraction on 30+ minute passthrough sources
-    # mid-write and left an empty/broken WAV behind.
+    # Дёшево прикидываем длительность, чтобы отмасштабировать таймаут ffmpeg.
+    # Старый жёсткий потолок в 120 с обрывал извлечение на исходниках для
+    # passthrough длиннее 30 минут прямо посреди записи, оставляя битый WAV.
     try:
         _cap = cv2.VideoCapture(video_path)
         _fps = float(_cap.get(cv2.CAP_PROP_FPS) or 24.0)
@@ -51,8 +53,8 @@ def extract_audio_track(video_path: str, log: LogFn) -> Optional[str]:
         src_dur = (_n / _fps) if _fps > 0 else 0.0
     except Exception:
         src_dur = 0.0
-    # ~1 s of wall-clock per 60 s of audio is conservative; clamp to a
-    # 60 s floor and a 30 min ceiling to avoid runaway hangs.
+    # ~1 с реального времени на 60 с аудио - с запасом; ограничиваем снизу
+    # 60 с, сверху 30 минутами, чтобы избежать бесконечного зависания.
     extract_timeout = int(max(60.0, min(1800.0, 60.0 + src_dur)))
     cmd = [
         ffmpeg_bin(), '-y', '-i', video_path,
@@ -79,45 +81,46 @@ def extract_audio_track(video_path: str, log: LogFn) -> Optional[str]:
 def prepare_datamosh_source(video_path: str, output_path: str,
                             log: LogFn, *,
                             mode: str = 'strip') -> bool:
-    """Re-encode `video_path` for "true" datamosh in two flavours.
+    """Перекодирует `video_path` для "настоящего" датамоша, в двух вариантах.
 
-    Common flags (both modes):
-      • ``-bf 0`` — kill B-frames. B-frames decode in non-display order
-        and reference both directions; they'd reset the smear chain and
-        ruin the effect.
-      • ``-sc_threshold 0`` — forbid the encoder from inserting its own
-        scene-cut I-frames. Without this libx264 silently sprinkles I's
-        wherever motion changes a lot, breaking the long P-chain that
-        the datamosh look depends on.
-      • ``-g 99999 -keyint_min 99999`` — force the longest possible GOP
-        so essentially everything is a P-frame.
-      • ``-refs 1`` — each P-frame references only its immediate
-        predecessor; produces the long, drifting motion-vector chain
-        characteristic of "real" datamosh.
-      • ``-preset slow`` — far better motion estimation than ultrafast.
-        With ultrafast the encoder gives up on hard-to-track regions
-        and emits intra blocks INSIDE P-frames, which look like static
-        bricks instead of smear.
+    Общие флаги (для обоих режимов):
+      • ``-bf 0`` - убивает B-кадры. Они декодируются не в порядке показа
+        и ссылаются в обе стороны по времени; они бы сбрасывали цепочку
+        смазывания и портили эффект.
+      • ``-sc_threshold 0`` - запрещает энкодеру самому вставлять I-кадры
+        на смене сцены. Без этого libx264 молча рассыпает I-кадры там,
+        где движение сильно меняется, и рвёт длинную P-цепочку, на
+        которой держится вид датамоша.
+      • ``-g 99999 -keyint_min 99999`` - форсирует максимально длинный GOP,
+        так что практически всё становится P-кадрами.
+      • ``-refs 1`` - каждый P-кадр ссылается только на непосредственного
+        предшественника; это и даёт длинную, "плывущую" цепочку векторов
+        движения, характерную для настоящего датамоша.
+      • ``-preset slow`` - заметно лучше оценка движения, чем на ultrafast.
+        На ultrafast энкодер сдаётся на сложных для трекинга участках и
+        вставляет интра-блоки ВНУТРИ P-кадров, что выглядит как статичные
+        "кирпичи", а не смазывание.
 
-    Modes:
-      • ``mode='strip'`` (cut-mode default) — additionally drops every
-        source I-frame via ``select=not(eq(pict_type,I))``. Frame count
-        SHRINKS, so this is only safe in cut mode where audio sync
-        comes from random sampling, not from 1:1 frame alignment.
-      • ``mode='longgop'`` (passthrough mode) — keeps every source
-        frame; only the encode side enforces long-GOP P-only output.
-        Frame count is preserved 1:1, so audio sync survives, but the
-        decoder still produces the characteristic motion-vector smear
-        on scene cuts (since the encoder isn't allowed to insert new
-        I-frames where the source content jumps).
+    Режимы:
+      • ``mode='strip'`` (дефолт для cut-режима) - дополнительно выкидывает
+        все исходные I-кадры через ``select=not(eq(pict_type,I))``. Число
+        кадров УМЕНЬШАЕТСЯ, поэтому безопасно только в cut-режиме, где
+        синхронизация звука идёт через случайную выборку, а не через
+        покадровое соответствие 1:1.
+      • ``mode='longgop'`` (passthrough-режим) - сохраняет каждый исходный
+        кадр, длинный GOP с одними P-кадрами форсируется только на стороне
+        энкодинга. Число кадров остаётся 1:1, синхронизация со звуком не
+        ломается, а декодер всё равно даёт характерное смазывание
+        векторов движения на сменах сцен (энкодеру запрещено вставлять
+        новые I-кадры там, где исходный контент резко меняется).
     """
     cmd = [ffmpeg_bin(), '-y', '-i', video_path]
     if mode == 'strip':
         cmd += ['-vf', 'select=not(eq(pict_type\\,I))', '-vsync', 'vfr']
     elif mode == 'longgop':
-        # No filter: keep frame count 1:1 with source so the passthrough
-        # loop can still align frames to audio. The encoder flags below
-        # are what produce the datamosh look.
+        # Без фильтра: число кадров остаётся 1:1 с исходником, чтобы
+        # passthrough-цикл мог выравнивать кадры со звуком. Вид датамоша
+        # тут дают только флаги энкодера ниже.
         pass
     else:
         log(f'Datamosh prebake: unknown mode {mode!r}, aborting.')
@@ -135,9 +138,9 @@ def prepare_datamosh_source(video_path: str, output_path: str,
         '-an',
         output_path,
     ]
-    # Scale the timeout to the source duration. `-preset slow` plus a
-    # 30-min input would blow past any fixed ceiling; without a timeout
-    # ffmpeg occasionally hangs on bad streams indefinitely.
+    # Масштабируем таймаут под длительность исходника. `-preset slow` на
+    # 30-минутном видео пробьёт любой фиксированный потолок; а без таймаута
+    # ffmpeg на битых потоках иногда зависает насовсем.
     try:
         _cap = cv2.VideoCapture(video_path)
         _fps = float(_cap.get(cv2.CAP_PROP_FPS) or 24.0)
@@ -146,8 +149,8 @@ def prepare_datamosh_source(video_path: str, output_path: str,
         src_dur = (_n / _fps) if _fps > 0 else 0.0
     except Exception:
         src_dur = 0.0
-    # `slow` preset is roughly 1× realtime on modern hardware; allow 4×
-    # headroom and clamp to a 5-min floor / 60-min ceiling.
+    # Пресет `slow` на современном железе примерно 1x realtime; берём
+    # запас x4 и ограничиваем снизу 5 минутами, сверху 60.
     timeout = int(max(300.0, min(3600.0, 60.0 + src_dur * 4.0)))
     try:
         result = subprocess.run(cmd, capture_output=True, timeout=timeout)
@@ -163,23 +166,23 @@ def prepare_datamosh_source(video_path: str, output_path: str,
     return True
 
 
-# ─── passthrough stutter / flash event planner ──────────────────────────
-# In passthrough the engine has to know stutter triggers BEFORE the
-# render loop starts, because the audio pipeline requires a finished WAV
-# at sink.open time and the audio loop has to mirror the video loop. The
-# planner walks `seg_list` once with a deterministic RNG and returns the
-# events it would arm; the render loop then re-creates the SAME RNG from
-# the same seed and walks the segments in the same order, so its
-# decisions match the planner exactly. This is what keeps the audio loop
-# and the video loop pointing at the same chunk of source media.
+# ─── планировщик stutter/flash событий для passthrough ──────────────────
+# В passthrough движок обязан знать триггеры stutter ДО старта цикла
+# рендера, потому что аудио-пайплайну нужен готовый WAV уже к моменту
+# sink.open, а аудио-цикл должен зеркалить видео-цикл. Планировщик один
+# раз проходит `seg_list` с детерминированным RNG и возвращает события,
+# которые он бы взвёл; цикл рендера затем пересоздаёт ТОТ ЖЕ RNG с тем же
+# сидом и идёт по сегментам в том же порядке, так что его решения точно
+# совпадают с планировщиком. Именно это удерживает аудио- и видео-циклы
+# указывающими на один и тот же кусок исходника.
 
 @dataclass
 class StutterEvent:
-    """A drill-loop event armed by the planner.
+    """Событие drill-петли, взведённое планировщиком.
 
-    `trigger_frame_index` is the OUTPUT frame at which the segment that
-    fired the trigger starts. The current frame plays naturally as the
-    first cycle slot; replacement frames span
+    `trigger_frame_index` - это ВЫХОДНОЙ кадр, на котором начинается
+    сегмент, вызвавший триггер. Текущий кадр играет как обычно и занимает
+    первый слот цикла; кадры-замены занимают диапазон
     `trigger_frame_index + 1 ... trigger_frame_index + total_replace_frames`.
     """
     trigger_frame_index: int
@@ -187,23 +190,25 @@ class StutterEvent:
     total_replace_frames: int
 
 
-# Drill-loop sizing knobs. `LOOP_SIZE_FRAMES = 2` means each loop spans
-# two source frames (~83 ms @ 24 fps) and the cycle audibly switches
-# every other output frame — that's the rapid drill character vs. the
-# longer "freeze and twitch" you'd get with 3-4. `CYCLE_CHOICES` then
-# decides how many cycles to play, so total drill duration sits in the
-# 83-250 ms window — short enough to read as a STUTTER, not a freeze.
+# Настройки размера drill-петли. `LOOP_SIZE_FRAMES = 2` значит, что петля
+# занимает два исходных кадра (~83 мс при 24 fps), и звук слышимо
+# переключается через кадр - это и даёт быстрый "дрель"-характер, в
+# отличие от более медленного "заморозка и подёргивание" при 3-4.
+# `CYCLE_CHOICES` определяет, сколько циклов проиграть, так что общая
+# длительность дрели укладывается в окно 83-250 мс - достаточно коротко,
+# чтобы читаться как STUTTER, а не как фриз.
 STUTTER_LOOP_SIZE = 2
 STUTTER_CYCLE_CHOICES = (2, 3, 4)
 
 
 def event_seed_for_passthrough(audio_path: str, target_total_frames: int,
                                chaos: float) -> int:
-    """Build the deterministic RNG seed for the passthrough event plan.
+    """Строит детерминированный сид RNG для плана событий passthrough.
 
-    Uses audio path + frame count + chaos rounded to 2 decimals. Same
-    inputs → same seed → same events both in the planner and the loop,
-    which is what keeps audio and video loops mirroring each other.
+    Использует путь к аудио + число кадров + chaos, округлённый до 2
+    знаков. Одинаковые входные данные дают одинаковый сид, а значит и
+    одинаковые события и в планировщике, и в цикле - это и держит
+    аудио- и видео-циклы синхронными друг с другом.
     """
     sig = f'{audio_path}|{target_total_frames}|{round(chaos, 2)}'
     digest = hashlib.md5(sig.encode('utf-8')).hexdigest()
@@ -212,11 +217,12 @@ def event_seed_for_passthrough(audio_path: str, target_total_frames: int,
 
 def _trigger_decision(seg: Segment, rc, event_rng: random.Random,
                       flash_chance: float, chaos: float) -> Optional[Tuple[str, dict]]:
-    """One unified arming check used by BOTH the planner and the loop.
+    """Единая проверка взведения события, общая и для планировщика, и для цикла.
 
-    Returns ('flash', {'n_flash': N}) or ('stutter', {'cycles': C}) or
-    None. The RNG calls (and their order) MUST match between planner
-    and loop or the audio loop will land on the wrong source chunk.
+    Возвращает ('flash', {'n_flash': N}) или ('stutter', {'cycles': C})
+    либо None. Вызовы RNG (и их порядок) ОБЯЗАНЫ совпадать между
+    планировщиком и циклом, иначе аудио-цикл попадёт не на тот кусок
+    исходника.
     """
     if (rc.flash_enabled
             and seg.type in (SegmentType.DROP, SegmentType.IMPACT)
@@ -235,13 +241,14 @@ def _trigger_decision(seg: Segment, rc, event_rng: random.Random,
 def plan_passthrough_events(seg_list: List[Segment], *,
                             fps: int, rc, flash_chance: float, chaos: float,
                             seed: int) -> List[StutterEvent]:
-    """Walk `seg_list` with a deterministic RNG and produce stutter events.
+    """Проходит `seg_list` с детерминированным RNG и формирует события stutter.
 
-    Mirrors the loop's `cursor != last_trigger_cursor and counters == 0`
-    arming logic: between two consecutive segment starts only `dt_frames`
-    output frames pass, so a long flash/stutter latch may suppress the
-    NEXT segment's trigger entirely. The planner tracks the same residual
-    counter so its decisions stay aligned with what the loop will do.
+    Отражает логику взведения цикла `cursor != last_trigger_cursor and
+    counters == 0`: между началами двух последовательных сегментов
+    проходит всего `dt_frames` выходных кадров, поэтому долгий
+    flash/stutter-латч может целиком подавить триггер СЛЕДУЮЩЕГО
+    сегмента. Планировщик ведёт тот же остаточный счётчик, чтобы его
+    решения оставались согласованы с тем, что сделает цикл.
     """
     rng = random.Random(seed)
     events: List[StutterEvent] = []
@@ -253,8 +260,8 @@ def plan_passthrough_events(seg_list: List[Segment], *,
             state_remaining = max(0, state_remaining - dt)
         prev_t_start = seg.t_start
         if state_remaining > 0:
-            # Loop's arming check is gated on counters being zero — same
-            # gate here, so this segment doesn't consume RNG calls.
+            # Взведение в цикле разрешено только при нулевых счётчиках -
+            # тот же гейт здесь, так что этот сегмент не расходует вызовы RNG.
             continue
         decision = _trigger_decision(seg, rc, rng, flash_chance, chaos)
         if decision is None:
@@ -278,20 +285,20 @@ def plan_passthrough_events(seg_list: List[Segment], *,
 def apply_passthrough_stutter_audio(audio_path: str,
                                     events: List[StutterEvent],
                                     fps: int, log: LogFn) -> bool:
-    """Rewrite `audio_path` (in-place) so each stutter event is audible:
-    inside the drill window the audio loops the same chunk as the video.
+    """Переписывает `audio_path` (на месте) так, чтобы каждое событие stutter
+    было слышимым: внутри окна дрели аудио зацикливает тот же кусок, что и видео.
 
-    Region layout per event (samples computed at the WAV's own rate):
-      • LOOP source = audio of frames
+    Раскладка региона на событие (сэмплы считаются в частоте самого WAV):
+      • источник LOOP = аудио кадров
         `[trigger_fi - loop_size_frames + 1, trigger_fi + 1)`.
-        That's the last `loop_size` source frames including the current
-        one (the "first slot" of the drill).
-      • REPLACE target = `[trigger_fi + 1, trigger_fi + 1 + total_replace)`.
-        The current frame plays naturally; only the residual slots get
-        overwritten with copies of LOOP.
-    Returns False on unsupported sample widths or wave-module errors —
-    caller should treat that as "audio drill skipped, video drill still
-    plays" rather than fatal.
+        Это последние `loop_size` исходных кадров, включая текущий
+        ("первый слот" дрели).
+      • цель REPLACE = `[trigger_fi + 1, trigger_fi + 1 + total_replace)`.
+        Текущий кадр играет как обычно; перезаписываются копиями LOOP
+        только остаточные слоты.
+    Возвращает False при неподдерживаемой ширине сэмпла или ошибках
+    модуля wave - вызывающий код должен воспринимать это как "аудио-дрель
+    пропущена, видео-дрель всё равно проигрывается", а не как фатальную ошибку.
     """
     if not audio_path or not events:
         return False

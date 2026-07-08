@@ -1,19 +1,19 @@
-"""HW encoder smoke test — does NVENC / QSV / AMF / VideoToolbox actually
-produce a usable output file on this machine?
+"""Дымовой тест HW-энкодеров - реально ли NVENC / QSV / AMF / VideoToolbox
+выдают рабочий файл на этой машине.
 
 Run:  python tools/check_hw_encoders.py
 
-For every HW encoder the local ffmpeg build advertises, this script
-spawns a 3-second testsrc → ffmpeg-pipe → encoder render with a hard
-30-second timeout and reports:
+Для каждого HW-энкодера, который анонсирует локальная сборка ffmpeg,
+скрипт запускает рендер 3-секундного testsrc через ffmpeg-pipe с жёстким
+таймаутом 30 секунд и печатает:
 
     [ OK   ] H.264 NVENC (MP4)   1.2s  0.45 MB  72 frames
-    [ FAIL ] H.264 QSV  (MP4)    timed out after 30s — encoder hung
+    [ FAIL ] H.264 QSV  (MP4)    timed out after 30s - encoder hung
     [ FAIL ] H.265 AMF  (MP4)    Cannot load amfrt64.dll
 
-Use this to sanity-check HW availability before committing to a long
-render. The exact same code path the GUI uses is exercised; if a
-codec passes here it will work in the real engine, and vice versa.
+Используй перед долгим рендером, чтобы убедиться, что HW-энкодер вообще
+доступен. Здесь дергается тот же код, что и в GUI: если кодек проходит
+тут, он отработает и в движке, и наоборот.
 """
 from __future__ import annotations
 
@@ -30,16 +30,16 @@ from vpc.render.encoders import available_specs, build_rate_control_args  # noqa
 from vpc.render.sink import ffmpeg_bin  # noqa: E402
 
 
-PROBE_DURATION = 3.0       # seconds of testsrc to feed
-PROBE_RES = (1280, 720)    # 720p — sweet spot for HW encoders
+PROBE_DURATION = 3.0       # сколько секунд testsrc скормить энкодеру
+PROBE_RES = (1280, 720)    # 720p - оптимальное разрешение для HW-энкодеров
 PROBE_FPS = 24
 PROBE_TIMEOUT = 30.0
 
 
 def _build_cmd(spec, output_path: str) -> list[str]:
-    """Construct an ffmpeg command equivalent to what FFmpegSink builds,
-    minus the rawvideo pipe (we let ffmpeg generate the input via
-    lavfi testsrc — keeps the diagnostic self-contained)."""
+    """Собирает команду ffmpeg, эквивалентную той, что строит FFmpegSink,
+    но без rawvideo-пайпа - вход генерируется самим ffmpeg через lavfi
+    testsrc, чтобы диагностика была самодостаточной."""
     rc_args = build_rate_control_args(
         spec, crf=22, preset='fast', tune='none')
     w, h = PROBE_RES
@@ -60,7 +60,7 @@ def _build_cmd(spec, output_path: str) -> list[str]:
 
 
 def _probe(spec, out_dir: Path) -> tuple[str, str]:
-    """Returns (status, detail) where status is 'OK' or 'FAIL'."""
+    """Возвращает (status, detail), где status - 'OK' или 'FAIL'."""
     out = out_dir / f'probe_{spec.vcodec}.{spec.container_ext}'
     if out.exists():
         try: out.unlink()
@@ -72,11 +72,11 @@ def _probe(spec, out_dir: Path) -> tuple[str, str]:
         p = subprocess.run(cmd, capture_output=True, text=True,
                            timeout=PROBE_TIMEOUT)
     except subprocess.TimeoutExpired:
-        return ('FAIL', f'timed out after {PROBE_TIMEOUT:.0f}s — encoder hung')
+        return ('FAIL', f'timed out after {PROBE_TIMEOUT:.0f}s - encoder hung')
     elapsed = time.perf_counter() - t0
 
     if p.returncode != 0:
-        # Trim the noisy error output to the meaningful tail.
+        # Обрезаем шумный вывод ошибки, оставляя только значимый хвост.
         tail = (p.stderr or '').strip().splitlines()
         msg = tail[-1] if tail else f'returncode {p.returncode}'
         return ('FAIL', msg[:140])
@@ -108,7 +108,7 @@ def main() -> int:
     print()
 
     results: list[tuple[str, str, str]] = []
-    # libx264 baseline first — useful reference number.
+    # Сначала базовый libx264 - для сравнения с HW-энкодерами.
     if soft:
         st, det = _probe(soft[0], out_dir)
         results.append((soft[0].label, st, det))

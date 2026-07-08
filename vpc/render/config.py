@@ -1,15 +1,12 @@
-"""Typed render configuration.
+"""Типизированная конфигурация рендера.
 
-Wraps the legacy flat cfg dict with typed accessors and validation. The
-legacy dict is kept as the source of truth so existing presets continue to
-work; this class adds structure on top of it.
+Оборачивает старый плоский cfg-словарь типизированными аксессорами и
+валидацией. Сам словарь остаётся источником истины, чтобы старые пресеты
+продолжали работать - этот класс просто добавляет структуру поверх него.
 
-Backlog support:
-  * Per-effect always-on (backlog #1) — handled in the registry / build_chain
-    via `fx_xxx_always` / `fx_xxx_always_int` cfg keys; nothing to wire here.
-  * resolution_mode + custom_w / custom_h — backlog #2: resolution can be
-    a preset (240/360/480/720/1080), match the source video, or arbitrary
-    user-supplied dimensions.
+resolution_mode + custom_w / custom_h: разрешение может быть пресетом
+(240/360/480/720/1080), совпадать с исходным видео или задаваться
+произвольными размерами вручную.
 """
 from __future__ import annotations
 
@@ -37,10 +34,10 @@ def _coerce_paths(value) -> List[str]:
 
 @dataclass
 class RenderConfig:
-    """Typed view over the flat cfg dict."""
+    """Типизированное представление плоского cfg-словаря."""
     raw: dict = field(default_factory=dict)
 
-    # ----- file paths -----
+    # ----- пути к файлам -----
     @property
     def video_paths(self) -> List[str]:
         return _coerce_paths(self.raw.get('video_paths') or self.raw.get('video_path'))
@@ -57,15 +54,15 @@ class RenderConfig:
     def overlay_dir(self) -> str:
         return self.raw.get('overlay_dir', '') or ''
 
-    # ----- resolution & framerate -----
+    # ----- разрешение и частота кадров -----
     def output_size(self, mode: str, source_size: Optional[Tuple[int, int]] = None) -> Tuple[int, int]:
-        """Final (w, h) for the render. Honours draft override.
+        """Итоговый (w, h) для рендера. В draft-режиме отдаёт фиксированный размер.
 
-        Width/height are always forced to even numbers — yuv420p (and
-        prores 422) require chroma subsampling on even dimensions, and
-        ffmpeg refuses to start otherwise. Without this, a user typing an
-        odd custom_w/custom_h (or a source video with an odd dimension)
-        would crash the render at the ffmpeg pipe stage.
+        Ширина и высота всегда приводятся к чётным числам - yuv420p (и
+        prores 422) требуют чётных размеров для chroma subsampling, иначе
+        ffmpeg просто откажется стартовать. Без этого нечётный
+        custom_w/custom_h или исходное видео с нечётным размером ронял бы
+        рендер прямо на стадии ffmpeg pipe.
         """
         def _even(w: int, h: int) -> Tuple[int, int]:
             return max(2, w - (w & 1)), max(2, h - (h & 1))
@@ -95,11 +92,10 @@ class RenderConfig:
     def crf(self, mode: str) -> int:
         if mode == RENDER_DRAFT:
             return 28
-        # Default raised from 18 → 22: 18 is visually-lossless for clean
-        # content, but with heavy effect chains the artefacts dominate
-        # detail anyway, so 18 only inflates file size (~2× larger) with
-        # no visible quality benefit. 22 is x264's standard "good quality
-        # web" CRF.
+        # Дефолт 22, а не 18: 18 визуально безлосси для чистого контента,
+        # но при тяжёлых цепочках эффектов артефакты и так забивают детали,
+        # так что 18 только раздувает файл (примерно в 2 раза) без заметной
+        # разницы в качестве. 22 - стандартный x264-ный CRF "good quality web".
         return int(self.raw.get('crf', 22) or 22)
 
     @property
@@ -108,12 +104,11 @@ class RenderConfig:
 
     @property
     def tune(self) -> str:
-        """libx264/libx265 -tune value. 'none' (or empty) = don't pass it.
+        """Значение -tune для libx264/libx265. 'none' (или пусто) - не передавать флаг.
 
-        Stored as a flat string because Quality presets and the GUI both
-        treat it as one of {'none', 'film', 'grain', 'animation',
-        'stillimage'}. See vpc.render.quality.normalize_tune for the
-        canonical list.
+        Хранится плоской строкой, потому что и пресеты качества, и GUI
+        трактуют её как одно из {'none', 'film', 'grain', 'animation',
+        'stillimage'}. Канонический список - в vpc.render.quality.normalize_tune.
         """
         v = self.raw.get('tune')
         if v is None:
@@ -123,26 +118,25 @@ class RenderConfig:
 
     @property
     def quality_preset(self) -> str:
-        """Quality preset label ('Archive'/'High'/'Web'/'Compact'/'Custom').
+        """Метка пресета качества ('Archive'/'High'/'Web'/'Compact'/'Custom').
 
-        Purely informational — actual encoder flags are derived from
-        crf/export_preset/tune, which the preset only fills in. Keeping
-        the label in cfg lets saved presets remember which Quality the
-        user picked, so re-loading the preset shows the same dropdown
-        selection."""
+        Чисто информационное поле - реальные флаги энкодера берутся из
+        crf/export_preset/tune, пресет их только проставляет. Метка
+        хранится в cfg, чтобы при загрузке сохранённого пресета в
+        выпадающем списке снова выбирался тот же вариант."""
         v = self.raw.get('quality_preset')
         return str(v) if v else 'Custom'
 
     @property
     def video_codec_label(self) -> str:
-        """User-facing codec/container label, e.g. 'H.264 (MP4)'.
+        """Метка кодека/контейнера для пользователя, например 'H.264 (MP4)'.
 
-        Looked up against EXPORT_FORMATS in sink.py to resolve the actual
-        ffmpeg codec/container/pix_fmt triple.
+        Ищется в EXPORT_FORMATS (sink.py) для получения реальной тройки
+        ffmpeg codec/container/pix_fmt.
         """
         return self.raw.get('video_codec', 'H.264 (MP4)')
 
-    # ----- audio analysis params -----
+    # ----- параметры анализа аудио -----
     @property
     def chaos(self) -> float:
         return float(self.raw.get('chaos_level', 0.5))
@@ -175,18 +169,18 @@ class RenderConfig:
     def use_manual_bpm(self) -> bool:
         return bool(self.raw.get('use_manual_bpm', False))
 
-    # ----- passthrough mode -----
+    # ----- passthrough режим -----
     @property
     def passthrough_mode(self) -> bool:
-        """Process the source video 1:1 — no cuts, no resampling, native order.
+        """Обработка исходного видео 1:1 - без нарезки, без ресемплинга, в исходном порядке.
 
-        Audio is extracted from the source video itself and used both for
-        analysis (effect triggers) and as the muxed output track. No
-        external audio file is required.
+        Аудио извлекается из самого исходного видео и используется и для
+        анализа (триггеры эффектов), и как итоговая звуковая дорожка.
+        Внешний аудиофайл не требуется.
         """
         return bool(self.raw.get('passthrough_mode', False))
 
-    # ----- scene detection -----
+    # ----- детекция сцен -----
     @property
     def use_scene_detect(self) -> bool:
         return bool(self.raw.get('use_scene_detect', False))
@@ -195,7 +189,7 @@ class RenderConfig:
     def scene_buffer_size(self) -> int:
         return int(self.raw.get('scene_buffer_size', 10) or 10)
 
-    # ----- silence treatment -----
+    # ----- обработка тишины -----
     @property
     def silence_mode(self) -> str:
         return self.raw.get('silence_mode', 'dim')
@@ -207,11 +201,11 @@ class RenderConfig:
 
     @property
     def mystery_always(self) -> dict:
-        """Per-knob always-on flags (gate bypass). Default empty → all off,
-        matching legacy behaviour for presets that predate this field."""
+        """Флаги always-on для отдельных ручек (обход гейта). По умолчанию
+        пусто - все выключены, как и было в старых пресетах до этого поля."""
         return dict(self.raw.get('mystery_always', {}))
 
-    # ----- specials -----
+    # ----- спецэффекты -----
     @property
     def stutter_enabled(self) -> bool:
         return bool(self.raw.get('fx_stutter', False))
@@ -232,12 +226,12 @@ class RenderConfig:
     def datamosh_chance_base(self) -> float:
         return float(self.raw.get('fx_datamosh_chance', 0.5))
 
-    # ----- validation -----
+    # ----- валидация -----
     def validate(self) -> List[str]:
-        """Return a list of human-readable problems (empty list if OK)."""
+        """Возвращает список проблем в читаемом виде (пустой список, если всё ОК)."""
         errors = []
-        # In passthrough mode the audio track is extracted from the source
-        # video itself, so no separate audio_path is required.
+        # В passthrough-режиме звук берётся из самого исходного видео,
+        # поэтому отдельный audio_path не нужен.
         if not self.audio_path and not self.passthrough_mode:
             errors.append('audio_path missing')
         if not self.video_paths:

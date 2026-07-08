@@ -1,19 +1,19 @@
-"""End-to-end render regression — guards against frame-count / duration
-truncation bugs.
+"""Регрессионный end-to-end тест рендера - следит за багами усечения
+числа кадров / длительности.
 
-Two activation paths:
-    1. Set TEST_VIDEO and TEST_AUDIO to real media files (used by the
-       legacy `test_engine.py`); this runs against your own assets.
-    2. Set RUN_RENDER_REGRESSION=1; the test will synthesize a short
-       testsrc + sine fixture under tools/.bench_fixtures/ and run on that.
+Два способа запуска:
+    1. Задать TEST_VIDEO и TEST_AUDIO реальными медиафайлами (как в
+       устаревшем `test_engine.py`) - тест прогоняется на своих ассетах.
+    2. Задать RUN_RENDER_REGRESSION=1 - тест сам сгенерирует короткий
+       testsrc + sine фикстур в tools/.bench_fixtures/ и прогонится на нём.
 
-The second path keeps the test self-contained for CI without bundling
-binary fixtures in the repo.
+Второй путь нужен, чтобы тест был самодостаточным для CI и не тащить
+бинарные фикстуры в репозиторий.
 
-Asserts that for a render of duration D at FPS F, the produced container
-contains exactly round(D*F) video frames and ffprobe-reported duration is
-within 1/F of D. This is the contract the truncation fix in engine.py
-established (cumulative frame counter + tail padding, no -shortest).
+Проверяем, что при рендере длительности D и FPS F контейнер содержит
+ровно round(D*F) видеокадров, а duration по ffprobe отличается от D не
+больше чем на 1/F. Это контракт, который закрепил фикс усечения в
+engine.py (кумулятивный счётчик кадров + добивка хвоста, без -shortest).
 """
 from __future__ import annotations
 
@@ -104,23 +104,23 @@ def _render(tmp_path: Path, duration: float, video: str, audio: str,
 
 
 def test_frame_count_matches_audio_duration(tmp_path):
-    """round(D*F) frames in container, no truncation."""
+    """В контейнере должно быть ровно round(D*F) кадров, без усечения."""
     video, audio, dur = _resolve_inputs()
     out = _render(tmp_path, dur, video, audio)
     info = _ffprobe(out)
     fps = 24
     expected = round(dur * fps)
-    # Exact match is the contract; allow ±1 for muxer rounding on container
-    # boundaries (mp4 timescale rounding can shift the last frame's PTS).
+    # допуск ±1 из-за округления таймскейла mp4 на границе контейнера
+    # (может сдвинуть PTS последнего кадра)
     assert abs(info['nb_frames'] - expected) <= 1, (
         f'expected {expected} frames, got {info["nb_frames"]}')
-    # Duration within one frame.
+    # длительность должна укладываться в один кадр
     assert abs(info['duration'] - dur) <= 1.0 / fps + 0.01
 
 
 def test_no_shortest_flag_in_sink_argv():
-    """Defensive: re-asserts the sink-level invariant from a different
-    angle, in case test_sink_command.py is skipped or removed."""
+    """Дублирует проверку инварианта sink'а с другого угла - на случай,
+    если test_sink_command.py пропущен или удалён."""
     from vpc.render.sink import FFmpegSink
     s = FFmpegSink(width=640, height=360, fps=24,
                    audio_path='a.wav', output_path='o.mp4',

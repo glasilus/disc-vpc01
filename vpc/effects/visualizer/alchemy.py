@@ -1,16 +1,17 @@
-"""Alchemy: a WMP-style feedback "liquid light" visualizer.
+"""Alchemy: визуализатор "жидкого света" в стиле WMP на видеофидбэке.
 
-The classic Windows Media Player *Alchemy* look is a video-feedback field —
-each frame the previous image is rotated a little, zoomed a little and dimmed,
-then fresh audio-reactive geometry is drawn on top. The compounding
-rotate+zoom turns every stroke into an endless glowing spiral tunnel, and a
-slowly cycling hue keeps the palette morphing. Here the fresh geometry is a
-radially symmetric "audio rose" whose petal radii track the spectrum, so the
-tunnel pulses and blooms with the music.
+Классический вид *Alchemy* из Windows Media Player - поле видеообратной связи:
+каждый кадр предыдущее изображение немного поворачивается, немного
+увеличивается и затемняется, а поверх рисуется свежая аудиореактивная
+геометрия. Накопление поворота+зума превращает каждый штрих в бесконечный
+светящийся спиральный туннель, а медленно циклящийся hue не даёт палитре
+застыть. Свежая геометрия здесь - радиально-симметричная "аудио-роза", чьи
+радиусы лепестков следуют за спектром, поэтому туннель пульсирует и цветёт в
+такт музыке.
 
-It fits the same render→composite contract as every other visualizer: it
-returns (visual_rgb, field_gray) and honours the shared Composite Mode, so it
-can replace the frame, blend over it, or warp/mask the source.
+Эффект следует тому же контракту render→composite, что и все визуализаторы:
+возвращает (visual_rgb, field_gray) и уважает общий Composite Mode, так что
+может заменять кадр, смешиваться с ним или искажать/маскировать источник.
 """
 from __future__ import annotations
 
@@ -21,14 +22,14 @@ from .base import VisualizerEffect
 
 
 class AlchemyEffect(VisualizerEffect):
-    """Feedback spiral tunnel with a symmetric spectrum rose (WMP Alchemy)."""
+    """Спиральный туннель на фидбэке с симметричной спектральной розой (WMP Alchemy)."""
 
     def __init__(self, symmetry=6, zoom=1.035, spin=2.0, **kw):
         super().__init__(**kw)
         self.symmetry = max(1, int(symmetry))
         self.zoom = float(zoom)
         self.spin = float(spin)
-        self._acc = None      # HxWx3 float32 feedback buffer
+        self._acc = None      # HxWx3 float32 буфер обратной связи
         self._hue = 0.0
         self._phase = 0.0
 
@@ -46,9 +47,10 @@ class AlchemyEffect(VisualizerEffect):
         self._ensure(h, w)
         cx, cy = w / 2.0, h / 2.0
 
-        # ── Feedback: rotate + zoom the previous frame by a small per-frame
-        # delta and dim it. Compounded over time this is the infinite spiral
-        # tunnel. Mids speed the spin, bass widens the zoom → it surges on hits.
+        # ── Feedback: поворачиваем + зумим предыдущий кадр на небольшую дельту
+        # за кадр и затемняем его. Накопление во времени и даёт бесконечный
+        # спиральный туннель. Mid ускоряет вращение, bass увеличивает зум -
+        # получается всплеск на ударах.
         delta = self.spin * (0.4 + 1.6 * float(np.clip(sample.mid, 0, 1)))
         z = self.zoom + 0.04 * float(np.clip(sample.bass, 0, 1))
         M = cv2.getRotationMatrix2D((cx, cy), delta, z)
@@ -63,11 +65,12 @@ class AlchemyEffect(VisualizerEffect):
         self._hue = (self._hue + 1.5 + 8.0 * float(np.clip(sample.bass, 0, 1))) % 180.0
         self._phase += 0.04 + 0.12 * float(np.clip(sample.mid, 0, 1))
 
-        # ── Fresh geometry: soft glowing emitters placed along the spectrum
-        # and replicated with N-fold rotational + mirror symmetry (the
-        # kaleidoscope). Each emitter is a filled disc; the whole overlay is
-        # blurred so it reads as smoke, and the feedback rush smears every disc
-        # into a spiral tendril. Per-emitter hue makes it richly multicoloured.
+        # ── Свежая геометрия: мягко светящиеся эмиттеры расставлены вдоль
+        # спектра и размножены N-кратной поворотной + зеркальной симметрией
+        # (калейдоскоп). Каждый эмиттер - закрашенный круг; весь overlay
+        # размывается, чтобы читаться как дым, а фидбэк размазывает каждый
+        # круг в спиральный усик. Свой hue на эмиттер даёт богатую
+        # многоцветность.
         overlay = np.zeros_like(self._acc)
         arms = self.symmetry
         base_r = min(cx, cy)
@@ -83,14 +86,14 @@ class AlchemyEffect(VisualizerEffect):
                 x = int(cx + np.cos(ang) * rr)
                 y = int(cy + np.sin(ang) * rr)
                 cv2.circle(overlay, (x, y), blob, col, -1, cv2.LINE_AA)
-                # Mirror across the arm axis → kaleidoscopic reflection.
+                # Зеркалим относительно оси луча - калейдоскопическое отражение.
                 xm = int(cx + np.cos(-ang) * rr)
                 ym = int(cy + np.sin(-ang) * rr)
                 cv2.circle(overlay, (xm, ym), blob, col, -1, cv2.LINE_AA)
 
         overlay = cv2.GaussianBlur(overlay, (0, 0), max(1.5, w * 0.012))
-        # Soft central pulse so the tunnel core glows instead of gaping black —
-        # kept modest so it doesn't wash the coloured petals to flat white.
+        # Мягкий центральный пульс, чтобы ядро туннеля светилось, а не зияло
+        # чёрным - значение занижено, чтобы не выбелить цветные лепестки.
         core = self._hsv(self._hue + 40, 0.25 + 0.4 * level)
         cv2.circle(overlay, (int(cx), int(cy)), int(w * 0.02 * (0.5 + level)),
                    (float(core[0]), float(core[1]), float(core[2])), -1, cv2.LINE_AA)

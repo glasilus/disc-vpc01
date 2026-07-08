@@ -1,4 +1,4 @@
-"""Tests for the four warp effects integrated into the registry."""
+"""Тесты четырёх warp-эффектов, встроенных в реестр."""
 import random
 import numpy as np
 
@@ -27,8 +27,8 @@ def test_deriv_warp_changes_pixels():
 
 
 def test_deriv_warp_history_kept_on_skip():
-    """Even when chance prevents firing, _prev must update — otherwise the
-    next fire would warp against a stale frame."""
+    """Даже если chance не даёт эффекту сработать, _prev всё равно должен
+    обновиться - иначе при следующем срабатывании warp пойдёт от устаревшего кадра."""
     fx = DerivWarpEffect(enabled=True, chance=0.0)
     fx.apply(make_frame(0), make_seg(), False)
     assert fx._prev is not None
@@ -41,7 +41,7 @@ def test_vortex_warp_invariant_at_zero_intensity():
     f = make_frame(7)
     seg = make_seg(intensity=0.0)
     out = fx.apply(f, seg, False)
-    # intensity=0 → angle=0 everywhere → identity remap; allow tiny rounding diff
+    # intensity=0 -> угол=0 везде -> тождественный remap; допускаем погрешность округления
     assert np.abs(out.astype(int) - f.astype(int)).max() <= 2
 
 
@@ -53,12 +53,13 @@ def test_vortex_warp_changes_at_high_intensity():
 
 
 def test_fractal_warp_field_flows_in_time():
-    """Field must visibly evolve frame-to-frame so warp is animated, not static.
+    """Поле должно заметно меняться от кадра к кадру, чтобы warp был
+    анимированным, а не статичным.
 
-    The redesigned FractalNoiseWarp samples opensimplex noise3 with a z-axis
-    advanced by an internal frame counter — passing the SAME frame twice in
-    a row should now produce DIFFERENT outputs (the field has flowed),
-    instead of the previous per-segment determinism.
+    FractalNoiseWarp сэмплирует opensimplex noise3 с осью z, которая
+    двигается внутренним счётчиком кадров - поэтому один и тот же кадр,
+    поданный дважды подряд, теперь даёт РАЗНЫЙ результат (поле утекло
+    вперёд), а не одинаковый, как было при детерминизме по сегменту.
     """
     fx = FractalNoiseWarpEffect(enabled=True, chance=1.0)
     seg = make_seg()

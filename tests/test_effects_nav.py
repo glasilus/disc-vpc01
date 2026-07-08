@@ -1,12 +1,12 @@
-"""Tests for the EFFECTS-tab navigation bar (search / filters / jump-to).
+"""Тесты для навигационной панели вкладки EFFECTS (поиск / фильтры / переход к группе).
 
-The navigation layer is *view-only*: it pack_forgets/repacks effect blocks
-and toggles group open-state, but never writes cfg vars. The most important
-guarantee these tests lock in is preset inheritance — no amount of filtering
-may change what `get_current_config()` serialises.
+Навигация чисто *визуальная*: она делает pack_forget/repack блоков эффектов
+и переключает состояние раскрытия группы, но никогда не пишет в cfg-переменные.
+Главное, что должны гарантировать эти тесты - наследование пресетов: фильтрация
+не должна влиять на то, что сериализует `get_current_config()`.
 
-All tests need a real Tk display, which headless CI runners lack, so the
-module skips cleanly when Tk cannot initialise.
+Всем тестам нужен реальный Tk-дисплей, которого нет на headless CI, поэтому
+модуль корректно скипается, если Tk не может инициализироваться.
 """
 import json
 import pytest
@@ -19,7 +19,7 @@ def app():
     try:
         from vpc.gui import MainGUI
         gui = MainGUI()
-    except tk.TclError as exc:                       # no display (headless CI)
+    except tk.TclError as exc:                       # нет дисплея (headless CI)
         pytest.skip(f'Tk unavailable: {exc}')
     gui.withdraw()
     gui.update_idletasks()
@@ -28,7 +28,7 @@ def app():
 
 
 def _visible(app):
-    """Blocks the filter currently considers visible (group state aside)."""
+    """Блоки, которые фильтр сейчас считает видимыми (без учёта состояния группы)."""
     return {k for k in app._effect_block_frames if app._block_visible.get(k, True)}
 
 
@@ -53,7 +53,7 @@ def test_search_by_name(app):
 
 
 def test_search_matches_tooltip_text(app):
-    # 'aberration' appears in the fx_rgb tooltip but not in its display name.
+    # 'aberration' есть в тултипе fx_rgb, но не в его отображаемом имени.
     app.var_fx_search.set('aberration')
     app.update_idletasks()
     assert 'fx_rgb' in _visible(app)
@@ -90,7 +90,7 @@ def test_active_only_is_live(app):
     app.vars['fx_rgb'].set(True)
     app.var_fx_active_only.set(True)
     app.update_idletasks()
-    app.vars['fx_psort'].set(True)          # enable while filter is on
+    app.vars['fx_psort'].set(True)          # включаем, пока фильтр уже активен
     app.update_idletasks()
     assert _visible(app) == {'fx_rgb', 'fx_psort'}
 
@@ -105,7 +105,7 @@ def test_collapse_expand_all(app):
 
 
 def test_filter_never_mutates_config(app):
-    """The inheritance guarantee: filtering must not touch the cfg."""
+    """Гарантия наследования: фильтрация не должна трогать cfg."""
     before = json.dumps(app.get_current_config(), sort_keys=True, default=str)
     app.var_fx_search.set('glitch')
     app.var_fx_active_only.set(True)

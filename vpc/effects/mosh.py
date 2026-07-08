@@ -1,29 +1,29 @@
-"""True codec-level datamosh (PyAV / libavcodec MPEG-4).
+"""Настоящий датамош на уровне кодека (PyAV / libavcodec MPEG-4).
 
-OpticalFlowEffect in core.py APPROXIMATES the datamosh look by warping the
-previous frame along optical flow. This module reproduces the real thing:
-an actual MPEG-4 encoder + decoder pair runs in-process, and the effect
-performs the exact bitstream surgery classic datamosh tools (aviglitch,
-datamosher, autodatamosh) do on AVI files:
+OpticalFlowEffect в core.py лишь ПРИБЛИЖАЕТ вид датамоша, искажая предыдущий
+кадр по оптическому потоку. Этот модуль воспроизводит реальный эффект: в
+процессе крутится настоящая пара кодер+декодер MPEG-4, и эффект делает ту же
+хирургию битстрима, что классические тулзы датамоша (aviglitch, datamosher,
+autodatamosh) делают с AVI-файлами:
 
-  melt  - at a cut the encoder is forced to emit an I-frame and that
-          I-frame is thrown away. The decoder keeps applying the following
-          P-frames' motion vectors and DCT residuals to the stale reference
-          picture, so the old scene drags and smears along the new scene's
-          motion and only "heals" patch by patch where the encoder emits
-          intra macroblocks. This is the canonical I-frame-drop mosh.
-  bloom - one P-frame packet is decoded repeatedly, so its motion field
-          compounds frame after frame (the classic P-frame-duplication
-          "bloom" where moving regions grow out of themselves).
+  melt  - на склейке кодер принудительно выдаёт I-frame, и этот I-frame
+          выбрасывается. Декодер продолжает применять векторы движения и
+          DCT-остатки следующих P-frame к устаревшей опорной картинке, из-за
+          чего старая сцена тянется и размазывается по движению новой, и
+          "заживает" только пятнами там, где кодер выдаёт intra-макроблоки.
+          Это канонический мош через выброс I-frame.
+  bloom - один пакет P-frame декодируется многократно подряд, поэтому его
+          поле движения накапливается кадр за кадром (классический "bloom"
+          через дублирование P-frame, когда движущиеся области разрастаются
+          сами из себя).
 
-The smear, the 16x16 block structure and the patchy self-healing all come
-out of libavcodec's real motion compensation - nothing is simulated.
+Размазывание, структура блоков 16x16 и пятнистое самозаживление - всё это
+результат реальной motion compensation libavcodec, ничего не симулируется.
 
-The effect is a normal chain effect: it consumes one frame and emits one
-frame, so it behaves identically in draft, preview, final and passthrough
-modes and never desyncs audio. The codec pair only exists while a mosh
-episode is running; outside an episode frames pass through untouched at
-zero cost.
+Эффект работает как обычный chain-эффект: на входе один кадр, на выходе один
+кадр, поэтому он ведёт себя одинаково в draft, preview, final и passthrough
+режимах и никогда не рассинхронизирует звук. Пара кодек существует только
+пока идёт эпизод моша; вне эпизода кадры проходят насквозь без затрат.
 """
 from __future__ import annotations
 
@@ -46,20 +46,21 @@ except ImportError:                                    # pragma: no cover
     _PictureType = None
     _AV_OK = False
 
-# Nominal fps for encoder rate control. The chain does not know the real
-# output fps; this only scales the target bitrate, never frame timing.
+# Номинальный fps для управления битрейтом кодера. Chain не знает реальный
+# fps вывода; это значение влияет только на целевой битрейт, не на тайминг кадров.
 _NOMINAL_FPS = 24
 
 
 class TrueDatamoshEffect(BaseEffect):
-    """Real I-frame-drop / P-frame-duplication datamosh.
+    """Настоящий датамош через выброс I-frame / дублирование P-frame.
 
-    Per-SEGMENT gating (like the engine's cut logic, unlike the per-frame
-    base class): each new segment whose type matches and whose chance roll
-    passes starts (or extends) a mosh episode. Consecutive firing segments
-    chain into one continuous melt - the datamix look. The first segment
-    that fails the roll ends the episode, which reads exactly like a moshed
-    stream hitting a surviving keyframe: the picture snaps back clean.
+    Гейтинг по СЕГМЕНТАМ (как логика склеек движка, а не как обычный
+    покадровый базовый класс): каждый новый сегмент подходящего типа,
+    прошедший бросок chance, запускает (или продолжает) эпизод моша.
+    Идущие подряд "выстрелившие" сегменты сливаются в один непрерывный
+    melt - тот самый datamix-вид. Первый сегмент, не прошедший бросок,
+    завершает эпизод - это выглядит ровно как мошнутый поток, упёршийся
+    в уцелевший keyframe: картинка резко становится чистой.
     """
     trigger_types = [SegmentType.NOISE, SegmentType.SUSTAIN,
                      SegmentType.IMPACT, SegmentType.DROP]
@@ -77,7 +78,7 @@ class TrueDatamoshEffect(BaseEffect):
         self._seg_id = None
         self._enc = None
         self._dec = None
-        # (encode_w, encode_h) - even-floored; (out_w, out_h) - chain size.
+        # (encode_w, encode_h) - округлено до чётного; (out_w, out_h) - размер chain.
         self._enc_size = None
         self._out_size = None
         self._last_out: Optional[np.ndarray] = None
@@ -90,11 +91,11 @@ class TrueDatamoshEffect(BaseEffect):
             print('[FX-FAIL] TrueDatamoshEffect: PyAV (av) is not installed; '
                   'effect is inert.')
 
-    # ── chain contract ───────────────────────────────────────────────────
+    # ── контракт chain ───────────────────────────────────────────────────
     def apply(self, frame: np.ndarray, seg: Segment, draft: bool) -> np.ndarray:
-        # Stateful override (same pattern as OpticalFlowEffect): the previous
-        # frame must be tracked on EVERY frame so an episode can prime the
-        # decoder with the picture that was actually on screen at the cut.
+        # Переопределение с состоянием (как у OpticalFlowEffect): предыдущий
+        # кадр нужно отслеживать на КАЖДОМ кадре, чтобы эпизод мог
+        # проинициализировать декодер картинкой, реально бывшей на экране в момент склейки.
         seg_id = (seg.t_start, seg.t_end, seg.type)
         new_seg = seg_id != self._seg_id
         self._seg_id = seg_id
@@ -103,8 +104,8 @@ class TrueDatamoshEffect(BaseEffect):
             self.prev_frame = frame
             return frame
         if self.prev_frame is not None and self.prev_frame.shape != frame.shape:
-            # Resolution changed under us (new render / new chain) - the
-            # codec pair is sized for the old frames, drop the episode.
+            # Разрешение поменялось на лету (новый рендер / новый chain) -
+            # пара кодек рассчитана на старые кадры, эпизод приходится сбросить.
             self._teardown()
             self.prev_frame = frame
             return frame
@@ -112,8 +113,8 @@ class TrueDatamoshEffect(BaseEffect):
         try:
             out = self._step(frame, seg, draft, new_seg)
         except Exception as e:
-            # av raises library-specific errors (av.error.*); any codec
-            # failure must never kill the render loop.
+            # av кидает свои специфичные ошибки (av.error.*); любой сбой
+            # кодека не должен ронять цикл рендера.
             self._fails += 1
             print(f'[FX-FAIL] TrueDatamoshEffect: {e!r} (fail {self._fails})')
             self._teardown()
@@ -126,17 +127,17 @@ class TrueDatamoshEffect(BaseEffect):
         return out
 
     def _apply(self, frame, seg, draft):  # pragma: no cover - unused
-        # BaseEffect requires the hook; gating happens in apply() instead.
+        # BaseEffect требует этот метод, но гейтинг реализован в apply().
         return frame
 
-    # ── episode state machine ────────────────────────────────────────────
+    # ── state machine эпизода ────────────────────────────────────────────
     def _step(self, frame: np.ndarray, seg: Segment, draft: bool,
               new_seg: bool) -> np.ndarray:
         if new_seg:
             fire = (seg.type in self.trigger_types
                     and random.random() <= self.chance)
             if not fire:
-                # Clean resync - identical to a kept keyframe in a real mosh.
+                # Чистый ресинк - как сохранившийся keyframe в реальном моше.
                 self._teardown()
                 return frame
             return self._cut(frame, seg, draft)
@@ -150,13 +151,13 @@ class TrueDatamoshEffect(BaseEffect):
         return self.mode
 
     def _cut(self, frame: np.ndarray, seg: Segment, draft: bool) -> np.ndarray:
-        """First frame of a firing segment - the moment of bitstream surgery."""
+        """Первый кадр выстрелившего сегмента - момент хирургии битстрима."""
         if self._enc is None:
             self._start_episode(frame, draft)
         event = self._pick_event()
 
-        # Arm the bloom before encoding so the very first P of the new
-        # segment (the one with the hardest motion mismatch) is captured.
+        # Взводим bloom до кодирования, чтобы захватить самый первый P нового
+        # сегмента (тот, где рассогласование движения максимально).
         if event in ('bloom', 'both'):
             n = 2 + int(round(self.scaled_intensity(seg)
                               * (self.bloom_frames - 2)))
@@ -166,12 +167,12 @@ class TrueDatamoshEffect(BaseEffect):
 
         packets = self._encode(frame, force_i=True)
         if event == 'bloom':
-            # Pure bloom keeps the stream intact: the decoder resyncs on the
-            # I-frame, then the next P gets duplicated in _continue().
+            # Чистый bloom не трогает поток: декодер ресинкается на I-frame,
+            # а следующий P дублируется уже в _continue().
             return self._feed(packets, frame)
-        # melt / both: the forced I-frame is thrown away. The decoder holds
-        # the previous picture for this one frame (real moshes do exactly
-        # this where the keyframe was cut out) and melts from the next P on.
+        # melt / both: принудительный I-frame выбрасывается. Декодер держит
+        # предыдущую картинку этот один кадр (так же ведут себя реальные моши
+        # там, где вырезан keyframe) и дальше плавится начиная со следующего P.
         return self._held(frame)
 
     def _continue(self, frame: np.ndarray) -> np.ndarray:
@@ -184,26 +185,26 @@ class TrueDatamoshEffect(BaseEffect):
                 self._await_bloom_pkt = False
 
         if self._bloom_left > 0 and self._bloom_pkt is not None:
-            # Feed the same P packet again: its motion vectors compound on
-            # the decoder's current reference. The fresh packets for this
-            # input frame are discarded, which keeps the decoder reference
-            # diverging - part of the authentic look.
+            # Скармливаем тот же P-пакет повторно: его векторы движения
+            # накапливаются на текущей опорной картинке декодера. Свежие
+            # пакеты для этого входного кадра отбрасываются - это и держит
+            # опорную картинку расходящейся, в этом суть эффекта.
             self._bloom_left -= 1
             pkt = av.Packet(self._bloom_pkt)
             return self._feed([pkt], frame)
 
-        # Any keyframe the encoder sneaks in mid-episode would resync the
-        # picture and kill the melt - drop it, exactly like mosh tools strip
-        # every I-frame in the affected range.
+        # Если кодер посреди эпизода всё же подсунет keyframe, он ресинканёт
+        # картинку и убьёт melt - выбрасываем его, как это делают тулзы
+        # датамоша, вычищая все I-frame в затронутом диапазоне.
         p_pkts = [p for p in packets if not p.is_keyframe]
         if not p_pkts and packets:
             return self._held(frame)
         return self._feed(p_pkts, frame)
 
-    # ── codec plumbing ───────────────────────────────────────────────────
+    # ── обвязка кодека ───────────────────────────────────────────────────
     def _start_episode(self, frame: np.ndarray, draft: bool) -> None:
         h, w = frame.shape[:2]
-        ew, eh = w & ~1, h & ~1          # yuv420p needs even dimensions
+        ew, eh = w & ~1, h & ~1          # yuv420p требует чётные размеры
         self._enc_size = (ew, eh)
         self._out_size = (w, h)
 
@@ -212,19 +213,19 @@ class TrueDatamoshEffect(BaseEffect):
         enc.pix_fmt = 'yuv420p'
         enc.time_base = Fraction(1, _NOMINAL_FPS)
         enc.framerate = Fraction(_NOMINAL_FPS, 1)
-        # One long P-chain: huge GOP plus disabled scene-cut detection, the
-        # same stream shape prepare_datamosh_source() builds with ffmpeg.
+        # Одна длинная P-цепочка: огромный GOP плюс отключённое обнаружение
+        # смены сцены - та же форма потока, что prepare_datamosh_source() строит через ffmpeg.
         enc.gop_size = 10 ** 6
-        # crunch maps to bits per pixel: 0.60 bpp is visually clean, 0.05
-        # bpp is heavy macroblock soup. Lower bitrate = blockier smear.
+        # crunch отображается в биты на пиксель: 0.60 bpp - визуально чисто,
+        # 0.05 bpp - густое макроблочное месиво. Ниже битрейт = крупнее блоки размазывания.
         bpp = 0.60 - 0.55 * self.crunch
         enc.bit_rate = max(64_000, int(ew * eh * _NOMINAL_FPS * bpp))
         opts = {
-            'sc_threshold': '1000000000',  # never auto-insert I on cuts
-            'flags': '+mv4',               # 8x8 vectors: finer, soupier drag
+            'sc_threshold': '1000000000',  # не давать кодеру самому вставлять I на склейках
+            'flags': '+mv4',               # векторы 8x8: тоньше и "мыльнее" размазывание
         }
         if not draft:
-            opts['mbd'] = 'rd'             # better ME = smoother melt
+            opts['mbd'] = 'rd'             # лучше motion estimation = более гладкий melt
         enc.options = opts
         enc.open()
 
@@ -236,9 +237,9 @@ class TrueDatamoshEffect(BaseEffect):
         self._bloom_left = 0
         self._await_bloom_pkt = False
 
-        # Prime both contexts with the picture currently on screen: the
-        # in-band headers of this I-frame configure the decoder, and its
-        # payload becomes the stale reference everything will melt from.
+        # Инициализируем оба контекста картинкой, которая сейчас на экране:
+        # заголовки этого I-frame настраивают декодер, а его данные становятся
+        # той самой устаревшей опорной картинкой, от которой всё будет плавиться.
         base = self.prev_frame if self.prev_frame is not None else frame
         self._feed(self._encode(base, force_i=True), base)
 

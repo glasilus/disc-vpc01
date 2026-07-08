@@ -8,14 +8,15 @@ namespace fs = std::filesystem;
 namespace FontLoader {
 
 static const ImWchar* full_glyph_ranges() {
-    // Latin + Cyrillic + common punctuation. Static so the pointer stays valid
-    // for the entire ImGui atlas lifetime.
+    // Латиница + кириллица + распространённая пунктуация. static - потому что
+    // ImGui хранит только указатель на массив, он должен жить всё время
+    // существования атласа.
     static const ImWchar ranges[] = {
-        0x0020, 0x00FF, // Basic Latin + Latin-1 Supplement
-        0x0400, 0x052F, // Cyrillic + Cyrillic Supplement
-        0x2000, 0x206F, // General Punctuation
-        0x2070, 0x209F, // Super/subscripts
-        0x20A0, 0x20CF, // Currency
+        0x0020, 0x00FF, // базовая латиница + Latin-1 Supplement
+        0x0400, 0x052F, // кириллица + Cyrillic Supplement
+        0x2000, 0x206F, // общая пунктуация
+        0x2070, 0x209F, // над/подстрочные знаки
+        0x20A0, 0x20CF, // символы валют
         0x2DE0, 0x2DFF, // Cyrillic Extended-A
         0xA640, 0xA69F, // Cyrillic Extended-B
         0,

@@ -1,22 +1,22 @@
-"""Single source of truth for runtime data paths.
+"""Единая точка правды для путей рантайм-данных.
 
-Resolves where user-editable data files (presets.json, temp previews) live.
-Behaves correctly in three deploy modes:
+Определяет, где лежат пользовательские файлы (presets.json, временные
+превью). Корректно работает в трёх сценариях запуска:
 
-1. Development (`python -m vpc.gui` from a checkout)
-   → repository root (parent of the `vpc/` package).
+1. Разработка (`python -m vpc.gui` из чекаута)
+   -> корень репозитория (родитель пакета `vpc/`).
 
-2. Frozen executable (PyInstaller `--onefile` or `--onedir`)
-   → directory containing the executable. PyInstaller-bundled read-only
-   resources still go through `sys._MEIPASS`, but user data must persist
-   between runs, so we use the exe directory.
+2. Собранный exe (PyInstaller `--onefile` или `--onedir`)
+   -> директория с исполняемым файлом. Read-only ресурсы, вшитые
+   PyInstaller, всё равно идут через `sys._MEIPASS`, но пользовательские
+   данные должны переживать перезапуски, поэтому используем директорию exe.
 
-3. Installed wheel
-   → user-config directory (`%APPDATA%/disc_vpc` on Windows,
-   `~/.config/disc_vpc` elsewhere). Avoids dropping files inside
+3. Установленный wheel
+   -> пользовательская config-директория (`%APPDATA%/disc_vpc` на Windows,
+   `~/.config/disc_vpc` на остальных). Так файлы не попадают внутрь
    site-packages.
 
-Override with the `DISC_VPC_HOME` environment variable for any of the above.
+Любой из вариантов можно переопределить переменной окружения `DISC_VPC_HOME`.
 """
 from __future__ import annotations
 
@@ -25,36 +25,37 @@ import sys
 from pathlib import Path
 
 
-_PACKAGE_DIR = Path(__file__).resolve().parent          # …/vpc
-_REPO_ROOT = _PACKAGE_DIR.parent                        # …/sync-break-ultimate
+_PACKAGE_DIR = Path(__file__).resolve().parent          # .../vpc
+_REPO_ROOT = _PACKAGE_DIR.parent                        # .../sync-break-ultimate
 
 
 def _is_dev_checkout() -> bool:
-    """True when the package lives next to a recognisable repo root."""
+    """True, если пакет лежит рядом с узнаваемым корнем репозитория."""
     return (_REPO_ROOT / 'requirements.txt').is_file() or \
            (_REPO_ROOT / 'README.MD').is_file()
 
 
 def data_home() -> Path:
-    """Directory where user data (presets.json, temp previews) is stored.
+    """Директория, где хранятся пользовательские данные (presets.json,
+    временные превью).
 
-    Created on first access if missing.
+    Создаётся при первом обращении, если ещё не существует.
     """
     override = os.environ.get('DISC_VPC_HOME')
     if override:
         p = Path(override).expanduser()
     elif getattr(sys, 'frozen', False):
         if sys.platform == 'darwin':
-            # A .app's executable dir (Contents/MacOS) lives inside the bundle:
-            # read-only once installed to /Applications, and writing there also
-            # breaks the code signature. Persist user data outside the bundle.
+            # Директория exe внутри .app (Contents/MacOS) лежит в бандле:
+            # после установки в /Applications она read-only, а запись туда
+            # ещё и ломает подпись кода. Поэтому храним данные вне бандла.
             p = Path.home() / 'Library' / 'Application Support' / 'disc_vpc'
         else:
             p = Path(sys.executable).resolve().parent
     elif _is_dev_checkout():
         p = _REPO_ROOT
     else:
-        # Installed package, no checkout in sight — use per-user config dir.
+        # Установленный пакет вне чекаута - используем per-user config dir.
         if sys.platform == 'win32':
             base = Path(os.environ.get('APPDATA', Path.home() / 'AppData' / 'Roaming'))
             p = base / 'disc_vpc'

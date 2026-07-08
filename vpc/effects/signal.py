@@ -1,4 +1,4 @@
-"""Signal-domain effects — DSP-style operations applied to image data."""
+"""Эффекты в духе цифровой обработки сигналов, применённые к изображению."""
 from __future__ import annotations
 
 import collections
@@ -14,7 +14,7 @@ if _SCIPY_OK:
 
 
 def _spectral_centroid(bins: np.ndarray) -> float:
-    """Normalized (0..1) spectral centroid of a per-frame magnitude spectrum."""
+    """Нормализованный (0..1) спектральный центроид амплитудного спектра кадра."""
     b = np.asarray(bins, dtype=np.float32)
     s = float(b.sum())
     if s <= 1e-6 or len(b) < 2:
@@ -24,7 +24,7 @@ def _spectral_centroid(bins: np.ndarray) -> float:
 
 
 def _match_histograms(src: np.ndarray, ref: np.ndarray) -> np.ndarray:
-    """Match src histogram to ref per channel using CDF interpolation."""
+    """Подгоняет гистограмму src под ref по каждому каналу через интерполяцию CDF."""
     result = np.empty_like(src)
     for c in range(3):
         s = src[:, :, c].flatten()
@@ -54,8 +54,8 @@ class ResonantRowsEffect(BaseEffect):
         if self.react:
             live = getattr(seg, 'live', None)
             if live is not None:
-                # Spectral centroid → visual resonance frequency: the ringing
-                # rises and falls with the pitch of the music.
+                # Спектральный центроид -> частота визуального резонанса:
+                # звон следует за высотой тона музыки.
                 c = _spectral_centroid(live.bins)
                 freq = float(np.clip(0.02 + c * 0.4, 0.01, 0.45))
         low = max(0.001, freq * 0.7)
@@ -112,14 +112,15 @@ class FFTPhaseCorruptEffect(BaseEffect):
     def __init__(self, amount=0.5, **kw):
         super().__init__(**kw)
         self.amount = amount
-        self._ring_idx: dict = {}   # (rfft2 shape, n_bins) -> radial bin index map
+        self._ring_idx: dict = {}   # (shape rfft2, n_bins) -> карта индексов радиальных бинов
 
     def _ring_idx_map(self, shape, n_bins):
-        """Radial frequency-ring bin index for every rfft2 coefficient.
+        """Индекс радиального кольца частот для каждого коэффициента rfft2.
 
-        Rows use full fftfreq (-0.5..0.5); the rfft axis spans 0..0.5. The
-        normalized radius is bucketed into n_bins rings so audio bin k drives
-        the image's k-th spatial-frequency ring. Cached per (shape, n_bins)."""
+        По строкам полный fftfreq (-0.5..0.5); ось rfft идёт 0..0.5.
+        Нормализованный радиус бьётся на n_bins колец, так что аудио-бин k
+        управляет k-м кольцом пространственных частот картинки. Кэшируется
+        по (shape, n_bins)."""
         key = (shape, n_bins)
         cached = self._ring_idx.get(key)
         if cached is not None:
@@ -324,9 +325,9 @@ class SpatialReverbEffect(BaseEffect):
         if self.react:
             live = getattr(seg, 'live', None)
             if live is not None:
-                # Onset density over a short rolling window drives the tail:
-                # busy percussion → high density → faster decay (tight echoes),
-                # sparse passages → low density → long tails.
+                # Плотность onset'ов в коротком скользящем окне управляет хвостом:
+                # плотная перкуссия -> высокая плотность -> быстрый decay (тесное эхо),
+                # редкие пассажи -> низкая плотность -> длинные хвосты.
                 self._onset_hist.append(float(getattr(live, 'onset', 0.0)))
                 density = float(np.mean(self._onset_hist))
                 decay = float(np.clip(self.decay * (0.4 + 1.4 * density), 0.05, 0.45))

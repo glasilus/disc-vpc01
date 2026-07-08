@@ -1,13 +1,14 @@
-"""Mystery section tests.
+"""Тесты секции Mystery.
 
-Mystery is intentionally chaotic, so we only verify:
-  * apply() returns a uint8 array of the same shape,
-  * with all knobs at zero, the output equals the input,
-  * each knob, when raised in isolation, *does* change the output
-    (proves wiring isn't accidentally dead).
+Mystery намеренно хаотична, поэтому проверяем только:
+  * apply() возвращает uint8-массив той же формы,
+  * при всех ручках на нуле выход равен входу,
+  * каждая ручка, поднятая по отдельности, реально меняет выход
+    (доказывает, что проводка не мертва).
 
-Bit-exact golden testing here is brittle because Mystery reseeds RNG from
-seg.rms + ZERO; instead we lean on shape/dtype + at-least-changes-something.
+Побитовое golden-тестирование тут хрупкое, потому что Mystery
+пересеивает RNG от seg.rms + ZERO, поэтому опираемся на shape/dtype
+и факт хоть какого-то изменения.
 """
 import random
 import numpy as np
@@ -39,18 +40,16 @@ KNOBS = ['VESSEL', 'ENTROPY_7', 'STATIC_MIND', 'RESONANCE',
 
 
 def test_each_knob_changes_output():
-    """Each knob alone, set high, must change the frame at least somewhere."""
+    """Каждая ручка по отдельности, выставленная высоко, должна где-то менять кадр."""
     base = make_frame()
     seg = make_seg()
     for knob in KNOBS:
         random.seed(0); np.random.seed(0)
         m = MysterySection()
         setattr(m, knob, 0.9)
-        # Run a few frames so stateful knobs (DOT slit-scan, VESSEL feedback)
-        # accumulate enough history to be observable.
         out = base
-        # Feed 6 *different* frames so stateful knobs (DOT slit-scan, VESSEL
-        # feedback) have meaningful history to fold into the output.
+        # Кормим 6 разных кадров, чтобы у ручек с состоянием (DOT slit-scan,
+        # VESSEL feedback) накопилась история, заметная в выходе.
         for i in range(6):
             out = m.apply(make_frame(seed=42 + i), seg, draft=False)
         diff = np.abs(out.astype(int) - base.astype(int)).sum()
@@ -58,8 +57,8 @@ def test_each_knob_changes_output():
 
 
 def test_always_flags_default_false_keep_legacy():
-    """All `always_<KNOB>` fields exist and default to False — required so
-    presets that predate the feature behave bit-identically to before."""
+    """Все поля `always_<KNOB>` существуют и по умолчанию False - иначе
+    старые пресеты, сохранённые до появления этой фичи, вели бы себя иначе."""
     m = MysterySection()
     for k in KNOBS + ['DELTA_OMEGA']:
         assert hasattr(m, f'always_{k}'), f'missing always_{k}'
@@ -67,10 +66,11 @@ def test_always_flags_default_false_keep_legacy():
 
 
 def test_always_flag_forces_trigger_when_gate_would_block():
-    """With a low knob value the random gate would *usually* not fire on
-    a single frame. With always-on set, the block must still produce a
-    visible change. We use seg.rms=0 so the rms-weighted gate term is 0
-    and the bare base probability is small enough to fail most rolls.
+    """При маленьком значении ручки случайный гейт обычно не сработает
+    на одном кадре. С флагом always-on блок всё равно обязан дать
+    видимое изменение. seg.rms=0, чтобы взвешенный по rms член гейта
+    был нулевым, а базовая вероятность - маленькой и проваливала
+    большинство бросков без always-on.
     """
     seg = Segment(0.0, 1.0, 1.0, SegmentType.SUSTAIN, 0.6, 0.0, 0.0, 0.0)
     base = make_frame(seed=7)
@@ -78,7 +78,7 @@ def test_always_flag_forces_trigger_when_gate_would_block():
                  'ENTROPY_7', 'ZERO', 'FLESH_K', 'DOT']:
         random.seed(123); np.random.seed(123)
         m = MysterySection()
-        setattr(m, knob, 0.05)  # tiny value — gate has ~5% chance per roll
+        setattr(m, knob, 0.05)  # маленькое значение - у гейта ~5% шанс за бросок
         setattr(m, f'always_{knob}', True)
         out = base
         for i in range(3):
@@ -88,7 +88,7 @@ def test_always_flag_forces_trigger_when_gate_would_block():
 
 
 def test_always_flag_off_at_knob_zero_is_noop():
-    """always_<KNOB>=True must NOT trigger when knob value is 0."""
+    """always_<KNOB>=True не должен срабатывать при значении ручки 0."""
     m = MysterySection()
     m.always_FLESH_K = True
     m.always_DOT = True

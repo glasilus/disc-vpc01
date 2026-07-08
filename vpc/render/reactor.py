@@ -1,4 +1,4 @@
-"""Render-time audio reactor: maps absolute time to a smoothed AudioSample."""
+"""Аудио-реактор рендер-времени: отображает абсолютное время в сглаженный AudioSample."""
 from __future__ import annotations
 
 import math
@@ -10,10 +10,10 @@ from vpc.analyzer import AudioFeatures, AudioSample, N_BINS
 
 
 class AudioReactor:
-    """Stateful per-frame sampler. Call sample()/synth() in time order.
+    """Стейтфул-семплер по кадрам. sample()/synth() нужно звать в порядке времени.
 
-    attack: how fast a value rises toward a new peak (0..1, higher = snappier).
-    release: how fast it falls (0..1, lower = longer peak-hold tails).
+    attack: как быстро значение поднимается к новому пику (0..1, больше = резче).
+    release: как быстро оно спадает (0..1, меньше = длиннее хвост после пика).
     """
 
     def __init__(self, features: Optional[AudioFeatures], fps: float,
@@ -60,7 +60,7 @@ class AudioReactor:
         )
 
     def synth(self, intensity: float, frame_idx: int) -> AudioSample:
-        """No-audio fallback: animate from intensity + phase oscillators."""
+        """Фолбэк без звука: анимация на основе intensity + фазовых осцилляторов."""
         p = frame_idx / self.fps
         bass = intensity * (0.5 + 0.5 * math.sin(p * 2.0))
         mid = intensity * (0.5 + 0.5 * math.sin(p * 3.3 + 1.0))

@@ -1,4 +1,4 @@
-"""Abstraction visualizers: plasma field, beat particles, flow field."""
+"""Абстрактные визуализаторы: плазменное поле, бит-частицы, поле потока."""
 from __future__ import annotations
 
 import cv2
@@ -8,7 +8,7 @@ from .base import VisualizerEffect
 
 
 class PlasmaFieldEffect(VisualizerEffect):
-    """Procedural plasma; colour and speed modulated by the bands."""
+    """Процедурная плазма; цвет и скорость модулируются частотными полосами."""
 
     def __init__(self, scale=0.04, **kw):
         super().__init__(**kw)
@@ -31,18 +31,18 @@ class PlasmaFieldEffect(VisualizerEffect):
 
 
 class BeatParticlesEffect(VisualizerEffect):
-    """Firework particles burst from the centre on the beat.
+    """Частицы-фейерверк вылетают из центра на каждый удар (beat).
 
-    A pooled particle system: each beat emits a radial burst whose size scales
-    with bass, a loud onset emits a smaller spray, and steady energy feeds a
-    faint trickle so the field is never dead even on tracks with a soft kick.
-    Particles fly outward, gravity pulls them down, they fade hot→cool and
-    LEAVE the frame (no modulo wrap — the old code teleported sparks across the
-    screen, which read as noise, not fireworks). A soft bloom gives the spark
-    glow.
+    Пул частиц: каждый beat порождает радиальный залп, чей размер зависит от
+    баса, громкий onset даёт залп поменьше, а фоновая энергия подкидывает
+    слабую струйку частиц, чтобы поле не пустовало даже на треках с мягким
+    кик-драмом. Частицы летят наружу, гравитация тянет их вниз, они остывают
+    от горячего к холодному цвету и УЛЕТАЮТ за кадр (без wrap по модулю -
+    в старой версии искры телепортировались через экран, и это читалось как
+    шум, а не фейерверк). Мягкий bloom даёт свечение искрам.
     """
 
-    # Columns of the particle pool.
+    # Колонки пула частиц.
     _X, _Y, _VX, _VY, _LIFE, _HOT = range(6)
 
     def __init__(self, count=120, gravity=0.3, **kw):
@@ -52,14 +52,15 @@ class BeatParticlesEffect(VisualizerEffect):
         self._p = None     # (N,6): x, y, vx, vy, life(0..1), hot(0..1)
 
     def apply(self, frame, seg, draft):
-        # Step physics every frame so motion is continuous regardless of
-        # trigger/chance gating (mirrors PaintCanvasEffect's history pattern).
+        # Физика шагает каждый кадр, чтобы движение было непрерывным
+        # независимо от trigger/chance-гейтинга (тот же паттерн, что и
+        # история в PaintCanvasEffect).
         self._step(frame.shape[0], frame.shape[1], seg)
         return super().apply(frame, seg, draft)
 
     def _ensure(self):
         if self._p is None:
-            self._p = np.zeros((self.count, 6), np.float32)  # all dead (life 0)
+            self._p = np.zeros((self.count, 6), np.float32)  # все мертвы (life 0)
 
     def _emit(self, k, h, w, bass, hot):
         if k <= 0:
@@ -74,7 +75,8 @@ class BeatParticlesEffect(VisualizerEffect):
         self._p[idx, self._X] = w / 2.0
         self._p[idx, self._Y] = h / 2.0
         self._p[idx, self._VX] = np.cos(ang) * spd
-        # Slight upward bias so it arcs like a firework before gravity wins.
+        # Небольшой сдвиг вверх, чтобы траектория выгибалась дугой как у
+        # фейерверка, пока не возьмёт верх гравитация.
         self._p[idx, self._VY] = np.sin(ang) * spd - spd * 0.3
         self._p[idx, self._LIFE] = 1.0
         self._p[idx, self._HOT] = hot
@@ -97,7 +99,7 @@ class BeatParticlesEffect(VisualizerEffect):
         self._p[alive, self._X] += self._p[alive, self._VX]
         self._p[alive, self._Y] += self._p[alive, self._VY]
         self._p[alive, self._VY] += self.gravity
-        self._p[alive, self._VX] *= 0.99   # air drag
+        self._p[alive, self._VX] *= 0.99   # сопротивление воздуха
         self._p[:, self._LIFE] *= 0.955
 
     def _render(self, h, w, sample):
@@ -111,13 +113,13 @@ class BeatParticlesEffect(VisualizerEffect):
             xi, yi = int(x), int(y)
             if xi < -8 or xi >= w + 8 or yi < -8 or yi >= h + 8:
                 continue
-            # Hot spark (white/yellow) cooling to red/blue embers as it fades.
+            # Горячая искра (бело-жёлтая) остывает до красно-синих угольков по мере затухания.
             hot = min(1.0, row[self._HOT] + 0.3)
             col = (int(255 * hot * life),
                    int(220 * life * life),
                    int(255 * (1.0 - life) * 0.6))
-            # Motion streak: a short trail behind the spark along its velocity,
-            # the signature firework look. Head is a bright dot on top.
+            # След движения: короткий хвост позади искры вдоль вектора скорости -
+            # характерный вид фейерверка. Сверху яркая точка-голова.
             px, py = int(x - row[self._VX]), int(y - row[self._VY])
             cv2.line(vis, (px, py), (xi, yi), col, max(1, int(1 + 2 * life)),
                      cv2.LINE_AA)
@@ -129,14 +131,15 @@ class BeatParticlesEffect(VisualizerEffect):
 
 
 class FlowFieldEffect(VisualizerEffect):
-    """Thousands of particles tracing streamlines of a turbulent flow field.
+    """Тысячи частиц, вычерчивающих линии тока турбулентного векторного поля.
 
-    The recognisable "flow field" look: a cloud of particles advected along a
-    smoothly varying vector field, each leaving a fading trail so the paths
-    reveal the field's curl. The field is a layered sinusoidal ("curl-noise"
-    style) turbulence that slowly evolves in time; mids drive the flow speed
-    and the current bands tint the ink. Particles that leave the frame respawn
-    at a random spot, keeping the density steady.
+    Узнаваемый вид "flow field": облако частиц движется вдоль плавно
+    меняющегося векторного поля, каждая оставляет затухающий след, и по
+    следам видна завихрённость поля. Само поле - слоистая синусоидальная
+    турбулентность в духе "curl-noise", медленно эволюционирующая во времени;
+    mid-полоса задаёт скорость потока, а текущие полосы окрашивают "чернила".
+    Частицы, покидающие кадр, возрождаются в случайной точке, чтобы плотность
+    оставалась стабильной.
     """
 
     def __init__(self, noise_scale=0.02, count=1600, **kw):
@@ -161,7 +164,7 @@ class FlowFieldEffect(VisualizerEffect):
 
     def _render(self, h, w, sample):
         self._ensure(h, w)
-        self._acc *= 0.94   # fade trails
+        self._acc *= 0.94   # затухание следов
 
         t = sample.t * 0.6
         x = self._pts[:, 0]
@@ -172,16 +175,16 @@ class FlowFieldEffect(VisualizerEffect):
         nx = x + np.cos(ang) * spd
         ny = y + np.sin(ang) * spd
 
-        # Respawn particles that leave the frame at a fresh random position.
+        # Возрождаем в случайной точке частицы, покинувшие кадр.
         oob = (nx < 0) | (nx >= w) | (ny < 0) | (ny >= h)
         m = int(oob.sum())
         if m:
             nx[oob] = np.random.rand(m).astype(np.float32) * w
             ny[oob] = np.random.rand(m).astype(np.float32) * h
 
-        # Ink colour from the current bands (pipeline is RGB). Kept modest so
-        # busy streamlines saturate to a bright colour rather than washing all
-        # the way to flat white over a long render.
+        # Цвет "чернил" из текущих полос (пайплайн в RGB). Значения занижены,
+        # чтобы плотные линии тока насыщались до яркого цвета, а не выбеливались
+        # в сплошной белый за долгий рендер.
         col = np.array([30 + 120 * sample.high,
                         45 + 110 * sample.mid,
                         80 + 90 * sample.bass], np.float32)

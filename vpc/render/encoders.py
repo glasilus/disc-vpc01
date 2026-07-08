@@ -1,70 +1,72 @@
-"""Encoder catalogue + capability detection + rate-control mapping.
+"""Каталог энкодеров + определение доступности + маппинг rate-control.
 
-This module is the single source of truth about which video encoders we
-ship, which ones the local ffmpeg build *actually* has, and how the
-user-facing Quality controls (CRF / ffmpeg preset / tune) translate into
-the encoder-specific flags each family wants.
+Единственный источник истины о том, какие видеоэнкодеры мы поддерживаем,
+какие из них реально есть в локальной сборке ffmpeg, и как пользовательские
+настройки качества (CRF / ffmpeg preset / tune) превращаются в специфичные
+для каждого семейства энкодеров флаги.
 
-Why a separate module:
-  * `EXPORT_FORMATS` in `sink.py` was hard-coded to the soft-codec set.
-    Adding NVENC/QSV/AMF flags inside that dict mixed two concerns
-    (container + encoder + rate control).
-  * Hardware encoders are *optional* — they're only listed in the GUI if
-    the local ffmpeg build was compiled with them AND the runtime
-    succeeds (we verify the runtime side in engine.py via a fallback
-    on first-write failure, not here).
+Почему это отдельный модуль:
+  * `EXPORT_FORMATS` в `sink.py` был жёстко завязан на набор софтверных
+    кодеков. Добавление флагов NVENC/QSV/AMF в тот же словарь смешало бы
+    контейнер, энкодер и rate control в одну кучу.
+  * Аппаратные энкодеры опциональны - они появляются в GUI только если
+    локальная сборка ffmpeg собрана с их поддержкой И рантайм-проверка
+    прошла успешно (сама проверка рантайма - в engine.py, через fallback
+    при первой неудачной записи, не здесь).
 
-Design contract:
-  * `available_specs()` returns a list of `EncoderSpec` filtered by what
-    `ffmpeg -encoders` reports. The result is cached for the process.
-  * `build_rate_control_args(spec, crf, preset, tune)` returns a list
-    of CLI flags appended after `-vcodec <vcodec> -pix_fmt <pix_fmt>`.
-    The function is the only place that knows about per-family quirks.
-  * Soft codecs (libx264/libx265/libvpx-vp9/prores_ks) are always
-    listed — they're part of the pure-software fallback path.
+Контракт модуля:
+  * `available_specs()` возвращает список `EncoderSpec`, отфильтрованный
+    по тому, что реально показывает `ffmpeg -encoders`. Результат
+    кэшируется на весь процесс.
+  * `build_rate_control_args(spec, crf, preset, tune)` возвращает список
+    CLI-флагов, которые добавляются после `-vcodec <vcodec> -pix_fmt <pix_fmt>`.
+    Это единственное место, которое знает про особенности каждого семейства.
+  * Софтверные кодеки (libx264/libx265/libvpx-vp9/prores_ks) присутствуют
+    в списке всегда - это чисто программный fallback-путь.
 
-Per-family rate-control mapping (input is the user's CRF 0-51 + ffmpeg
+Маппинг rate-control по семействам (вход - CRF пользователя 0-51 + ffmpeg
 preset + tune):
 
     libx264 / libx265
         -preset <p> -crf <n> [-tune <t>]
-        Direct passthrough; the canonical interpretation.
+        Прямая передача без изменений - каноническая трактовка.
 
     h264_nvenc / hevc_nvenc
         -preset p1..p7 -rc vbr -cq <n> -b:v 0
-        NVENC's `-preset` was renamed in recent ffmpeg from the legacy
-        slow/medium/fast names to p1..p7. We map x264 names → p-indices.
-        `-cq` accepts the same 0-51 scale as CRF; `-b:v 0` keeps it in
-        constant-quality mode. `-tune` is silently ignored (NVENC has
-        its own `-tune ll/ull/hq` but we don't expose it here).
+        В свежих версиях ffmpeg `-preset` у NVENC переименован из старых
+        slow/medium/fast в p1..p7, поэтому мапим имена x264 на p-индексы.
+        `-cq` принимает ту же шкалу 0-51, что и CRF; `-b:v 0` держит режим
+        constant-quality. `-tune` молча игнорируется (у NVENC есть свой
+        `-tune ll/ull/hq`, но мы его тут не выставляем).
 
     h264_qsv / hevc_qsv
         -preset <veryfast..veryslow> -global_quality <n>
-        QSV preset names match x264's, so we passthrough. ICQ rate
-        control is implicit when -global_quality is set.
+        Имена пресетов QSV совпадают с x264, поэтому передаём как есть.
+        ICQ rate control включается неявно при заданном -global_quality.
 
     h264_amf / hevc_amf
         -quality <speed|balanced|quality> -rc cqp -qp_i <n> -qp_p <n>
-        AMF doesn't have a CRF-equivalent; constant QP is the closest.
+        У AMF нет аналога CRF - ближайшее приближение - constant QP.
 
     h264_videotoolbox / hevc_videotoolbox
         -q:v <map(crf)>
-        VideoToolbox uses a 1-100 quality scale (higher = better),
-        opposite direction from CRF. We map crf=18 → q=64 etc.
+        VideoToolbox использует шкалу качества 1-100 (чем больше, тем
+        лучше) - обратное направление относительно CRF. Мапим crf=18 → q=64
+        и так далее.
 
     libvpx-vp9
         -crf <n> -b:v 0 -deadline good -cpu-used 4
-        Same CRF scale, different rate-control plumbing.
+        Та же шкала CRF, но другая обвязка rate control.
 
     prores_ks
         -profile:v 3
-        ProRes 422 HQ; CRF/preset/tune are all ignored — ProRes is
-        intra-frame with fixed quality per profile.
+        ProRes 422 HQ; CRF/preset/tune полностью игнорируются - ProRes
+        внутрикадровый, с фиксированным качеством для каждого профиля.
 
-Adding a new encoder:
-  1. Append an EncoderSpec to ENCODER_TABLE.
-  2. Add a branch in build_rate_control_args() if the family's flags
-     don't match an existing one.
+Добавление нового энкодера:
+  1. Добавить EncoderSpec в ENCODER_TABLE.
+  2. Если флаги семейства не совпадают ни с одним существующим - добавить
+     ветку в build_rate_control_args().
 """
 from __future__ import annotations
 
@@ -77,11 +79,11 @@ from typing import List, Optional
 from .sink import ffmpeg_bin
 
 
-# ----- spec -----
+# ----- спецификация -----
 
 @dataclass(frozen=True)
 class EncoderSpec:
-    label: str            # user-facing, e.g. 'H.264 NVENC (MP4)'
+    label: str            # для пользователя, напр. 'H.264 NVENC (MP4)'
     container_ext: str    # 'mp4'
     vcodec: str           # 'h264_nvenc'
     acodec: str           # 'aac'
@@ -91,13 +93,14 @@ class EncoderSpec:
     extra_v: List[str] = field(default_factory=list)
 
 
-# ----- catalogue -----
+# ----- каталог -----
 #
-# Order matters: this is the order specs appear in the GUI dropdown, so
-# soft-codecs come first (the safe default), HW variants below.
+# Порядок важен: именно в этом порядке пункты появляются в выпадающем
+# списке GUI, поэтому софтверные кодеки идут первыми (безопасный вариант
+# по умолчанию), аппаратные - ниже.
 
 ENCODER_TABLE: List[EncoderSpec] = [
-    # ----- software (always available, part of every ffmpeg build) -----
+    # ----- софтверные (доступны всегда, есть в любой сборке ffmpeg) -----
     EncoderSpec('H.264 (MP4)',  'mp4',  'libx264',    'aac',
                 'yuv420p', 'x264', False),
     EncoderSpec('H.265 (MP4)',  'mp4',  'libx265',    'aac',
@@ -139,15 +142,16 @@ ENCODER_TABLE: List[EncoderSpec] = [
 ]
 
 
-# ----- detection -----
+# ----- определение доступности -----
 
 _AVAILABLE_VCODECS_CACHE: Optional[set] = None
 
 
 def _probe_vcodecs() -> set:
-    """Run `ffmpeg -encoders` once and return the set of vcodec names
-    listed. On failure (ffmpeg missing, parse error) returns the
-    soft-codec floor so the GUI is at least functional."""
+    """Один раз запускает `ffmpeg -encoders` и возвращает набор имён
+    vcodec из вывода. При неудаче (ffmpeg не найден, ошибка парсинга)
+    возвращает минимальный набор софтверных кодеков, чтобы GUI хотя бы
+    работал."""
     soft_floor = {'libx264', 'libx265', 'libvpx-vp9', 'prores_ks'}
     try:
         r = subprocess.run([ffmpeg_bin(), '-hide_banner', '-encoders'],
@@ -155,20 +159,20 @@ def _probe_vcodecs() -> set:
         if r.returncode != 0:
             return soft_floor
         names = set()
-        # ffmpeg's table has columns; the encoder name is the second
-        # whitespace-separated token after the flag block, e.g.
+        # У таблицы ffmpeg колоночный формат; имя энкодера - второй токен
+        # после блока флагов, например:
         #   "V....D h264_nvenc           NVIDIA NVENC ..."
         for line in r.stdout.splitlines():
             parts = line.split()
             if len(parts) >= 2 and parts[0].startswith('V'):
                 names.add(parts[1])
-        return names | soft_floor  # always include the floor
+        return names | soft_floor  # минимальный набор добавляем всегда
     except (FileNotFoundError, subprocess.SubprocessError):
         return soft_floor
 
 
 def available_specs() -> List[EncoderSpec]:
-    """Cached list of EncoderSpec entries this ffmpeg build supports."""
+    """Кэшированный список EncoderSpec, поддерживаемых данной сборкой ffmpeg."""
     global _AVAILABLE_VCODECS_CACHE
     if _AVAILABLE_VCODECS_CACHE is None:
         _AVAILABLE_VCODECS_CACHE = _probe_vcodecs()
@@ -177,7 +181,7 @@ def available_specs() -> List[EncoderSpec]:
 
 
 def find_spec(label: str) -> Optional[EncoderSpec]:
-    """Lookup by user-facing label, e.g. 'H.264 NVENC (MP4)'."""
+    """Поиск по пользовательской метке, например 'H.264 NVENC (MP4)'."""
     for s in ENCODER_TABLE:
         if s.label == label:
             return s
@@ -185,44 +189,45 @@ def find_spec(label: str) -> Optional[EncoderSpec]:
 
 
 def fallback_spec() -> EncoderSpec:
-    """The encoder we drop back to when a HW encoder fails at runtime."""
+    """Энкодер, на который откатываемся, если аппаратный падает в рантайме."""
     s = find_spec('H.264 (MP4)')
-    assert s is not None  # part of the static table
+    assert s is not None  # всегда есть в статической таблице
     return s
 
 
-# ----- runtime self-probe for HW encoders -----
+# ----- рантайм-проверка аппаратных энкодеров -----
 #
-# `available_specs()` answers "is this encoder *advertised*?" by parsing
-# `ffmpeg -encoders`. That's necessary but not sufficient: NVENC / QSV /
-# AMF / VideoToolbox can be *advertised* and still hang or fail when you
-# try to use them (driver missing, GPU busy, locked-down VM, broken
-# ffmpeg build). The user-visible symptom: render sits at 0% forever
-# because the GPU swallowed our pipe but never emits an encoded frame.
+# `available_specs()` отвечает на вопрос "энкодер заявлен в сборке?",
+# парся `ffmpeg -encoders`. Этого недостаточно: NVENC / QSV / AMF /
+# VideoToolbox могут быть заявлены и при этом зависать или падать при
+# реальном использовании (нет драйвера, GPU занят, урезанная VM, битая
+# сборка ffmpeg). Симптом для пользователя - рендер вечно висит на 0%,
+# потому что GPU проглотил наш pipe, но не отдаёт закодированные кадры.
 #
-# To make this safe for the EXE distribution (where the user can't run
-# diagnostic scripts), the engine probes each HW encoder before use:
-# it spawns a 1-second `testsrc → encoder → temp file` pipeline with a
-# hard timeout. If it succeeds, we cache the OK and use the encoder
-# normally. If it hangs or errors out, we cache the failure and silently
-# fall back to libx264. The cache is per-process, so the probe pays
-# the ~1-2 second cost exactly once per session per HW encoder.
+# Чтобы это было безопасно для EXE-сборки (где пользователь не может
+# запустить диагностику руками), движок перед использованием проверяет
+# каждый аппаратный энкодер: запускает пайплайн `testsrc → encoder →
+# temp file` длиной в 1 секунду с жёстким таймаутом. Если получилось -
+# кэшируем успех и используем энкодер как обычно. Если завис или упал -
+# кэшируем неудачу и молча откатываемся на libx264. Кэш живёт в рамках
+# процесса, так что проверка стоит ~1-2 секунды ровно один раз за сессию
+# на каждый аппаратный энкодер.
 
 _PROBE_CACHE: dict = {}      # vcodec -> bool
 _PROBE_LAST_ERROR: dict = {}  # vcodec -> str
 
 
 def probe_encoder(spec: EncoderSpec, *, timeout: float = 8.0) -> bool:
-    """True if `spec` actually produces a valid file on this machine.
+    """True, если `spec` реально даёт валидный файл на этой машине.
 
-    Soft codecs (libx264 / libx265 / libvpx-vp9 / prores_ks) are
-    trusted unconditionally — they're CPU-only, available on every
-    ffmpeg build, and starting a probe for them just wastes ~1 second
-    of every render. Only HW encoders go through the runtime check.
+    Софтверные кодеки (libx264 / libx265 / libvpx-vp9 / prores_ks)
+    доверяются без проверки - они чисто CPU, есть в любой сборке ffmpeg,
+    и запуск проверки для них просто тратит ~1 секунду на каждый рендер.
+    Через рантайм-проверку проходят только аппаратные энкодеры.
 
-    The probe is conservative: 720p @ 24fps for 1 second (24 frames),
-    using `-f lavfi testsrc` so we don't depend on any user file. The
-    output goes to a temp .mp4 that's deleted regardless of outcome.
+    Проверка нарочно лёгкая: 720p @ 24fps на 1 секунду (24 кадра), через
+    `-f lavfi testsrc`, чтобы не зависеть от файлов пользователя. Вывод
+    идёт во временный .mp4, который удаляется в любом случае.
     """
     if not spec.is_hw:
         return True
@@ -266,13 +271,13 @@ def probe_encoder(spec: EncoderSpec, *, timeout: float = 8.0) -> bool:
 
 
 def last_probe_error(vcodec: str) -> str:
-    """Reason a previous probe failed (for logging). '' if unknown."""
+    """Причина неудачи последней проверки (для логов). '' если неизвестна."""
     return _PROBE_LAST_ERROR.get(vcodec, '')
 
 
-# ----- rate-control mapping -----
+# ----- маппинг rate-control -----
 
-# x264 preset names → NVENC p-presets. NVENC's p1=fastest..p7=slowest.
+# Имена пресетов x264 → пресеты NVENC. p1=самый быстрый..p7=самый медленный.
 _NVENC_PRESET_MAP = {
     'ultrafast': 'p1', 'superfast': 'p2', 'veryfast': 'p2',
     'faster': 'p3',    'fast': 'p3',
@@ -280,7 +285,7 @@ _NVENC_PRESET_MAP = {
     'slow': 'p6',      'slower': 'p7',     'veryslow': 'p7',
 }
 
-# x264 preset → AMF -quality. AMF only has 3 levels.
+# Пресет x264 → AMF -quality. У AMF всего 3 уровня.
 _AMF_QUALITY_MAP = {
     'ultrafast': 'speed', 'superfast': 'speed', 'veryfast': 'speed',
     'faster': 'speed',    'fast': 'speed',
@@ -290,18 +295,19 @@ _AMF_QUALITY_MAP = {
 
 
 def _vt_quality_from_crf(crf: int) -> int:
-    """Map our 0-51 CRF scale onto VideoToolbox's 1-100 quality scale.
-    Higher q = better quality (opposite direction from CRF)."""
+    """Переводит нашу шкалу CRF 0-51 в шкалу качества VideoToolbox 1-100.
+    Чем больше q, тем лучше качество - направление обратное CRF."""
     crf = max(0, min(51, int(crf)))
     return max(1, 100 - 2 * crf)
 
 
 def build_rate_control_args(spec: EncoderSpec, *, crf: int, preset: str,
                             tune: Optional[str]) -> List[str]:
-    """Return per-encoder rate-control flags for the given Quality inputs.
+    """Возвращает флаги rate control под конкретный энкодер для заданных
+    параметров качества.
 
-    Always emits *something* sensible (constant-quality mode by default)
-    so a render never proceeds with random encoder defaults.
+    Всегда отдаёт что-то осмысленное (по умолчанию constant-quality),
+    чтобы рендер никогда не шёл со случайными дефолтами энкодера.
     """
     fam = spec.family
     crf = int(crf)
@@ -316,14 +322,13 @@ def build_rate_control_args(spec: EncoderSpec, *, crf: int, preset: str,
 
     if fam.startswith('nvenc'):
         p = _NVENC_PRESET_MAP.get(preset, 'p4')
-        # -rc vbr + -cq <n> + -b:v 0 = constant-quality VBR. Equivalent
-        # to libx264's CRF mode for this encoder family.
+        # -rc vbr + -cq <n> + -b:v 0 = constant-quality VBR, аналог
+        # CRF-режима libx264 для этого семейства.
         return ['-preset', p, '-rc', 'vbr', '-cq', str(crf), '-b:v', '0']
 
     if fam.startswith('qsv'):
-        # QSV's preset names overlap with x264's; pass through and let
-        # ffmpeg reject anything unknown (none of the values we expose
-        # are unknown).
+        # Имена пресетов QSV пересекаются с x264, передаём как есть -
+        # неизвестные значения ffmpeg отклонит сам (у нас таких нет).
         return ['-preset', preset, '-global_quality', str(crf)]
 
     if fam.startswith('amf'):
@@ -338,9 +343,9 @@ def build_rate_control_args(spec: EncoderSpec, *, crf: int, preset: str,
         return ['-crf', str(crf), '-deadline', 'good', '-cpu-used', '4']
 
     if fam == 'prores':
-        # Quality is locked by -profile:v in extra_v; nothing else to add.
+        # Качество зафиксировано через -profile:v в extra_v, добавлять нечего.
         return []
 
-    # Future families: emit empty so the render still runs on encoder
-    # defaults rather than hard-crashing on a missing branch.
+    # Для незнакомых семейств отдаём пустой список - рендер пойдёт на
+    # дефолтах энкодера, а не упадёт из-за отсутствующей ветки.
     return []

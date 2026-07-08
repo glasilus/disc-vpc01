@@ -1,4 +1,4 @@
-"""Tests for still-image sources (ImageCapture + VideoPool integration)."""
+"""Тесты источников статичных изображений (интеграция ImageCapture + VideoPool)."""
 import numpy as np
 import pytest
 import cv2
@@ -10,8 +10,9 @@ from vpc.render.source import VideoPool, is_image
 
 
 def _png(tmp_path, w=40, h=30, name='p.png'):
-    # Write Unicode-safe (cv2.imwrite can't handle non-ASCII paths on Windows;
-    # the test dir may live under a Cyrillic home). Mirrors imread_unicode.
+    # Пишем через imencode+tofile, а не cv2.imwrite - тот не умеет в
+    # non-ASCII пути на Windows, а tmp_path может лежать под кириллическим
+    # домашним каталогом. Аналог imread_unicode для записи.
     p = tmp_path / name
     img = np.random.randint(0, 255, (h, w, 3), np.uint8)
     ok, buf = cv2.imencode('.png', img)
@@ -33,14 +34,14 @@ def _tiny_mp4(tmp_path, frames=5, w=32, h=24):
     return p if os.path.getsize(p) > 0 else None
 
 
-# ── is_image ────────────────────────────────────────────────────────────────
+# ── is_image ─────────────────────────────────────────────────────────────
 def test_is_image_extensions():
     assert is_image('a.JPG') and is_image('b.png') and is_image('c.webp')
     assert is_image('d.TIFF')
     assert not is_image('e.mp4') and not is_image('f.mov') and not is_image('g')
 
 
-# ── ImageCapture contract ─────────────────────────────────────────────────────
+# ── контракт ImageCapture ───────────────────────────────────────────────────
 def test_image_capture_never_eofs(tmp_path):
     path, (w, h) = _png(tmp_path)
     cap = ImageCapture(path)
@@ -81,13 +82,13 @@ def test_image_capture_unreadable_raises(tmp_path):
         ImageCapture(str(bad))
 
 
-# ── VideoPool with image sources ──────────────────────────────────────────────
+# ── VideoPool с источниками-изображениями ───────────────────────────────────
 def test_pool_from_single_image(tmp_path):
     path, (w, h) = _png(tmp_path)
     pool = VideoPool([path])
     assert pool.is_image_list == [True]
     assert pool.sizes[0] == (w, h)
-    assert pool.first_video_index() is None       # images-only
+    assert pool.first_video_index() is None       # только изображения
     cap, fps, total, dur = pool.random_cap()
     ret, frame = cap.read()
     assert ret and frame.shape == (h, w, 3)
@@ -101,13 +102,13 @@ def test_pool_mixed_first_video_index(tmp_path):
         pytest.skip('no mp4 writer codec available in this environment')
     pool = VideoPool([img, vid])
     assert pool.is_image_list == [True, False]
-    assert pool.first_video_index() == 1          # first non-image
+    assert pool.first_video_index() == 1          # первый не-image
 
 
 def test_passthrough_selection_helper():
-    # The engine's passthrough guard is exactly this filter.
+    # Это ровно тот фильтр, которым движок проверяет наличие видео.
     paths = ['a.png', 'b.jpg']
     video_only = [p for p in paths if not is_image(p)]
-    assert video_only == []                        # → hard error path
+    assert video_only == []                        # → путь жёсткой ошибки
     paths2 = ['a.png', 'clip.mp4', 'b.jpg']
     assert [p for p in paths2 if not is_image(p)] == ['clip.mp4']

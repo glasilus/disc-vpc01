@@ -10,14 +10,14 @@ struct OverlayEntry {
     int    height = 0;
 };
 
-// Chroma key mode (matches Python OverlayManager)
+// Режим chroma key (соответствует Python OverlayManager)
 enum class ChromaMode { None, Dominant, Secondary, Manual };
 
 struct ChromaKeyParams {
     ChromaMode mode      = ChromaMode::None;
-    float      tolerance = 30.f;   // hue tolerance in degrees
+    float      tolerance = 30.f;   // допуск по оттенку (hue), в градусах
     float      softness  = 5.f;
-    float      r = 0.f, g = 255.f, b = 0.f;  // manual color
+    float      r = 0.f, g = 255.f, b = 0.f;  // цвет для ручного режима
     bool       gate_fx   = false;
     int        gate_mode = 0;
 };
@@ -31,7 +31,7 @@ public:
     bool   empty() const { return entries_.empty(); }
     size_t size()  const { return entries_.size(); }
 
-    // Returns a random overlay entry (or nullptr)
+    // Возвращает случайный оверлей (или nullptr, если пусто)
     const OverlayEntry* random_entry() const;
 
     const ChromaKeyParams& chroma() const { return chroma_; }

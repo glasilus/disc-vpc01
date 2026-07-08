@@ -12,7 +12,7 @@ public:
     bool load(const std::string& path, EngineSettings& out);
     bool save(const std::string& path, const EngineSettings& settings);
 
-    // Returns index of rt_blank.json or -1
+    // Возвращает индекс rt_blank.json или -1
     int  blank_index() const;
 
 private:

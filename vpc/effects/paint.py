@@ -1,4 +1,4 @@
-"""Paint Canvas effect: applies a user-drawn binary mask to color overlay, frame lag, or warp."""
+"""Paint Canvas: применяет нарисованную пользователем бинарную маску к цветовому оверлею, лагу кадров или искажению."""
 from __future__ import annotations
 
 import collections
@@ -13,7 +13,7 @@ from .base import BaseEffect
 
 
 def decode_paint_canvas(base64_str: str) -> np.ndarray | None:
-    """Decode base64 encoded PNG string to a 2D grayscale NumPy array."""
+    """Декодирует base64-строку PNG в 2D grayscale-массив NumPy."""
     if not base64_str or not isinstance(base64_str, str):
         return None
     try:
@@ -28,7 +28,7 @@ def decode_paint_canvas(base64_str: str) -> np.ndarray | None:
 
 
 class PaintCanvasEffect(BaseEffect):
-    """Applies a custom drawing as a mask for color overlays, frame delay (lag), or warp distortion."""
+    """Использует пользовательский рисунок как маску для цветовых оверлеев, задержки кадров (lag) или искажения (warp)."""
 
     trigger_types = [
         SegmentType.IMPACT, SegmentType.NOISE, SegmentType.DROP,
@@ -51,8 +51,8 @@ class PaintCanvasEffect(BaseEffect):
         self._t = 0
 
     def apply(self, frame: np.ndarray, seg: Segment, draft: bool) -> np.ndarray:
-        # History queue must be updated on every single frame so that lag works continuously
-        # regardless of trigger/chance gating.
+        # Очередь истории нужно обновлять на каждом кадре без исключений, иначе
+        # lag будет прерываться из-за gating по trigger/chance.
         h, w = frame.shape[:2]
         if self.history is None or not self.history or self.history[0].shape != frame.shape:
             self.history = collections.deque(maxlen=self.delay_frames)
@@ -72,11 +72,11 @@ class PaintCanvasEffect(BaseEffect):
             return frame
 
         h, w = frame.shape[:2]
-        
-        # Resize mask to frame size. Use NEAREST to preserve pixel boundaries of the drawing.
+
+        # NEAREST, а не линейная интерполяция - иначе края штриха размажутся.
         mask_resized = cv2.resize(self.canvas_mask, (w, h), interpolation=cv2.INTER_NEAREST)
-        
-        # Binary mask: True where the drawing stroke is (black pixels in the canvas)
+
+        # Штрих - это чёрные пиксели на канвасе.
         is_stroke = mask_resized < 128
 
         self._t += 1
@@ -93,7 +93,7 @@ class PaintCanvasEffect(BaseEffect):
             result[is_stroke] = delayed_frame[is_stroke]
 
         elif self.mode == 'warp_video':
-            # Wave/liquid warp of the current frame, displayed INSIDE the drawing strokes!
+            # Волновое искажение текущего кадра, видно ТОЛЬКО внутри штрихов.
             ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
 
             dx = np.sin(ys / 12.0 + self._t * 0.15) * amp
@@ -102,14 +102,13 @@ class PaintCanvasEffect(BaseEffect):
             map_x = np.clip(xs + dx, 0, w - 1).astype(np.float32)
             map_y = np.clip(ys + dy, 0, h - 1).astype(np.float32)
 
-            # Warp the current frame
             warped_frame = cv2.remap(frame, map_x, map_y, cv2.INTER_LINEAR)
 
             result = frame.copy()
             result[is_stroke] = warped_frame[is_stroke]
 
         elif self.mode == 'lag_warp':
-            # Wobbly/warped strokes containing delayed video
+            # Дрожащие/искажённые штрихи с задержанным видео внутри.
             ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
 
             dx = np.sin(ys / 12.0 + self._t * 0.2) * amp
@@ -118,7 +117,6 @@ class PaintCanvasEffect(BaseEffect):
             map_x = np.clip(xs + dx, 0, w - 1).astype(np.float32)
             map_y = np.clip(ys + dy, 0, h - 1).astype(np.float32)
 
-            # Warp the mask
             warped_mask = cv2.remap(mask_resized, map_x, map_y, cv2.INTER_NEAREST, borderValue=255)
             is_warped_stroke = warped_mask < 128
 

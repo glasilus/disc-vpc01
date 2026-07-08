@@ -1,21 +1,22 @@
-"""User-defined math-expression effect — backlog item #3.
+"""Эффект с пользовательским математическим выражением.
 
-The user types any NumPy expression that produces an HxWx3 uint8 array.
-Compiled once and evaluated per frame in a restricted namespace exposing:
+Пользователь вводит любое NumPy-выражение, дающее на выходе массив uint8
+формы HxWx3. Компилируется один раз и вычисляется на каждом кадре в
+ограниченном пространстве имён:
 
-    frame      — current uint8 array, shape (H, W, 3)
-    r, g, b    — channel views (H, W) uint8
-    x, y       — coordinate grids float32, shape (H, W)
-    t          — segment.t_start (seconds)
-    i          — scaled intensity in [0, 1]
-    a, b, c, d — live slider values in [0, 1] (set from the FORMULA tab)
-    np         — numpy module
-    cv2        — OpenCV module (available for advanced ops like remap)
-    sin, cos, tan, abs, clip, sqrt, exp, log, pi  — convenience aliases
+    frame      - текущий массив uint8, форма (H, W, 3)
+    r, g, b    - представления каналов (H, W) uint8
+    x, y       - сетки координат float32, форма (H, W)
+    t          - segment.t_start (секунды)
+    i          - масштабированная интенсивность в [0, 1]
+    a, b, c, d - значения слайдеров в [0, 1] (вкладка FORMULA)
+    np         - модуль numpy
+    cv2        - модуль OpenCV (для операций вроде remap)
+    sin, cos, tan, abs, clip, sqrt, exp, log, pi  - удобные алиасы
 
-The result is broadcast to the frame shape and clipped to uint8. Errors
-during evaluation fall back to the input frame so a typo never crashes the
-render.
+Результат приводится к форме кадра и клипается в uint8. Ошибки во время
+вычисления откатываются к исходному кадру, чтобы опечатка в выражении не
+роняла рендер.
 """
 from __future__ import annotations
 
@@ -43,7 +44,7 @@ _SAFE_GLOBALS = {
 
 
 def compile_formula(expression: str):
-    """Compile an expression. Returns (code_object, error_message_or_None)."""
+    """Компилирует выражение. Возвращает (code_object, error_message_or_None)."""
     src = expression or 'frame'
     try:
         return compile(src, '<formula>', 'eval'), None
@@ -52,7 +53,7 @@ def compile_formula(expression: str):
 
 
 class FormulaEffect(BaseEffect):
-    """Apply a user-typed NumPy expression as a per-frame transform."""
+    """Применяет введённое пользователем NumPy-выражение как трансформацию кадра."""
     trigger_types = list(SegmentType)
 
     def __init__(self, expression: str = 'frame', blend: float = 0.0,
@@ -74,10 +75,10 @@ class FormulaEffect(BaseEffect):
         return code
 
     def evaluate(self, frame: np.ndarray, *, t: float = 0.0, i: float = 1.0):
-        """Evaluate the formula on a frame outside the segment-driven path.
+        """Вычисляет формулу на кадре в обход обычного пути через сегменты.
 
-        Used by the GUI's snippet-test panel and by tests. Returns a uint8
-        frame, or the input on error.
+        Используется панелью тестирования сниппетов в GUI и тестами.
+        Возвращает кадр uint8 или исходный кадр при ошибке.
         """
         code = self._compile()
         if code is None:

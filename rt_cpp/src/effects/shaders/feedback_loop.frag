@@ -4,29 +4,29 @@ out vec4 FragColor;
 uniform sampler2D uTex;
 uniform sampler2D uAccum;
 uniform float uIntensity;
-uniform float uFeedbackScale;    // e.g. 0.99 (pulsating scale)
-uniform float uFeedbackRotation; // e.g. 0.02 (pulsating rotation)
+uniform float uFeedbackScale;    // напр. 0.99 (пульсирующий масштаб)
+uniform float uFeedbackRotation; // напр. 0.02 (пульсирующее вращение)
 
 void main() {
     vec4 cur = texture(uTex, vUV);
-    
-    // Transform coordinates around the center (0.5, 0.5)
+
+    // Трансформация координат вокруг центра (0.5, 0.5)
     vec2 p = vUV - 0.5;
     float s = sin(uFeedbackRotation);
     float c = cos(uFeedbackRotation);
     vec2 rotated = vec2(p.x * c - p.y * s, p.x * s + p.y * c) * uFeedbackScale + 0.5;
-    
+
     vec4 accum = texture(uAccum, rotated);
-    
-    // Instead of a simple mix which looks blurry and washed out, 
-    // we use an additive/max approach with a decay factor to create 
-    // glowing trails, which is the standard for VJ software feedback.
+
+    // Простой mix даёт размытую вымытую картинку, поэтому вместо него -
+    // аддитивный/max-подход с коэффициентом затухания: так строятся
+    // светящиеся хвосты в стандартном VJ-фидбеке.
     float decay = mix(0.7, 0.98, uIntensity);
-    
-    // Slightly shift hue/color on the feedback loop for a psychedelic trail
-    accum.rgb *= vec3(0.99, 0.95, 0.92); 
+
+    // Небольшой сдвиг оттенка на каждом витке фидбека даёт психоделический хвост
+    accum.rgb *= vec3(0.99, 0.95, 0.92);
     accum *= decay;
-    
-    // Combine current frame with the decaying feedback trail
+
+    // Смешиваем текущий кадр с затухающим фидбек-хвостом
     FragColor = max(cur, accum);
 }

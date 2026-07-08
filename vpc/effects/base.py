@@ -1,4 +1,4 @@
-"""Base classes and shared utilities for all effects."""
+"""Базовые классы и общие утилиты для всех эффектов."""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -12,23 +12,25 @@ from vpc.analyzer import Segment, SegmentType
 
 
 class BaseEffect(ABC):
-    """Common contract for every effect.
+    """Общий контракт для всех эффектов.
 
-    Subclass MUST implement `_apply(frame, seg, draft)`. The default `apply()`
-    runs the gating chain (enabled → trigger_types → chance roll) and dispatches
-    to `_apply` only on success. Stateful effects (OpticalFlow, TrueDatamosh,
-    DerivWarp, SelfDisplace) override `apply()` to keep their history in sync
-    regardless of whether the effect actually fires this frame.
+    Наследник ОБЯЗАН реализовать `_apply(frame, seg, draft)`. Дефолтный
+    `apply()` прогоняет цепочку условий (enabled -> trigger_types -> бросок
+    chance) и вызывает `_apply` только если все пройдены. Эффекты с состоянием
+    (OpticalFlow, TrueDatamosh, DerivWarp, SelfDisplace) переопределяют
+    `apply()`, чтобы обновлять свою историю даже в кадрах, где сам эффект не
+    сработал.
     """
     trigger_types: List[SegmentType] = list(SegmentType)
 
-    # ── audio-reactivity knobs (opt-in, set generically by build_chain) ──
-    # audio_drive: which per-frame band replaces seg.intensity in
-    #   scaled_intensity — 'segment' (default, today's behaviour), 'auto'
-    #   (loudest of bass/mid/high, so no track is ever dead), or a band name.
-    # beat_gate: gate apply() on a per-frame beat/onset INSIDE a segment —
-    #   'off' (default), 'beat', or 'onset'.
-    # react: opt-in flag for effects with bespoke seg.live wiring.
+    # ── настройки аудио-реактивности (опциональные, выставляются build_chain) ──
+    # audio_drive: какая по-кадровая полоса подменяет seg.intensity в
+    #   scaled_intensity - 'segment' (дефолт, старое поведение), 'auto'
+    #   (самая громкая из bass/mid/high, чтобы трек никогда не был "мёртвым"),
+    #   либо имя конкретной полосы.
+    # beat_gate: гейтит apply() по битам/онсетам внутри сегмента -
+    #   'off' (дефолт), 'beat' или 'onset'.
+    # react: флаг для эффектов с собственной проводкой к seg.live.
     audio_drive: str = 'segment'
     beat_gate: str = 'off'
     react: bool = False
@@ -41,10 +43,10 @@ class BaseEffect(ABC):
         self.intensity_max = intensity_max
 
     def _beat_pass(self, seg: Segment) -> bool:
-        """True if the per-frame beat gate lets this frame through.
+        """True, если по-кадровый beat gate пропускает этот кадр.
 
-        Missing seg.live (no audio / still preview) always passes — an
-        enabled effect must never be silently muted on the no-audio path.
+        Отсутствие seg.live (нет аудио / превью без звука) всегда пропускает -
+        включённый эффект не должен молча глушиться на пути без аудио.
         """
         live = getattr(seg, 'live', None)
         if live is None:
@@ -67,9 +69,9 @@ class BaseEffect(ABC):
         try:
             out = self._apply(frame, seg, draft)
         except (MemoryError, ValueError, cv2.error) as e:  # type: ignore[name-defined]
-            # Don't kill the whole render pipeline on a transient effect
-            # failure — most often a numpy/cv2 OOM under heavy always-on
-            # combos, or an out-of-range remap on degenerate input.
+            # Не роняем весь рендер-пайплайн из-за разового сбоя эффекта -
+            # чаще всего это OOM numpy/cv2 при тяжёлых комбо always-on,
+            # либо remap с выходом за диапазон на вырожденном входе.
             self._fail_count = getattr(self, '_fail_count', 0) + 1
             if self._fail_count <= 3 or self._fail_count % 250 == 0:
                 print(f'[FX-FAIL] {type(self).__name__}: {e!r} '
@@ -79,8 +81,8 @@ class BaseEffect(ABC):
                 print(f'[FX-FAIL] {type(self).__name__} disabled '
                       f'after {self._fail_count} failures.')
             return frame
-        # Sanity: NaN/Inf in float intermediates → cv2.remap can crash later
-        # if the value silently propagates into a follow-up effect.
+        # Подстраховка: NaN/Inf во float-промежутках могут уронить cv2.remap
+        # позже, если значение молча просочится в следующий эффект.
         if out is None:
             return frame
         if out.dtype != np.uint8:
@@ -88,10 +90,10 @@ class BaseEffect(ABC):
         return out
 
     def _driven_value(self, seg: Segment) -> float:
-        """The 0..1 value that drives intensity — segment loudness by default,
-        or a per-frame audio band when audio_drive is set. Falls back to
-        seg.intensity whenever the live sample is absent, so a band-driven
-        effect is never dead on the no-audio path."""
+        """Значение 0..1, задающее интенсивность - по умолчанию громкость
+        сегмента, либо по-кадровая аудио-полоса, если задан audio_drive.
+        Откатывается на seg.intensity, если live-сэмпла нет, чтобы эффект
+        на полосе не "умирал" без аудио."""
         drive = self.audio_drive
         if drive == 'segment':
             return seg.intensity
@@ -104,19 +106,19 @@ class BaseEffect(ABC):
 
     def scaled_intensity(self, seg: Segment) -> float:
         v = self.intensity_min + self._driven_value(seg) * (self.intensity_max - self.intensity_min)
-        # Hard-cap the upper end. Always-on with intensity=1.0 pushes some
-        # warps (Vortex angle 5 rad, Sobel breath ×1.25) into edge-case
-        # parameter regions that occasionally crash cv2.remap on Windows.
+        # Жёсткий потолок. Always-on с intensity=1.0 загоняет некоторые warp'ы
+        # (угол Vortex 5 rad, Sobel breath x1.25) в граничные значения
+        # параметров, из-за которых cv2.remap иногда падает на Windows.
         return max(0.0, min(0.95, v))
 
     def _blend_by_intensity(self, seg: Segment, result: np.ndarray,
                              frame: np.ndarray) -> np.ndarray:
-        """Cross-fade `result` toward the untouched `frame` by
-        `scaled_intensity(seg)`. Gives effects that have no continuous
-        "amount" knob of their own a working `always`/`always-on intensity`
-        control for free, on both the audio-driven path (normal mode) and
-        the fixed-value path (always-on mode) — both flow through
-        `intensity_min`/`intensity_max` already."""
+        """Кросс-фейд `result` к нетронутому `frame` по `scaled_intensity(seg)`.
+        Даёт эффектам без собственной непрерывной ручки "amount" рабочий
+        контроль `always`/`always-on intensity` бесплатно - и на
+        аудио-driven пути (обычный режим), и на пути с фиксированным
+        значением (always-on режим), поскольку оба уже проходят через
+        `intensity_min`/`intensity_max`."""
         strength = self.scaled_intensity(seg)
         return cv2.addWeighted(result, strength, frame, 1.0 - strength, 0.0)
 
@@ -129,12 +131,12 @@ def _ensure_uint8(frame: np.ndarray) -> np.ndarray:
 
 
 def _reseg(seg: Segment, intensity: float) -> Segment:
-    """Return a copy of seg with overridden intensity."""
+    """Копия seg с переопределённой intensity."""
     return Segment(seg.t_start, seg.t_end, seg.duration, seg.type, intensity,
                    seg.rms, seg.flatness, seg.rms_change, seg.live)
 
 
-# scipy availability is detected once and shared across signal-domain modules.
+# Наличие scipy определяется один раз и переиспользуется в модулях signal-domain.
 try:
     from scipy.signal import butter, sosfilt, fftconvolve  # noqa: F401
     _SCIPY_OK = True

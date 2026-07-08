@@ -1,9 +1,9 @@
-"""Tests for the audio-mastered preview player's sync core.
+"""Тесты синхро-ядра preview-плеера с ведущим аудиоклоком.
 
-These exercise the drift-free design without any real audio device: the pure
-clock→frame mapping, the looping audio fill (gapless wrap + live volume +
-freeze-on-pause), the wall-clock fallback, and the video slave step that keys
-every presented frame off the master clock.
+Проверяем схему без дрейфа и без реального аудиоустройства: чистое
+отображение clock -> frame, зацикленную заливку аудио (бесшовный wrap,
+живая громкость, заморозка на паузе), fallback на wall-clock и шаг
+видео-slave'а, который всегда берёт кадр из мастер-клока.
 """
 import numpy as np
 import pytest
@@ -14,12 +14,12 @@ from vpc.render.preview_player import (
 )
 
 
-# ── frame_for_time ────────────────────────────────────────────────────────
+# frame_for_time
 def test_frame_for_time_maps_and_wraps():
     assert frame_for_time(0.0, 24, 120) == 0
     assert frame_for_time(1.0, 24, 120) == 24
     assert frame_for_time(0.5, 24, 120) == 12
-    # wraps modulo nframes at the loop boundary
+    # на границе цикла берётся по модулю nframes
     assert frame_for_time(5.0, 24, 120) == 0
     assert frame_for_time(5.0 + 1 / 24, 24, 120) == 1
 
@@ -29,7 +29,7 @@ def test_frame_for_time_degenerate_guards():
     assert frame_for_time(3.0, 0, 120) == 0
 
 
-# ── _AudioClock: gapless looping + volume + pause ─────────────────────────
+# _AudioClock: бесшовный луп + громкость + пауза
 def _ramp_clock():
     data = np.arange(10, dtype=np.float32).reshape(10, 1)
     return _AudioClock(data, sr=10)
@@ -46,7 +46,7 @@ def test_audio_fill_advances_and_loops_gaplessly():
     clk._fill(out, 4)
     assert list(out[:, 0]) == [4, 5, 6, 7]
 
-    # Third block must wrap without a gap: 8, 9, then back to 0, 1.
+    # третий блок должен переехать через границу без разрыва: 8, 9, потом снова 0, 1
     clk._fill(out, 4)
     assert list(out[:, 0]) == [8, 9, 0, 1]
     assert clk.position_seconds() == pytest.approx(2 / 10)
@@ -63,18 +63,18 @@ def test_audio_fill_applies_live_volume():
 def test_audio_pause_emits_silence_and_freezes_cursor():
     clk = _ramp_clock()
     out = np.zeros((4, 1), np.float32)
-    clk._fill(out, 4)                      # cursor → 4
+    clk._fill(out, 4)                      # курсор -> 4
     clk.set_paused(True)
     out[:] = 7.0
     clk._fill(out, 4)
-    assert list(out[:, 0]) == [0, 0, 0, 0]         # silence while paused
-    assert clk.position_seconds() == pytest.approx(4 / 10)   # cursor frozen
+    assert list(out[:, 0]) == [0, 0, 0, 0]         # на паузе - тишина
+    assert clk.position_seconds() == pytest.approx(4 / 10)   # курсор заморожен
     clk.set_paused(False)
     clk._fill(out, 4)
-    assert list(out[:, 0]) == [4, 5, 6, 7]         # resumes exactly where frozen
+    assert list(out[:, 0]) == [4, 5, 6, 7]         # продолжает ровно с того места
 
 
-# ── _WallClock: pause freeze + wrap ───────────────────────────────────────
+# _WallClock: заморозка на паузе
 def test_wall_clock_pause_freezes_position():
     clk = _WallClock(duration=5.0)
     clk.set_paused(True)
@@ -85,9 +85,9 @@ def test_wall_clock_pause_freezes_position():
     assert clk.duration == 5.0
 
 
-# ── video slave: every frame keyed off the master clock ───────────────────
+# video slave: каждый кадр берётся из мастер-клока
 class _ManualClock:
-    """Injectable master clock with an explicitly settable position."""
+    """Подменный мастер-клок с позицией, которую можно выставлять напрямую."""
     def __init__(self, duration):
         self.duration = duration
         self.t = 0.0
@@ -121,19 +121,19 @@ def test_video_advance_tracks_clock(tmp_path):
     player._nframes = 20
     cap = cv2.VideoCapture(path)
     try:
-        # Jump the clock to ~frame 10; the slave must decode up to it.
+        # скачок клока к ~10-му кадру; slave должен доперемотать до него
         clk.t = 10 / 24
         frame, cur, target = player._advance(cap, -1)
         assert target == 10
         assert cur == 10
         assert frame is not None
 
-        # Advance a little — sequential, no seek.
+        # небольшой сдвиг вперёд - последовательное чтение, без seek
         clk.t = 12 / 24
         frame, cur, target = player._advance(cap, cur)
         assert target == 12 and cur == 12
 
-        # Clock wraps back to the loop start → slave seeks to 0.
+        # клок переходит обратно к началу цикла -> slave делает seek на 0
         clk.t = 1 / 24
         frame, cur, target = player._advance(cap, cur)
         assert target == 1 and cur == 1
@@ -142,8 +142,8 @@ def test_video_advance_tracks_clock(tmp_path):
 
 
 def test_video_advance_is_pure_function_of_clock(tmp_path):
-    """Drift-free invariant: the presented frame index is always
-    frame_for_time(clock), independent of how many steps were taken."""
+    """Инвариант отсутствия дрейфа: индекс показанного кадра всегда равен
+    frame_for_time(clock), независимо от числа сделанных шагов."""
     path = _tiny_mp4(tmp_path)
     if path is None:
         pytest.skip('no mp4 writer codec available in this environment')

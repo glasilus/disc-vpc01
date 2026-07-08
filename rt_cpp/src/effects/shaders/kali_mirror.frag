@@ -5,13 +5,13 @@ uniform sampler2D uTex;
 uniform float uIntensity;
 void main() {
     vec2 uv = vUV;
-    // Horizontal mirror
+    // Горизонтальное зеркало
     if (uIntensity > 0.3)
         uv.x = (uv.x > 0.5) ? 1.0 - uv.x : uv.x;
-    // Vertical mirror
+    // Вертикальное зеркало
     if (uIntensity > 0.6)
         uv.y = (uv.y > 0.5) ? 1.0 - uv.y : uv.y;
-    // Diagonal invert at high intensity
+    // Диагональная инверсия на высокой интенсивности
     if (uIntensity > 0.85)
         uv = 1.0 - uv;
     FragColor = texture(uTex, uv);

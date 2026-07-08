@@ -1,4 +1,4 @@
-"""FFmpeg pipe sink — receives raw RGB frames, writes encoded video+audio."""
+"""FFmpeg pipe sink - принимает сырые RGB-кадры, пишет закодированные видео+аудио."""
 from __future__ import annotations
 
 import os
@@ -11,12 +11,12 @@ from typing import Optional
 
 
 def ffmpeg_bin() -> str:
-    """Path to ffmpeg — prioritizes native macOS Homebrew/MacPorts builds,
-    then falls back to imageio-ffmpeg bundled binary, then system PATH."""
+    """Путь к ffmpeg - сначала нативные сборки Homebrew/MacPorts на macOS,
+    потом бинарник из imageio-ffmpeg, потом системный PATH."""
     if sys.platform == 'darwin':
-        # macOS .app bundles do not inherit the user's PATH. Prioritize
-        # native global installs (avoiding Rosetta 2 overhead and gaining
-        # hardware acceleration) before falling back to the bundled wheel.
+        # .app-бандлы на macOS не наследуют PATH пользователя. Сначала
+        # пробуем нативные глобальные установки (без накладных расходов
+        # Rosetta 2 и с аппаратным ускорением), потом fallback на бандл.
         for p in ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/opt/local/bin/ffmpeg']:
             resolved = shutil.which(p)
             if resolved:
@@ -24,10 +24,10 @@ def ffmpeg_bin() -> str:
 
     try:
         import imageio_ffmpeg
-        
-        # PyInstaller --collect-all often strips +x from datas (which is how
-        # imageio_ffmpeg binaries are packaged). get_ffmpeg_exe() checks os.X_OK
-        # and raises an exception if false. We must proactively restore +x.
+
+        # PyInstaller --collect-all часто снимает +x с data-файлов (а именно
+        # так упакованы бинарники imageio_ffmpeg). get_ffmpeg_exe() проверяет
+        # os.X_OK и падает, если бита нет. Приходится восстанавливать +x заранее.
         bin_dir = os.path.join(os.path.dirname(imageio_ffmpeg.__file__), 'binaries')
         if os.path.isdir(bin_dir):
             for f in os.listdir(bin_dir):
@@ -53,9 +53,10 @@ def ffmpeg_bin() -> str:
     return 'ffmpeg'
 
 
-# Container/codec presets. Each entry maps a user-facing codec label to:
-#   container extension (without dot), video codec, audio codec, optional pix_fmt,
-#   optional extra video flags (e.g. profile tag for H.265 in MP4).
+# Пресеты контейнер/кодек. Каждая запись мапит видимую пользователю метку
+# кодека на: расширение контейнера (без точки), видеокодек, аудиокодек,
+# опциональный pix_fmt, опциональные доп. флаги видео (например тег профиля
+# для H.265 в MP4).
 EXPORT_FORMATS = {
     'H.264 (MP4)':   {'ext': 'mp4', 'vcodec': 'libx264', 'acodec': 'aac',
                       'pix_fmt': 'yuv420p', 'extra_v': []},
@@ -76,7 +77,7 @@ EXPORT_FORMATS = {
 
 
 class FFmpegSink:
-    """Spawns ffmpeg, accepts raw uint8 RGB frame bytes, finalises on close."""
+    """Запускает ffmpeg, принимает сырые uint8 RGB-кадры, финализирует файл при close()."""
 
     def __init__(self, *, width: int, height: int, fps: int,
                  audio_path: str, output_path: str,
@@ -93,11 +94,11 @@ class FFmpegSink:
         self.fps = fps
         self.output_path = output_path
         self._proc: Optional[subprocess.Popen] = None
-        # Auto-pick input pix_fmt: when output is yuv420p we can feed
-        # planar I420 (1.5 bytes/pixel) instead of RGB24 (3 bytes/pixel),
-        # halving pipe bandwidth. For 10-bit / 4:2:2 outputs (ProRes) we
-        # stay on rgb24 — converting through I420 would lose chroma
-        # detail before ffmpeg even gets the frame.
+        # Автовыбор input pix_fmt: если выход yuv420p, можно подавать
+        # планарный I420 (1.5 байта/пиксель) вместо RGB24 (3 байта/пиксель),
+        # это вдвое снижает нагрузку на пайп. Для 10-бит/4:2:2 выходов
+        # (ProRes) остаёмся на rgb24 - конвертация через I420 потеряла бы
+        # цветность ещё до того, как кадр попадёт в ffmpeg.
         if input_pix_fmt is None:
             input_pix_fmt = 'yuv420p' if pix_fmt == 'yuv420p' else 'rgb24'
         self.input_pix_fmt = input_pix_fmt
@@ -113,14 +114,14 @@ class FFmpegSink:
             '-vcodec', vcodec,
             '-pix_fmt', pix_fmt,
         ]
-        # Rate-control flags. Two paths:
-        #   1. If `rate_control_args` is supplied, use it verbatim — this
-        #      is the encoders.py-driven path (needed for HW encoders
-        #      whose flags don't match the x264 family). Engine builds
-        #      these via `build_rate_control_args(spec, crf, preset, tune)`.
-        #   2. Otherwise the legacy auto-pick: x264/x265 get -preset/-crf
-        #      (+ -tune), VP9 gets -crf/-deadline. This branch is what
-        #      the sink-only callers and existing tests exercise.
+        # Флаги rate-control. Два пути:
+        #   1. Если передан `rate_control_args` - используем его как есть,
+        #      это путь через encoders.py (нужен для HW-энкодеров, у которых
+        #      флаги не совпадают с семейством x264). Движок строит их через
+        #      `build_rate_control_args(spec, crf, preset, tune)`.
+        #   2. Иначе легаси автовыбор: x264/x265 получают -preset/-crf
+        #      (+ -tune), VP9 получает -crf/-deadline. Эту ветку используют
+        #      вызовы только через sink и существующие тесты.
         if rate_control_args is not None:
             self._cmd.extend(rate_control_args)
         elif vcodec in ('libx264', 'libx265'):
@@ -147,13 +148,13 @@ class FFmpegSink:
     def open(self):
         self._proc = subprocess.Popen(
             self._cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-        # Capture stderr (NVENC init failures live here) but cap the
-        # retained tail. ffmpeg can emit warnings on every GOP for noisy
-        # encoders; an unbounded list grew into tens of MB on long
-        # renders and pinned the GIL on every append.
+        # Тут же оседают ошибки инициализации NVENC. Хвост ограничен -
+        # у шумных энкодеров ffmpeg сыпет предупреждениями на каждый GOP,
+        # неограниченный список разрастался до десятков МБ на долгих
+        # рендерах и подвешивал GIL на каждом append.
         self._stderr_chunks: list[bytes] = []
         self._stderr_total = [0]
-        STDERR_CAP_BYTES = 64 * 1024  # last 64 KiB is plenty for diagnostics.
+        STDERR_CAP_BYTES = 64 * 1024  # последних 64 КиБ достаточно для диагностики
 
         def _drain(pipe, sink, total):
             try:
@@ -163,7 +164,7 @@ class FFmpegSink:
                         break
                     sink.append(chunk)
                     total[0] += len(chunk)
-                    # Trim from the head so we keep a rolling tail.
+                    # Обрезаем с головы, чтобы оставался именно хвост.
                     while total[0] > STDERR_CAP_BYTES and len(sink) > 1:
                         head = sink.pop(0)
                         total[0] -= len(head)
@@ -176,17 +177,17 @@ class FFmpegSink:
         return self
 
     def early_failure(self, wait: float = 0.4) -> Optional[str]:
-        """If ffmpeg has already exited (typical for HW encoder init
-        failures — they die before the first frame is written), wait up
-        to `wait` seconds and return the captured stderr tail. Returns
-        None if the process is still alive and accepting bytes."""
+        """Если ffmpeg уже завершился (типично при сбое инициализации HW-энкодера -
+        процесс умирает раньше первого записанного кадра), ждёт `wait` секунд
+        и возвращает захваченный хвост stderr. None означает, что процесс жив
+        и принимает данные."""
         if self._proc is None:
             return 'sink not open'
         try:
             self._proc.wait(timeout=wait)
         except subprocess.TimeoutExpired:
-            return None  # still running — assume OK
-        # Process died; gather stderr.
+            return None  # ещё работает - считаем, что всё в порядке
+        # Процесс умер, собираем stderr.
         tail = b''.join(self._stderr_chunks).decode(errors='replace')
         return tail[-2000:] if tail else f'ffmpeg exited (rc={self._proc.returncode})'
 

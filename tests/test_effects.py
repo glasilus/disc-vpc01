@@ -1,4 +1,4 @@
-"""Tests for effects.py — all effect classes."""
+"""Тесты для effects.py - все классы эффектов."""
 import pytest
 import random
 import numpy as np
@@ -21,7 +21,7 @@ def make_seg(type=SegmentType.IMPACT, intensity=0.8):
     return Segment(0.0, 1.0, 1.0, type, intensity, 0.5, 0.3, 0.1)
 
 
-# ── Concrete subclass for testing BaseEffect ──
+# ── Конкретный подкласс для тестирования BaseEffect ──
 
 class DummyEffect(BaseEffect):
     trigger_types = [SegmentType.IMPACT]
@@ -30,7 +30,7 @@ class DummyEffect(BaseEffect):
         return np.zeros_like(frame)
 
 
-# ── BaseEffect tests (Task 5) ──
+# ── Тесты BaseEffect ──
 
 def test_base_effect_skips_wrong_type(noise_frame):
     fx = DummyEffect(enabled=True, chance=1.0)
@@ -53,7 +53,7 @@ def test_base_effect_disabled(noise_frame):
     assert result is noise_frame
 
 
-# ── Shape preservation parametrized test ──
+# ── Параметризованный тест на сохранение формы кадра ──
 
 @pytest.mark.parametrize("EffectClass", [
     RGBShiftEffect, BlockGlitchEffect, PixelDriftEffect, ScanLinesEffect,
@@ -76,7 +76,7 @@ def test_effect_preserves_shape(EffectClass, noise_frame):
     assert result.dtype == np.uint8
 
 
-# ── Specific behavior tests ──
+# ── Тесты специфичного поведения ──
 
 def test_ghost_trails_blends(noise_frame):
     fx = GhostTrailsEffect(enabled=True, chance=1.0)
@@ -121,7 +121,7 @@ def test_chroma_key_green():
     ck = ChromaKeyEffect(key_color=(0, 255, 0), tolerance=30)
     mask = ck.get_mask(green_frame)
     assert mask.shape == (100, 100)
-    # Most pixels should be keyed out (mask ~0)
+    # Большинство пикселей должны быть вырезаны маской (mask ~0)
     assert np.mean(mask) < 50
 
 
@@ -146,7 +146,7 @@ def test_mystery_section_shape(noise_frame):
     assert result.dtype == np.uint8
 
 
-# ── always / always-on-intensity consistency ──
+# ── Согласованность always / always-on-intensity ──
 
 def test_blend_by_intensity_zero_is_passthrough(noise_frame):
     fx = DummyEffect(enabled=True, chance=1.0, intensity_min=0.0, intensity_max=0.0)
@@ -217,10 +217,9 @@ def test_echo_compound_intensity_scales(noise_frame):
     seg = make_seg(type=SegmentType.SUSTAIN, intensity=0.6)
     other_frame = np.clip(noise_frame.astype(int) + 60, 0, 255).astype(np.uint8)
 
-    # EchoCompoundEffect (echo_n=8 default) only pulls its first tap from real
-    # history once len(history) > echo_n — until then it echoes the current
-    # frame back at itself (a warm-up no-op, same idiom as PFrameLag's
-    # warmup-then-smear elsewhere in this suite). Prime past echo_n frames.
+    # EchoCompoundEffect (echo_n=8 по умолчанию) берёт первый тап из реальной
+    # истории только когда len(history) > echo_n - до этого эхо идёт от самого
+    # текущего кадра (no-op на прогреве). Поэтому прогоняем больше echo_n кадров.
     fx_zero = EchoCompoundEffect(enabled=True, chance=1.0, intensity_min=0.0, intensity_max=0.0)
     fx_zero.trigger_types = list(SegmentType)
     for _ in range(9):
@@ -239,13 +238,13 @@ def test_echo_compound_intensity_scales(noise_frame):
 
 def test_histo_lag_effect_intensity_scales(noise_frame):
     seg = make_seg(type=SegmentType.SUSTAIN, intensity=0.6)
-    # A brightness shift (not a roll) actually changes the value histogram,
-    # so palette-matching against it has something to do.
+    # Сдвиг яркости (а не roll) реально меняет гистограмму значений,
+    # поэтому подгонке палитры есть с чем работать.
     other_frame = np.clip(noise_frame.astype(int) + 80, 0, 255).astype(np.uint8)
 
     fx_zero = HistoLagEffect(enabled=True, chance=1.0, intensity_min=0.0, intensity_max=0.0)
     fx_zero.trigger_types = list(SegmentType)
-    fx_zero.apply(other_frame, seg, draft=False)   # seed history with a different frame
+    fx_zero.apply(other_frame, seg, draft=False)   # заполняем историю другим кадром
     result_zero = fx_zero.apply(noise_frame, seg, draft=False)
     assert np.array_equal(result_zero, noise_frame)
 

@@ -1,11 +1,11 @@
-"""Orchestrator: open the passthrough WAV, layer enabled audio defects
-on top of the existing samples, write back. Designed to slot into the
-engine pre-pass right after `apply_passthrough_stutter_audio`.
+"""Оркестратор: открывает passthrough WAV, накладывает включенные аудио-
+дефекты поверх существующих сэмплов, пишет обратно. Встраивается в
+pre-pass движка сразу после `apply_passthrough_stutter_audio`.
 
-EFFECT_AUDIO_COUPLING is the single source of truth that maps a visual
-effect to its paired audio defect. Adding a new coupling = one entry
-here + a Checkbutton automatically appears in the GUI for that effect's
-block (when passthrough mode is on).
+EFFECT_AUDIO_COUPLING - единственный источник истины, связывающий
+визуальный эффект с парным ему аудио-дефектом. Чтобы добавить новую
+связку, достаточно одной записи здесь - Checkbutton в блоке этого
+эффекта появится в GUI автоматически (при включенном passthrough-режиме).
 """
 from __future__ import annotations
 
@@ -30,16 +30,16 @@ DefectFn = Callable[[np.ndarray, int], np.ndarray]
 
 
 # ──────────────────────────────────────────────────────────────────────
-#   COUPLING REGISTRY
+#   РЕЕСТР СВЯЗОК
 #
-#   Key   = visual effect's enable_key (matches EffectSpec.enable_key)
-#   Value = (gui_label_short, defect_function, gui_tooltip)
+#   Ключ    = enable_key визуального эффекта (совпадает с EffectSpec.enable_key)
+#   Значение = (gui_label_short, defect_function, gui_tooltip)
 #
-#   The GUI uses gui_label_short as the Checkbutton text and gui_tooltip
-#   as the hover/[?] description (each defect has its own — generic
-#   "audio breaks the same way" was uninformative). The engine uses the
-#   function. Keep keys ordered the same as their visual effects appear
-#   in registry.py for readability.
+#   GUI использует gui_label_short как текст Checkbutton, а gui_tooltip -
+#   как текст всплывающей подсказки/[?] (у каждого дефекта своя, общая
+#   формулировка не давала пользователю понять, что именно происходит).
+#   Движок использует саму функцию. Порядок ключей держим таким же, как
+#   у визуальных эффектов в registry.py - так проще ориентироваться.
 # ──────────────────────────────────────────────────────────────────────
 
 
@@ -142,12 +142,12 @@ EFFECT_AUDIO_COUPLING: Dict[str, Tuple[str, DefectFn, str]] = {
 
 
 # ──────────────────────────────────────────────────────────────────────
-#   GUI helpers (consumed by gui.py)
+#   Хелперы для GUI (используются в gui.py)
 # ──────────────────────────────────────────────────────────────────────
 
 
 def audio_link_var_name(enable_key: str) -> str:
-    """cfg/Tk var name for the per-effect audio-link checkbox."""
+    """Имя cfg/Tk-переменной для чекбокса привязки аудио к эффекту."""
     return 'audio_link_' + enable_key
 
 
@@ -156,19 +156,19 @@ def coupled_keys() -> Tuple[str, ...]:
 
 
 # ──────────────────────────────────────────────────────────────────────
-#   Engine entry point
+#   Точка входа для движка
 # ──────────────────────────────────────────────────────────────────────
 
 
 def apply_passthrough_audio_defects(audio_path: str, cfg: dict,
                                     log: LogFn) -> bool:
-    """Re-open the passthrough WAV, apply every enabled audio defect,
-    write back. Safe to call when no defects are enabled — early-returns
-    without touching disk.
+    """Открывает passthrough WAV заново, применяет все включенные
+    аудио-дефекты, пишет обратно. Можно звать и когда дефекты выключены -
+    тогда функция выходит раньше, не трогая диск.
 
-    Returns True if at least one defect was applied; False otherwise
-    (including all error paths). Errors are logged and swallowed so a
-    failed audio defect can never abort the render.
+    Возвращает True, если применен хотя бы один дефект; False во всех
+    остальных случаях, включая ошибки. Ошибки логируются и гасятся,
+    чтобы упавший аудио-дефект никогда не обрывал рендер.
     """
     if not audio_path:
         return False
@@ -195,17 +195,17 @@ def apply_passthrough_audio_defects(audio_path: str, cfg: dict,
             log(f'Audio defects: unsupported sample width {sw}, skipped.')
             return False
         if sw == 1:
-            # 8-bit PCM has ~−42 dBFS noise floor; the float32 round-trip
-            # we do here will amplify that audible hiss. Real pipelines
-            # almost never produce 8-bit WAV (ffmpeg's audio passthrough
-            # path always writes 16-bit), but warn so a confused user can
-            # diagnose unexpectedly noisy output.
+            # У 8-битного PCM шумовой пол ~-42 дБFS, и round-trip через
+            # float32 этот шум только усилит. На практике 8-битный WAV
+            # почти не встречается (ffmpeg-passthrough всегда пишет
+            # 16 бит), но предупреждаем, чтобы было понятно, откуда
+            # взялся лишний шип.
             log('Audio defects: source WAV is 8-bit; expect added hiss '
                 'after defect round-trip. Re-extract at 16-bit for clean '
                 'results.')
         in_dtype = dtype_map[sw]
-        # Convert to float32 in [-1, 1] so defects can use math without
-        # worrying about overflow / sign / dtype quirks.
+        # Переводим в float32 [-1, 1], чтобы дефекты считали математику,
+        # не думая о переполнении/знаке/особенностях исходного dtype.
         max_int = float(np.iinfo(in_dtype).max)
         samples_int = np.frombuffer(raw, dtype=in_dtype).reshape(-1, n_ch)
         samples = samples_int.astype(np.float32) / max_int
@@ -216,7 +216,7 @@ def apply_passthrough_audio_defects(audio_path: str, cfg: dict,
             except Exception as exc:                      # noqa: BLE001
                 log(f'Audio defect "{label}" failed ({exc!r}) — skipped.')
 
-        # Defects are allowed to slightly overshoot; clamp before writing.
+        # Дефекты могут слегка выходить за шкалу - клампим перед записью.
         samples = np.clip(samples, -1.0, 1.0)
         out_int = (samples * max_int).astype(in_dtype)
 
@@ -228,11 +228,10 @@ def apply_passthrough_audio_defects(audio_path: str, cfg: dict,
         log(f'Audio defects applied: {", ".join(lbl for lbl, _ in enabled)}.')
         return True
     except Exception as exc:                              # noqa: BLE001
-        # Broad catch on purpose: an unexpected dtype/shape mismatch in
-        # numpy or a corrupt WAV header path that surfaces as TypeError
-        # would otherwise crash the render thread. Pipeline failure is
-        # always recoverable — the unmodified WAV is still valid input
-        # to the sink, the user just doesn't get the defect they asked
-        # for.
+        # Ловим широко намеренно: неожиданное несовпадение dtype/shape в
+        # numpy или битый заголовок WAV, всплывающий как TypeError, иначе
+        # уронит поток рендера. Провал пайплайна всегда безопасен -
+        # неизмененный WAV все еще валиден для sink-а, пользователь просто
+        # не получит запрошенный дефект.
         log(f'Audio defects pipeline failed: {exc!r}. WAV left untouched.')
         return False

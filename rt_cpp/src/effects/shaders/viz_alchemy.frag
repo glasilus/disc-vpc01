@@ -2,17 +2,18 @@
 in  vec2 vUV;
 out vec4 FragColor;
 // ---------------------------------------------------------------------------
-// VIZ: ALCHEMY - procedural kaleidoscopic mandala (single pass, no feedback).
-// The plane is folded into 6-fold mirror symmetry, then domain-warped with
-// cheap fBm. Inside the folded space, three families of thin glowing lines
-// are drawn with exp(-|sin|) filigree: concentric rings, radial harmonic
-// spokes, and a woven lattice - layered into an ornate illuminated sigil.
-//   uTime  -> slow rotation + hue cycling      uBass -> radius breathing
-//   uMid   -> warp depth / detail agitation    uTreble -> outer sparkle ring
-//   uBins  -> per-ring energy (rings light up at the radius of their band)
-//   uBeat  -> one-frame bloom
-// Composited with luminance gating: mix(base, mandala, uIntensity * mask),
-// so the dark negative space stays transparent and the video shows through.
+// VIZ: ALCHEMY - процедурная калейдоскопическая мандала (один проход, без feedback).
+// Плоскость складывается в 6-кратную зеркальную симметрию, затем искажается
+// дешёвым fBm (domain warp). Внутри свёрнутого пространства рисуются три
+// семейства тонких светящихся линий филигранью exp(-|sin|): концентрические
+// кольца, радиальные гармонические спицы и плетёная решётка - слоями,
+// складывающимися в узорчатый светящийся символ.
+//   uTime  -> медленное вращение + цикл оттенка   uBass -> дыхание радиуса
+//   uMid   -> глубина искажения / детализация     uTreble -> внешнее кольцо искр
+//   uBins  -> энергия на кольцо (кольца загораются на радиусе своей полосы)
+//   uBeat  -> вспышка на один кадр
+// Композитинг через маску по яркости: mix(base, mandala, uIntensity * mask),
+// поэтому тёмное пустое пространство остаётся прозрачным, и видео видно сквозь него.
 // ---------------------------------------------------------------------------
 
 uniform sampler2D uTex;
@@ -63,7 +64,7 @@ float fbm(vec2 p) {
     return v;
 }
 
-// Thin bright line where sin(x) crosses zero; k controls line sharpness.
+// Тонкая яркая линия там, где sin(x) пересекает ноль; k управляет резкостью линии.
 float filigree(float x, float k) {
     return exp(-abs(sin(x)) * k);
 }
@@ -76,80 +77,82 @@ void main() {
 
     float t = uTime;
 
-    // Slow rotation of the whole sigil, kicked slightly on beats.
+    // Медленное вращение всего символа, слегка подталкиваемое на битах.
     p = rot2(t * 0.06 + uBeat * 0.12) * p;
 
-    // Radius breathes with the low end.
+    // Радиус дышит вместе с низкими частотами.
     float breath = 1.0 + 0.10 * uBass + 0.03 * sin(t * 0.55);
     p /= breath;
 
     float r   = length(p);
     float ang = atan(p.y, p.x);
 
-    // ---- 6-fold kaleidoscopic mirror fold ---------------------------------
+    // ---- 6-кратное калейдоскопическое зеркальное сворачивание ---------------
     float N      = 6.0;
     float sector = TAU / N;
-    float fa     = mod(ang + t * 0.02, sector);        // sectors drift slowly
-    fa           = abs(fa - sector * 0.5);             // mirror inside sector
-    vec2  q      = vec2(cos(fa), sin(fa)) * r;         // folded cartesian
+    float fa     = mod(ang + t * 0.02, sector);        // секторы медленно дрейфуют
+    fa           = abs(fa - sector * 0.5);             // зеркалим внутри сектора
+    vec2  q      = vec2(cos(fa), sin(fa)) * r;         // свёрнутые декартовы координаты
 
-    // ---- domain warp: mids agitate the filigree ----------------------------
+    // ---- domain warp: миды возбуждают филигрань ------------------------------
     float warpAmt = 0.10 + 0.22 * uMid;
     float w  = fbm(q * 3.5 + vec2(t * 0.10, -t * 0.07));
     float w2 = fbm(q * 6.0 - vec2(t * 0.06,  t * 0.09));
-    float rr = r  + w  * warpAmt * 0.5;                // warped radius
-    float wa = fa + w2 * warpAmt * 1.2;                // warped fold angle
+    float rr = r  + w  * warpAmt * 0.5;                // искажённый радиус
+    float wa = fa + w2 * warpAmt * 1.2;                // искажённый угол свёртки
 
-    // Which spectrum band lives at this radius? Rings light with their bin.
+    // Какая полоса спектра живёт на этом радиусе? Кольца загораются своим бином.
     int   bi   = int(clamp(rr * 22.0, 0.0, 15.0));
     float binE = uBins[bi];
 
-    // ---- layered ornament ---------------------------------------------------
-    // 1) Concentric rings, drifting inward, energized by their band.
+    // ---- слои орнамента -------------------------------------------------------
+    // 1) Концентрические кольца, дрейфующие внутрь, подпитанные своей полосой.
     float rings = filigree(rr * 14.0 - t * 0.8 + w * 3.0, 5.0)
                 * (0.45 + 0.9 * binE);
 
-    // 2) Radial harmonic spokes: stacked polar sine harmonics in folded space.
+    // 2) Радиальные гармонические спицы: наложенные полярные синусоидальные
+    // гармоники в свёрнутом пространстве.
     float spokes = filigree(wa * N * 4.0 + rr * 9.0 + t * 0.35, 4.0) * 0.55
                  + filigree(wa * N * 9.0 - rr * 5.0 - t * 0.22, 6.0) * 0.35;
 
-    // 3) Woven lattice: crossing sine sheets in folded cartesian coords.
+    // 3) Плетёная решётка: пересекающиеся синусоидальные слои в свёрнутых
+    // декартовых координатах.
     float lattice = exp(-abs(sin(q.x * 16.0 + t * 0.4)
                            * sin(q.y * 16.0 - t * 0.3)) * 4.5) * 0.40;
 
-    // 4) Petal envelope: a soft rose curve gives the sigil its silhouette.
+    // 4) Лепестковая огибающая: мягкая розовая кривая задаёт силуэт символа.
     float rose  = 0.32 + 0.16 * cos(fa * N * 2.0)
                 + 0.05 * sin(rr * 20.0 - t) * uMid;
     float petal = exp(-abs(rr - rose) * 9.0);
 
-    // 5) Outer sparkle ring on the treble.
+    // 5) Внешнее кольцо искр на верхних частотах.
     float halo = exp(-abs(rr - (0.46 + 0.03 * sin(t * 0.7))) * 26.0)
                * (0.15 + 0.85 * uTreble)
                * (0.6 + 0.4 * sin(wa * N * 12.0 + t * 3.0));
 
-    // Combine: ornament lines gated by the petal envelope + radial falloff.
-    float env = 1.0 - smoothstep(0.15, 0.62, r);       // fade out at the edge
+    // Собираем: линии орнамента ограничены лепестковой огибающей + затуханием по радиусу.
+    float env = 1.0 - smoothstep(0.15, 0.62, r);       // затухает к краю
     float ink = (rings * 0.85 + spokes * 0.75 + lattice) * (0.35 + 0.85 * petal);
     ink = ink * env + halo * env;
 
-    // Molten core: small, hot, breathing with bass.
+    // Расплавленное ядро: маленькое, горячее, дышащее вместе с басом.
     float core = exp(-r * (16.0 - 6.0 * uBass)) * (0.5 + 1.6 * uBass);
     ink += core;
 
-    // Beat bloom: the whole sigil flares for one frame.
+    // Вспышка на бите: весь символ разгорается на один кадр.
     ink *= 1.0 + 0.55 * uBeat;
 
-    // ---- color --------------------------------------------------------------
-    // Hue: gold/teal alchemy palette cycling slowly, shifting along the radius.
+    // ---- цвет -------------------------------------------------------------
+    // Оттенок: золото/бирюза, медленный цикл, сдвигается вдоль радиуса.
     float hue = fract(0.09 + t * 0.012 + rr * 0.22 + w * 0.06);
     float sat = clamp(0.85 - 0.65 * smoothstep(0.8, 2.2, ink), 0.0, 1.0);
     float val = clamp(ink, 0.0, 1.6);
     vec3 mandala = hsv2rgb(vec3(hue, sat, min(val, 1.0)))
-                 + vec3(1.0, 0.95, 0.8) * max(val - 1.0, 0.0) * 0.6; // white-hot cores
+                 + vec3(1.0, 0.95, 0.8) * max(val - 1.0, 0.0) * 0.6; // раскалённые добела ядра
 
-    // ---- luminance-gated composite -------------------------------------------
-    // Dark negative space stays transparent; bright filigree replaces the video,
-    // plus a touch of additive glow so lines read over bright footage too.
+    // ---- композитинг по маске яркости -----------------------------------------
+    // Тёмное пустое пространство остаётся прозрачным; яркая филигрань заменяет
+    // видео, плюс немного аддитивного свечения, чтобы линии читались и на ярком материале.
     float mask = clamp(ink * 1.4, 0.0, 1.0);
     float k    = clamp(uIntensity, 0.0, 1.0);
     vec3 col = mix(base, mandala, k * mask);

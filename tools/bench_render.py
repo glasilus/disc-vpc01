@@ -1,4 +1,4 @@
-"""Render benchmark — measure encode speed and output size.
+"""Бенчмарк рендера - замеряет скорость кодирования и размер выходного файла.
 
 Usage (Windows):
     .venv\\Scripts\\python.exe tools\\bench_render.py [--codec LABEL] [--crf N]
@@ -10,19 +10,19 @@ Usage (Linux / macOS):
 
 Or simply: `python -m tools.bench_render --help` if the venv is active.
 
-Auto-generates a 10s testsrc + sine fixture under `tools/.bench_fixtures/`
-if --video / --audio are not given (and TEST_VIDEO / TEST_AUDIO env-vars are
-unset). Writes output under `tools/.bench_out/` and prints one tab-separated
-line per run plus a final wall-time / file-size / ffprobe-duration / frame-
-count summary. Designed to be safe to re-run; fixtures are cached.
+Если --video / --audio не заданы (и TEST_VIDEO / TEST_AUDIO не выставлены),
+скрипт сам генерирует 10-секундный testsrc + sine в `tools/.bench_fixtures/`
+и кеширует его. Результат пишется в `tools/.bench_out/`, для каждого запуска
+печатается одна строка с табуляцией, в конце - сводка по времени, размеру
+файла, длительности (ffprobe) и числу кадров. Повторные запуски безопасны.
 
-ffmpeg is sourced from `imageio_ffmpeg.get_ffmpeg_exe()` (a wheel
-dependency in requirements.txt), so the bench is self-contained on every
-platform — no system ffmpeg required. ffprobe is looked up next to the
-ffmpeg binary; if missing, falls back to the PATH lookup.
+ffmpeg берётся из `imageio_ffmpeg.get_ffmpeg_exe()` (это wheel-зависимость
+из requirements.txt), поэтому бенчмарк не требует системного ffmpeg ни на
+одной платформе. ffprobe ищется рядом с бинарником ffmpeg, при отсутствии -
+через PATH.
 
-Use this BEFORE and AFTER each optimization step. Numbers go in the commit
-message so we can see which step actually paid off.
+Гоняй это до и после каждой оптимизации, чтобы видеть, какой шаг реально
+дал эффект.
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ import sys
 import time
 from pathlib import Path
 
-# Make the package importable when run from repo root.
+# Чтобы пакет импортировался при запуске из корня репозитория.
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
@@ -48,7 +48,7 @@ OUT_DIR = ROOT / 'tools' / '.bench_out'
 
 
 def ensure_fixtures(duration: float) -> tuple[Path, Path]:
-    """Generate (or reuse) a synthetic test video + audio pair."""
+    """Сгенерировать (или переиспользовать) синтетическую пару видео+аудио."""
     FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
     video = FIXTURE_DIR / f'testsrc_{int(duration)}s.mp4'
     audio = FIXTURE_DIR / f'sine_{int(duration)}s.wav'
@@ -70,12 +70,12 @@ def ensure_fixtures(duration: float) -> tuple[Path, Path]:
 
 
 def ffprobe_info(path: Path) -> dict:
-    """Return {'duration': float, 'nb_frames': int} via ffprobe."""
-    # imageio_ffmpeg ships ffmpeg only; ffprobe is usually next to it.
+    """Возвращает {'duration': float, 'nb_frames': int} через ffprobe."""
+    # imageio_ffmpeg поставляет только ffmpeg; ffprobe обычно лежит рядом.
     ff = ffmpeg_bin()
     probe = Path(ff).with_name('ffprobe.exe' if os.name == 'nt' else 'ffprobe')
     if not probe.exists():
-        probe = 'ffprobe'  # PATH fallback
+        probe = 'ffprobe'  # запасной вариант - искать через PATH
     try:
         r = subprocess.run([
             str(probe), '-v', 'error', '-select_streams', 'v:0',
@@ -96,10 +96,10 @@ def ffprobe_info(path: Path) -> dict:
 def build_cfg(video: Path, audio: Path, output: Path, *,
               codec: str, crf: int, preset: str,
               quality: str | None, tune: str | None) -> dict:
-    # If a Quality preset is named, expand it into the manual fields the
-    # engine actually reads (crf / export_preset / tune). This mirrors
-    # what the GUI does when the dropdown changes — keeps bench numbers
-    # honest about what the preset means.
+    # Если указан Quality preset, разворачиваем его в поля, которые реально
+    # читает движок (crf / export_preset / tune) - так же, как это делает
+    # GUI при смене выпадающего списка, чтобы цифры бенчмарка отражали
+    # то, что preset означает на самом деле.
     if quality and QUALITY_PRESETS.get(quality):
         spec = QUALITY_PRESETS[quality]
         crf = int(spec['crf'])
@@ -168,8 +168,8 @@ def main() -> int:
     cfg = build_cfg(video, audio, output,
                     codec=args.codec, crf=args.crf, preset=args.preset,
                     quality=args.quality, tune=args.tune)
-    # Read back the values that actually went into the encoder, so the
-    # printed row reflects reality (Quality preset overrides --crf etc).
+    # Считываем значения, которые реально ушли в энкодер, чтобы напечатанная
+    # строка отражала реальность (Quality preset переопределяет --crf и т.д.).
     eff_crf = cfg['crf']
     eff_preset = cfg['export_preset']
     eff_tune = cfg.get('tune', 'none')
@@ -185,7 +185,7 @@ def main() -> int:
     elapsed = time.perf_counter() - t0
 
     if not ok or not output.exists():
-        print(f'[bench] FAILED — no output produced')
+        print(f'[bench] FAILED - no output produced')
         return 1
 
     info = ffprobe_info(output)

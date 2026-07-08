@@ -69,12 +69,12 @@
 
 ## 1. Overview
 
-There are two programs in this repository, and they do related jobs:
+Two programs live in this repository, and they solve the same problem from opposite directions.
 
-- **Disc VPC 01** *(offline editor)* — you give it an audio track and one or more source videos. It listens to the music, decides where the cuts and effects should land, and writes out a finished video file. Hands-off — start it, come back, get a clip.
-- **Disc VPC 01 R-T** *(real-time, "R-T")* — same idea, but live. It listens to whatever audio your machine is hearing right now (a mic, a DJ deck, a music player) and drives video and effects on a screen as it happens. Made for VJ sets and streams.
+- **Disc VPC 01** *(offline editor)* - give it an audio track and one or more source videos. It listens to the music, decides where the cuts and effects should land, and writes out a finished video file. Hands-off - start it, come back, get a clip.
+- **Disc VPC 01 R-T** *(real-time, "R-T")* - same idea, but live. It listens to whatever audio your machine is hearing right now (a mic, a DJ deck, a music player) and drives video and effects on a screen as it happens. Built for VJ sets and streams.
 
-You don't need to know any code to use either one. Both share the same internal "ear" — the part that listens to music and decides what counts as a beat, a build-up, or a drop — and the same library of visual effects.
+Neither one requires you to write code. Under the hood they share the same "ear" - the part that listens to music and decides what counts as a beat, a build-up, or a drop - and draw from the same library of visual effects.
 
 ---
 
@@ -93,7 +93,7 @@ pip install -r requirements.txt
 python -m vpc
 ```
 
-The above is platform-agnostic. Concrete launch commands per OS:
+The above works the same on every OS. Here are the actual launch commands per platform:
 
 | OS | Run command (from repo root) |
 |---|---|
@@ -101,7 +101,7 @@ The above is platform-agnostic. Concrete launch commands per OS:
 | Linux | `.venv/bin/python -m vpc` |
 | macOS | `.venv/bin/python -m vpc` |
 
-The bundled `imageio-ffmpeg` wheel ships an ffmpeg binary for every supported platform — no system-wide ffmpeg install is required. All OS-specific quirks (Windows console-window suppression for spawned ffmpeg, ffprobe.exe vs ffprobe lookup, `.venv/Scripts` vs `.venv/bin`) are handled inside the codebase.
+The bundled `imageio-ffmpeg` wheel ships an ffmpeg binary for every supported platform, so no system-wide ffmpeg install is required. The codebase handles the OS-specific quirks itself - Windows console-window suppression for spawned ffmpeg, ffprobe.exe vs ffprobe lookup, `.venv/Scripts` vs `.venv/bin`.
 
 **Hardware-encoder availability per OS:** the GUI's codec dropdown filters itself against `ffmpeg -encoders` at startup, so each platform sees only encoders its ffmpeg build actually supports.
 
@@ -111,7 +111,7 @@ The bundled `imageio-ffmpeg` wheel ships an ffmpeg binary for every supported pl
 | Linux | NVENC (NVIDIA), QSV (Intel) |
 | macOS | VideoToolbox (Apple Silicon / Intel Macs) |
 
-> **Linux AMD note:** AMD on Linux uses VAAPI, which requires hwframe upload (a filter graph step). The current pipe-driven sink doesn't wire that up, so Linux AMD users fall back to libx264 — still benefits from yuv420p pipe, source cache, ETA, and Quality presets. If you need AMD HW acceleration on Linux, file an issue and we can add a VAAPI ingress path.
+> **Linux AMD note:** AMD on Linux uses VAAPI, which requires hwframe upload (a filter graph step). The current pipe-driven sink doesn't wire that up, so Linux AMD users fall back to libx264 - still benefits from yuv420p pipe, source cache, ETA, and Quality presets. Need AMD hardware acceleration on Linux anyway? File an issue and we can add a VAAPI ingress path.
 
 **Key Python dependencies:**
 
@@ -127,8 +127,8 @@ The bundled `imageio-ffmpeg` wheel ships an ffmpeg binary for every supported pl
 
 ### Real-time R-T (C++)
 
-The R-T tool is a native C++ application built with CMake + vcpkg. It does not
-share a runtime with the Python editor — each is independent.
+The R-T tool is a native C++ application built with CMake + vcpkg. It shares
+no runtime with the Python editor - the two are entirely independent.
 
 ```bash
 # 1. Bootstrap vcpkg (one-time, anywhere on your machine)
@@ -164,7 +164,7 @@ macOS, and Linux on every push to `main`.
 
 ### Pre-built executables
 
-Each release on GitHub attaches platform bundles. The Windows bundle layout:
+Each release on GitHub carries platform bundles. Here's the Windows layout:
 
 ```
 Disc-VPC-01-windows/
@@ -176,8 +176,8 @@ Disc-VPC-01-windows/
 └── README_RU.MD             ← this document (Russian)
 ```
 
-Run `DiscVPC01-RT.exe` directly. A `vpc01rt.log` file is written next to the
-executable on every launch — see §4.14.
+Run `DiscVPC01-RT.exe` directly. A `vpc01rt.log` file gets written next to the
+executable on every launch - see §4.14.
 
 ---
 
@@ -185,7 +185,7 @@ executable on every launch — see §4.14.
 
 **At a glance:** load a song, load a video (or several), pick a preset, click DRAFT to see a quick low-res preview, tweak, then click RENDER FULL VIDEO. That's the whole loop.
 
-> **First-launch wait.** `DiscVPC01.exe` is a self-extracting bundle: the first window can take **2–3 minutes** to appear after you double-click. Nothing is broken — Python, the bundled ffmpeg, and the analysis libraries are unpacking in the background. Subsequent launches in the same session are faster but never instant. Be patient on the first start.
+> **First-launch wait.** `DiscVPC01.exe` is a self-extracting bundle: the first window can take **2–3 minutes** to appear after you double-click. Nothing is broken - Python, the bundled ffmpeg, and the analysis libraries are unpacking in the background. Later launches in the same session are faster, but never instant. Give the first start room to breathe.
 
 ### 3.1 Interface Layout
 
@@ -197,11 +197,11 @@ The window is divided into three vertical panels:
 | **Center** | Tabs: EFFECTS / EXPORT / FORMULA / MYSTERY |
 | **Right** | Live preview monitor, progress bar, status log |
 
-The **EFFECTS** tab opens with a navigation bar (search, filters, jump-to-group, collapse/expand) above the effect list — see §3.4b. The status log has **Copy** (copies the whole log to the clipboard) and **Clear** buttons in its top strip.
+The **EFFECTS** tab opens with a navigation bar (search, filters, jump-to-group, collapse/expand) above the effect list - see §3.4b. The status log has **Copy** (copies the whole log to the clipboard) and **Clear** buttons in its top strip.
 
 ### 3.2 Loading Source Files
 
-Before rendering, two files must be loaded:
+Two files need to be loaded before you can render anything:
 
 **Load Audio (WAV / MP3)** — the audio track that drives the entire analysis. The engine reads this file in full before any rendering begins. Supported formats: `.wav`, `.mp3`, and any format readable by `librosa`.
 
@@ -213,7 +213,7 @@ Optionally, an **overlay folder** can be loaded via the Overlays tab (see §3.9)
 
 ### 3.3 Audio Analysis Engine
 
-Before it cuts anything, the program listens to your song from start to end and writes a kind of map: where the drum hits are, where the beat sits, which parts are loud, which parts are quiet, which parts are noisy or pure. Cuts and effects later hang off that map. You don't have to do anything to trigger this — it runs automatically the first time you press a render button.
+Before it cuts anything, the program listens to your song from start to end and builds a map: where the drum hits fall, where the beat sits, which parts are loud, which are quiet, which are noisy or pure. Everything downstream - cuts, effects - hangs off that map. You don't trigger this yourself; it runs automatically the first time you press a render button.
 
 Under the hood, this uses `librosa` and runs the following steps:
 
@@ -235,7 +235,7 @@ This analysis runs once per session per audio file. Results are cached in memory
 
 ### 3.4 Cut Logic
 
-The **Cut Logic** section (first accordion group in the EFFECTS tab) controls how the engine selects and sequences video clips — i.e. *when* to cut and *which* frame to cut to.
+The **Cut Logic** section (first accordion group in the EFFECTS tab) controls how the engine selects and sequences video clips - in other words, *when* to cut and *which* frame to cut to.
 
 ---
 
@@ -305,7 +305,7 @@ Use this when you know the track tempo from a DAW, label release, or any tap-tem
 
 ### 3.4a Anatomy of an Effect Block
 
-Every effect in the EFFECTS tab follows the same pattern. Once you understand it, all 40+ effects use the same controls.
+Every effect in the EFFECTS tab follows the same pattern. Learn it once and you've learned the controls for all 40+ effects.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -341,7 +341,7 @@ This is per-effect: turning `always` on for *Scanlines* does not affect any othe
 
 ### 3.4b Navigation Bar
 
-With 50+ effects spread across a dozen accordion groups, scrolling to find one gets old fast. A sticky navigation bar sits at the top of the **EFFECTS** tab, above the effect list, so it stays in reach no matter how far down you scroll. It is purely a *view* control — nothing it does changes a single effect setting, so it can never affect what a preset saves.
+With 50+ effects spread across a dozen accordion groups, scrolling to find one gets old fast. A sticky navigation bar sits at the top of the **EFFECTS** tab, above the effect list, so it stays in reach no matter how far down you scroll. It's purely a *view* control - nothing it does changes a single effect setting, so it can never affect what a preset saves.
 
 **Row 1 — search and filters:**
 
@@ -360,7 +360,7 @@ Every control has a hover tooltip in English and Russian.
 
 ### 3.4c Audio-Reactive Controls
 
-Most effects take their intensity from the *segment* — one loudness value for the whole slice between two cuts. A handful of effects can instead follow the music **frame by frame**, reacting to specific frequency bands or to individual beats inside a held note. These are opt-in extras: left at their defaults, every effect behaves exactly as it always has, so existing presets are untouched.
+Most effects take their intensity from the *segment* - one loudness value for the whole slice between two cuts. A handful can instead follow the music **frame by frame**, reacting to specific frequency bands or to individual beats inside a held note. These are opt-in extras: left at their defaults, every effect behaves exactly as it always has, and existing presets are untouched.
 
 Three controls show up — only on the effects that support them, as indented combos inside the effect block:
 
@@ -395,9 +395,9 @@ All three are ordinary effect parameters — they carry hover tooltips in Englis
 
 ### 3.5 Effects — Source Feed
 
-These are the most-used visual treatments — flashes, stutters, ghost trails, pixel-sort, datamosh, ASCII. Each one has an on/off switch and, where it makes sense, a **chance** slider — that's just "how often should this fire when a suitable moment comes up." `0.0` = never. `1.0` = every time.
+These are the most-used visual treatments - flashes, stutters, ghost trails, pixel-sort, datamosh, ASCII. Each has an on/off switch and, where it makes sense, a **chance** slider, which is just "how often should this fire when a suitable moment comes up." `0.0` = never. `1.0` = every time.
 
-You don't have to understand each effect's internals — flip them on, click DRAFT, see what happens. The descriptions below are there for when you want a specific look and need to know which knob to turn.
+You don't need to understand each effect's internals. Flip them on, click DRAFT, see what happens. The descriptions below exist for when you want a specific look and need to know which knob gets you there.
 
 ---
 
@@ -461,9 +461,9 @@ Sorts pixels within selected horizontal or vertical strips by their luminance, h
 
 *Trigger: NOISE, SUSTAIN, IMPACT, DROP*
 
-Motion-flow smear: the previous frame is warped along the picture's own motion vectors, so moving areas drag and flow like wet paint. This effect used to ship under the name **Datamosh** — presets saved before the rename keep working unchanged, since the config keys are identical. That includes the legacy behaviour in **Final render** mode, where NOISE segments additionally swap the source to a prebaked I-frame-stripped copy of the video.
+Motion-flow smear: the previous frame is warped along the picture's own motion vectors, so moving areas drag and flow like wet paint. This effect used to ship under the name **Datamosh** - presets saved before the rename still work unchanged, since the config keys are identical. That includes the legacy behaviour in **Final render** mode, where NOISE segments additionally swap the source to a prebaked I-frame-stripped copy of the video.
 
-If you want the real codec-level mosh, use **True Datamosh** below.
+For the real codec-level mosh, use **True Datamosh** below.
 
 **Chance** *(0.0 - 1.0)* — probability per eligible segment.
 
@@ -473,9 +473,9 @@ If you want the real codec-level mosh, use **True Datamosh** below.
 
 *Trigger: NOISE, SUSTAIN, IMPACT, DROP*
 
-The genuine article. A real MPEG-4 encoder and decoder run inside the effect, and the classic bitstream surgery is performed on the fly: at a cut the keyframe is physically removed from the stream, so the decoder keeps applying the new clip's motion vectors and DCT residuals to the stale picture — the old scene melts along the new scene's motion and only heals patch by patch. This is the exact mechanism of classic datamosh tools (aviglitch, datamosher), not a simulation, and it works identically in Draft, Preview, Final and Passthrough modes.
+The genuine article. A real MPEG-4 encoder and decoder run inside the effect, performing the classic bitstream surgery on the fly. At a cut, the keyframe gets physically removed from the stream, so the decoder keeps applying the new clip's motion vectors and DCT residuals to the stale picture. The old scene melts along the new scene's motion and heals only patch by patch. This is the exact mechanism used by classic datamosh tools like aviglitch and datamosher - not a simulation - and it behaves identically in Draft, Preview, Final and Passthrough modes.
 
-Consecutive triggered segments chain into one continuous "datamix" melt; the first segment that does not trigger snaps the picture back clean, exactly like a moshed stream hitting a surviving keyframe.
+Consecutive triggered segments chain into one continuous "datamix" melt. The first segment that doesn't trigger snaps the picture back clean, exactly like a moshed stream hitting a surviving keyframe.
 
 **Chance** *(0.0 - 1.0)* — probability per eligible segment.
 
@@ -528,7 +528,7 @@ Each effect has a **Chance** slider controlling the probability of firing on an 
 
 ### 3.7 Effects — Feedback Bus
 
-These effects involve multi-frame state or more computationally involved transforms.
+These effects carry multi-frame state, or involve heavier transforms than the rest of the roster.
 
 ---
 
@@ -572,7 +572,7 @@ Chains several glitch effects in sequence on a single frame, compounding their r
 
 ### 3.8 Effects — Tape Rot
 
-Tape Rot effects simulate worn or low-quality recording/playback media.
+Tape Rot effects simulate worn or low-quality recording and playback media.
 
 | Effect | Trigger | Description |
 |---|---|---|
@@ -598,7 +598,7 @@ Each effect has a **Chance** slider.
 
 ### 3.8a Effects — Codec Rot
 
-The **CODEC ROT** group is for "the picture is wrong" effects — they look like the video file or the decoder is failing, rather than like decorative glitch art. Different from the **RASTER FAULT** group: those decorate, these damage.
+The **CODEC ROT** group is for "the picture is wrong" effects - they look like the video file or the decoder is failing, rather than like decorative glitch art. The distinction from **RASTER FAULT** is simple: those decorate, these damage.
 
 ---
 
@@ -606,7 +606,7 @@ The **CODEC ROT** group is for "the picture is wrong" effects — they look like
 
 *Trigger: BUILD, NOISE*
 
-Random rectangles inside the frame are filled with a downscaled copy of the *whole current frame* — so the picture appears to contain miniature copies of itself in places it shouldn't. At low intensity, one or two subtle picture-in-picture inserts. At high intensity, the recursion takes over: each rectangle contains an even smaller copy of the frame, which contains an even smaller copy, etc. Reads as memory corruption — like the GPU is reading from the same source pointer over and over.
+Random rectangles inside the frame get filled with a downscaled copy of the *whole current frame*, so the picture appears to contain miniature copies of itself in places it shouldn't. At low intensity: one or two subtle picture-in-picture inserts. At high intensity, the recursion takes over - each rectangle contains an even smaller copy of the frame, which contains an even smaller copy, and so on. Reads like memory corruption, as if the GPU is reading from the same source pointer over and over.
 
 - *Density* *(0.0 – 1.0)* — how many rectangles per frame and how deeply they nest. Low = subtle inserts. High = frame fills with nested self-similar copies.
 
@@ -616,7 +616,7 @@ Random rectangles inside the frame are filled with a downscaled copy of the *who
 
 *Trigger: BUILD, DROP*
 
-Vertical-hold loss. The frame is split horizontally and the two halves are stacked in the wrong order; the cut position drifts up the picture so the seam crawls. A black tear band marks the cut, exactly the way an old CRT showed the vertical retrace pulse when it lost vsync lock.
+Vertical-hold loss. The frame splits horizontally and the two halves stack in the wrong order; the cut position drifts up the picture so the seam crawls. A black tear band marks the cut, the way an old CRT showed the vertical retrace pulse when it lost vsync lock.
 
 - *Roll Speed* *(0.0 – 1.0)* — how fast the seam crawls and how thick the tear band is. Low = slow gentle roll with a hairline tear. High = fast scroll with a wide black tear band.
 
@@ -626,7 +626,7 @@ Vertical-hold loss. The frame is split horizontally and the two halves are stack
 
 *Trigger: IMPACT, BUILD, DROP*
 
-Stateful motion-delta carryover. The picture only partially "catches up" each frame, so motion smears with the past — exactly the look of a video stream where the decoder is dropping P-frames. The lag compounds across frames: the more it fires, the heavier the trail becomes. Most visible on motion-changing moments (hits, builds, drops); near-invisible on static images.
+Stateful motion-delta carryover. The picture only partially "catches up" each frame, so motion smears with the past - the look of a video stream where the decoder is dropping P-frames. The lag compounds across frames: fire it more, and the trail gets heavier. Most visible on motion-changing moments (hits, builds, drops), and near-invisible on static images.
 
 - *Lag Amount* *(0.0 – 1.0)* — how much the picture trails behind the source. Low = slight motion blur. High = heavy "decoder is two frames behind" smear.
 
@@ -636,7 +636,7 @@ Stateful motion-delta carryover. The picture only partially "catches up" each fr
 
 *Trigger: SUSTAIN, NOISE*
 
-The "bit rot" of failing flash storage. A sparse boolean mask flips one bit per affected pixel; which bit-plane is hit (LSB ... MSB) scales with the slider. Low intensity = sparse LSB jitter (subtle dithering). High intensity = dense MSB flips (catastrophic colour shifts in plateaus of solid colour). Quiet rot during steady passages, masked by the chaos during noisy ones.
+The "bit rot" of failing flash storage. A sparse boolean mask flips one bit per affected pixel, and which bit-plane gets hit (LSB through MSB) scales with the slider. Low intensity gives sparse LSB jitter - subtle dithering. High intensity gives dense MSB flips - catastrophic colour shifts in plateaus of solid colour. Quiet rot during steady passages, masked by the chaos during noisy ones.
 
 - *Corruption* *(0.0 – 1.0)* — density of bit-flips and which bit-plane is targeted. Low = subtle dither. High = SD-card-going-bad colour cliffs.
 
@@ -646,7 +646,7 @@ The "bit rot" of failing flash storage. A sparse boolean mask flips one bit per 
 
 *Trigger: IMPACT, NOISE*
 
-Pseudo-MPEG with lost motion vectors. ~10–30 % of the frame's 16×16 macroblocks (driven by intensity) are overwritten with the contents of *another* 16×16 region of the same frame, located 32–64 px away. Reads exactly like an H.264 stream where the motion-vector field is corrupt: chunks of the image surface in places they don't belong — pieces of a face appear next to the face, a fragment of background floats over the subject.
+Pseudo-MPEG with lost motion vectors. Roughly 10-30% of the frame's 16×16 macroblocks (driven by intensity) get overwritten with the contents of *another* 16×16 region of the same frame, located 32-64 px away. Reads exactly like an H.264 stream where the motion-vector field is corrupt: chunks of the image surface in places they don't belong, pieces of a face appear next to the face, a fragment of background floats over the subject.
 
 - *Block Density* *(0.0 – 1.0)* — fraction of macroblocks corrupted. Low = a few stray blocks. High = up to 30 % of the grid replaced with displaced content.
 
@@ -654,7 +654,7 @@ Pseudo-MPEG with lost motion vectors. ~10–30 % of the frame's 16×16 macrobloc
 
 ### 3.8b Effects — Malware
 
-The **MALWARE** group is the Win95-malware-aesthetic shelf — effects that look like a 90s machine under attack rather than a video glitch. Two effects so far.
+The **MALWARE** group is the Win95-malware-aesthetic shelf - effects that look like a 90s machine under attack rather than a video glitch. Two effects live here so far.
 
 ---
 
@@ -662,7 +662,7 @@ The **MALWARE** group is the Win95-malware-aesthetic shelf — effects that look
 
 *Trigger: SILENCE, SUSTAIN*
 
-A swarm of authentic 16×22 Win95 arrow cursors crawls over every frame, each pointer following its own brownian-motion path with a short fading trail. Pointer state persists across frames so motion stays continuous. Most evocative during quiet passages (eerie silent infestation) and steady sections (background swarm). Doesn't react to hits — this is a slow-burn dread effect, not a punch.
+A swarm of authentic 16×22 Win95 arrow cursors crawls over every frame, each pointer following its own brownian-motion path with a short fading trail. Pointer state persists across frames so motion stays continuous. Most evocative during quiet passages (an eerie silent infestation) and steady sections (a background swarm). It doesn't react to hits - this is a slow-burn dread effect, not a punch.
 
 - *Swarm Size* *(0.0 – 1.0)* — number of pointers and how wildly they move. Low = a couple of pointers drifting. High = a full infestation of 12+ cursors with jittery trails.
 
@@ -672,15 +672,15 @@ A swarm of authentic 16×22 Win95 arrow cursors crawls over every frame, each po
 
 *Trigger: IMPACT, DROP*
 
-Random horizontal bands of the frame are replaced with fragments of bluescreen text: the canonical NT-bluescreen palette (RGB 0, 0, 168) and a vocabulary of real STOP codes, hex addresses, and dump-prose lines. Stateless per frame — every frame picks fresh bands so the effect strobes / shreds. Pure "the system crashed at this exact moment" punctuation.
+Random horizontal bands of the frame get replaced with fragments of bluescreen text: the canonical NT-bluescreen palette (RGB 0, 0, 168) plus a vocabulary of real STOP codes, hex addresses, and dump-prose lines. Stateless per frame - every frame picks fresh bands, so the effect strobes and shreds. Pure "the system crashed at this exact moment" punctuation.
 
 - *Shred Density* *(0.0 – 1.0)* — how many bluescreen bands per fire and how tall each band is. Low = a single thin band per hit. High = 5+ thick bands of bluescreen text crowding the picture.
 
 ### 3.8c Effects — Paint Canvas
 
-The **PAINT** group allows drawing custom masks directly inside the application, loading reference images, or writing text overlays using system fonts. The drawn mask can then be used to apply color overlays, delayed frame trails (lag), coordinate distortion (warp), or a combination of both.
+The **PAINT** group lets you draw custom masks directly inside the application, load reference images, or write text overlays using system fonts. The drawn mask then feeds color overlays, delayed frame trails (lag), coordinate distortion (warp), or a combination of both.
 
-To edit the canvas, click the **Open Paint Editor / Открыть холст** button inside the PAINT accordion block. The editor window will open, offering drawing tools, brushes, a font selector, canvas operations, and color palette swatches.
+To edit the canvas, click **Open Paint Editor / Открыть холст** inside the PAINT accordion block. The editor window opens with drawing tools, brushes, a font selector, canvas operations, and color palette swatches.
 
 ---
 
@@ -713,16 +713,16 @@ Applies drawing strokes as a mask for color overlays, frame delay (lag), or warp
 
 ### 3.8d Effects — Windows Media Player
 
-The **WINDOWS MEDIA PLAYER** group is a shelf of audio-reactive visualizers in the spirit of the classic media-player visualizations — spectrum bars, oscilloscopes, and procedural abstractions that dance to the analyzed track. Each effect reads a per-frame feed of the audio spectrum (bass / mid / high bands plus a log-spaced bin array and a beat envelope), so visuals move with the music rather than pulsing as a single blob.
+The **WINDOWS MEDIA PLAYER** group is a shelf of audio-reactive visualizers in the spirit of the classic media-player visualizations - spectrum bars, oscilloscopes, procedural abstractions that dance to the analyzed track. Each effect reads a per-frame feed of the audio spectrum (bass / mid / high bands plus a log-spaced bin array and a beat envelope), so visuals move with the music instead of pulsing as one undifferentiated blob.
 
-Every visualizer shares one decisive control, **Composite Mode**, which decides how the generated visual meets the source frame:
+Every visualizer shares one decisive control, **Composite Mode**, deciding how the generated visual meets the source frame:
 
 - `replace` — the visual fills the frame (full-screen visualizer).
 - `over` — the visual is blended on top of the video (**Opacity / Amount** sets the strength).
 - `warp` — the visual's brightness is used as a displacement map, so the music literally bends the source picture (**Opacity / Amount** sets the displacement strength).
 - `mask` — the visual's brightness becomes an alpha that reveals the source against black.
 
-Because of `warp` and `mask`, any view doubles as a way to drive the source material — there is no separate "warp" effect to enable. When there is no audio (or in a still preview) the visuals fall back to an intensity-driven animation so the block is never blank.
+Because of `warp` and `mask`, any view doubles as a way to drive the source material - there's no separate "warp" effect to enable. With no audio playing, or in a still preview, the visuals fall back to an intensity-driven animation, so the block is never blank.
 
 ---
 
@@ -771,9 +771,9 @@ A horizontal scope line whose amplitude follows the spectrum and scrolls in phas
 
 *Trigger: SUSTAIN, BUILD*
 
-XY oscilloscope figures: bass and high steer the two axis frequencies while time drifts the phase, drawing evolving loops — a retro lab-scope look.
+XY oscilloscope figures: bass and high steer the two axis frequencies while time drifts the phase, drawing evolving loops - a retro lab-scope look.
 
-Restricted to the two segment types the analyzer defines as extended/continuous — the figure's rotation is a persistent phase accumulator that only advances on frames the effect actually renders, so sparse/short segments would make it stutter.
+Restricted to the two segment types the analyzer defines as extended or continuous. The figure's rotation is a persistent phase accumulator that only advances on frames the effect actually renders, so sparse or short segments would make it stutter.
 
 - **Chance** *(0.0 – 1.0)* — probability of firing on each eligible frame, scaled by Global Chaos like every other effect. Default `1.0`.
 
@@ -801,7 +801,7 @@ Demoscene plasma built from summed sine fields. Bass shifts the palette, mids dr
 
 A particle system emitting from the centre: each detected beat throws a burst whose size scales with bass, then gravity pulls the particles down.
 
-Restricted to percussive-hit segment types — its particle physics are keyed directly off the beat/onset signal (and keep running every frame regardless of gating), so it belongs on transient moments rather than sustained ones.
+Restricted to percussive-hit segment types. Its particle physics are keyed directly off the beat/onset signal, and keep running every frame regardless of gating, so it belongs on transient moments rather than sustained ones.
 
 - **Chance** *(0.0 – 1.0)* — probability of firing on each eligible frame, scaled by Global Chaos like every other effect. Default `1.0`.
 
@@ -817,7 +817,7 @@ Restricted to percussive-hit segment types — its particle physics are keyed di
 
 Thousands of particles are advected along a slowly evolving turbulent vector field, each leaving a fading trail so the streamlines reveal the flow. Mids and bass drive the flow speed; the current bands tint the ink.
 
-Restricted to the same accumulator rationale as Lissajous — its trail buffer only fades on frames it actually renders.
+Restricted to the same accumulator rationale as Lissajous - its trail buffer only fades on frames it actually renders.
 
 - **Chance** *(0.0 – 1.0)* — probability of firing on each eligible frame, scaled by Global Chaos like every other effect. Default `1.0`.
 
@@ -830,9 +830,9 @@ Restricted to the same accumulator rationale as Lissajous — its trail buffer o
 
 *Trigger: SUSTAIN, BUILD*
 
-A WMP-style video-feedback "liquid light" field: each frame the previous image is rotated, zoomed and dimmed, then a radially symmetric rose whose petals track the spectrum is drawn on top. The compounding rotate + zoom becomes an endless glowing kaleidoscopic tunnel with a slowly cycling hue. Strong as a full-screen replace or a warp map.
+A WMP-style video-feedback "liquid light" field: each frame the previous image is rotated, zoomed and dimmed, then a radially symmetric rose whose petals track the spectrum is drawn on top. The compounding rotate-plus-zoom becomes an endless glowing kaleidoscopic tunnel with a slowly cycling hue. Strong as a full-screen replace or a warp map.
 
-Restricted to the same accumulator rationale — its spiral tunnel is a feedback buffer that only evolves on rendered frames.
+Restricted to the same accumulator rationale - its spiral tunnel is a feedback buffer that only evolves on rendered frames.
 
 - **Chance** *(0.0 – 1.0)* — probability of firing on each eligible frame, scaled by Global Chaos like every other effect. Default `1.0`.
 
@@ -845,7 +845,7 @@ Restricted to the same accumulator rationale — its spiral tunnel is a feedback
 
 ### 3.9 Effects — Overlays and Chroma Key
 
-Overlays composite external image files onto video frames. Load an overlay folder via **Load Source Video → Load Overlays folder** (sidebar, below the video button), or through the Overlays tab.
+Overlays composite external image files onto video frames. Load a folder of them via **Load Source Video → Load Overlays folder** (sidebar, below the video button), or through the Overlays tab.
 
 **Enable Overlays** *(on/off + Chance)*
 
@@ -875,7 +875,7 @@ Video files are loaded frame-by-frame; each frame becomes an independent overlay
 
 ### Chroma Key (Green Screen)
 
-Removes a background colour from each overlay image before compositing, making that colour transparent.
+Strips a background colour out of each overlay image before compositing, making that colour transparent.
 
 **Mode:**
 - `none` — chroma key disabled (default)
@@ -893,7 +893,7 @@ Removes a background colour from each overlay image before compositing, making t
 
 ### 3.10 Effects — DSP Kernel
 
-The **DSP KERNEL** group is the experimental shelf — these are stranger, more abstract effects. They take ideas from audio processing, file compression, and even cellular automata, and apply them to pixels in ways those processes weren't really meant for. Results range from subtle to completely image-destroying. If you want to know exactly *why* each one looks the way it does, the descriptions below explain the underlying technique; if you just want a new look, flip them on and try.
+The **DSP KERNEL** group is the experimental shelf - stranger, more abstract effects. They borrow ideas from audio processing, file compression, even cellular automata, and apply them to pixels in ways those processes were never meant for. Results range from subtle to completely image-destroying. The descriptions below explain the underlying technique for each one, if you want to know exactly *why* it looks the way it does. If you just want a new look, flip them on and try.
 
 All effects in this group are triggered by audio segment type and intensity, same as all other effects. Each has an enable checkbox, a Chance slider, and one or two parameter sliders.
 
@@ -901,7 +901,7 @@ All effects in this group are triggered by audio segment type and intensity, sam
 
 **Resonant Rows**
 
-Applies an IIR bandpass filter along each pixel row, treating the row as a one-dimensional audio signal. The filter creates spatial ringing at vertical edges — not blur, not sharpening, but resonance: a narrow-frequency echo around every boundary. At high Q values, the ringing overtakes the original image.
+Applies an IIR bandpass filter along each pixel row, treating the row as a one-dimensional audio signal. The filter creates spatial ringing at vertical edges: not blur, not sharpening, but resonance - a narrow-frequency echo around every boundary. At high Q values the ringing overtakes the original image.
 
 - *Freq* — centre frequency of the resonance (cycles per pixel). Lower = wider horizontal features resonate. Higher = finer detail resonates.
 - *Q factor* — sharpness of the resonance peak. Low Q = gentle halo. High Q = aggressive oscillating fringe.
@@ -910,9 +910,9 @@ Applies an IIR bandpass filter along each pixel row, treating the row as a one-d
 
 **Temporal RGB Shift**
 
-The three colour channels are read from different points in time. Red is always the current frame. Green is N/2 frames behind. Blue is N frames behind. Moving objects cast colour-separated shadows across their own history. Stationary images are unaffected.
+The three colour channels are read from different points in time. Red is always the current frame; Green is N/2 frames behind; Blue is N frames behind. Moving objects cast colour-separated shadows across their own history, while stationary images stay unaffected.
 
-This is not the same as RGB Shift (which is spatial). This is chromatic temporal aberration.
+Don't confuse this with RGB Shift, which is spatial. This is chromatic temporal aberration.
 
 - *Lag (frames)* — maximum temporal offset for the Blue channel. Scales proportionally with audio intensity.
 
@@ -920,7 +920,7 @@ This is not the same as RGB Shift (which is spatial). This is chromatic temporal
 
 **FFT Phase Corrupt**
 
-Computes the 2D discrete Fourier transform of the frame, adds random noise to the phase of each frequency component while leaving the magnitude untouched, then transforms back. The image loses spatial coherence while preserving its overall brightness distribution — edges dissolve into wave interference patterns.
+Computes the 2D discrete Fourier transform of the frame, adds random noise to the phase of each frequency component while leaving the magnitude untouched, then transforms back. The image loses spatial coherence but keeps its overall brightness distribution - edges dissolve into wave interference patterns.
 
 - *Phase Noise Amount* — amount of phase randomisation (0 = no effect, 1 = full random phase = maximum scramble).
 
@@ -928,7 +928,7 @@ Computes the 2D discrete Fourier transform of the frame, adds random noise to th
 
 **Waveshaper / Tube Sat**
 
-Applies a tanh soft-clipping transfer function to pixel values, identical to tube amplifier saturation in audio production. Mid-range values compress toward the centre; peaks saturate. The result is a characteristic analogue warmth/distortion depending on drive level.
+Applies a tanh soft-clipping transfer function to pixel values, identical to tube amplifier saturation in audio production. Mid-range values compress toward the centre; peaks saturate. Depending on drive level, the result reads as anything from analogue warmth to outright distortion.
 
 - *Drive* — gain before the clipping stage. Low = gentle saturation. High = hard, coloured distortion.
 
@@ -936,7 +936,7 @@ Applies a tanh soft-clipping transfer function to pixel values, identical to tub
 
 **Histogram Lag**
 
-Matches the colour histogram of the current frame to the histogram of a frame from N frames ago, using per-channel cumulative distribution function remapping. The image retains its structure but borrows its colour palette from the past. When scene changes occur, the current frame takes on the colours of a completely different moment.
+Matches the colour histogram of the current frame to the histogram of a frame from N frames ago, using per-channel cumulative distribution function remapping. The image keeps its structure but borrows its colour palette from the past - when a scene change hits, the current frame takes on the colours of a completely different moment.
 
 - *Palette Lag (frames)* — how far back in time the reference palette is drawn from.
 
@@ -944,7 +944,7 @@ Matches the colour histogram of the current frame to the histogram of a frame fr
 
 **Wrong Chroma Sub (4:1:N)**
 
-Converts the frame to YCrCb colour space, downsamples the Cr and Cb chroma channels by a large factor (2× to 8×), then upsamples them back with nearest-neighbour interpolation. The result: large, blocky colour patches overlaid on sharp luminance detail. This is the visual signature of extreme chroma subsampling — what happens when a bad codec discards too much colour information.
+Converts the frame to YCrCb colour space, downsamples the Cr and Cb chroma channels by a large factor (2× to 8×), then upsamples them back with nearest-neighbour interpolation. The result is large, blocky colour patches overlaid on sharp luminance detail - the visual signature of extreme chroma subsampling, what happens when a bad codec discards too much colour information.
 
 - *Downsample Factor* — how aggressively chroma is reduced. At 2 the effect is mild; at 8 colours appear in large rectangular blocks.
 
@@ -952,9 +952,9 @@ Converts the frame to YCrCb colour space, downsamples the Cr and Cb chroma chann
 
 **Game of Life Mask**
 
-Binarises the frame at half resolution using a luminance threshold, runs Conway's Game of Life for N iterations using the image content as the initial cell state, then uses the resulting live cells as a corruption mask — XOR-ing noise into those regions.
+Binarises the frame at half resolution using a luminance threshold, runs Conway's Game of Life for N iterations using the image content as the initial cell state, then uses the resulting live cells as a corruption mask, XOR-ing noise into those regions.
 
-Brighter image regions tend to produce active cell populations. After several iterations, the pattern develops into Conway gliders, still lifes, and oscillators, creating an organic and semi-predictable corruption structure tied to the image content.
+Brighter image regions tend to produce active cell populations. After several iterations the pattern develops into Conway gliders, still lifes, and oscillators - an organic, semi-predictable corruption structure tied directly to the image content.
 
 - *Iterations* — how many Game of Life generations to run per frame. More iterations = more evolved, less image-derived pattern.
 
@@ -962,7 +962,7 @@ Brighter image regions tend to produce active cell populations. After several it
 
 **ELA (Error Level Analysis)**
 
-Re-encodes the current frame as a JPEG at fixed quality, then computes the absolute difference between the original and the re-encoded version, amplified. Regions that were already heavily JPEG-compressed appear dark. Regions with fine detail, sharp edges, or recently edited content appear bright. Applied as a blend layer, this creates a forensic edge map that reveals the spatial structure of image compression.
+Re-encodes the current frame as a JPEG at fixed quality, then computes the absolute difference between the original and the re-encoded version, amplified. Regions already heavily JPEG-compressed appear dark; regions with fine detail, sharp edges, or recently edited content appear bright. Applied as a blend layer, this produces a forensic edge map revealing the spatial structure of the compression itself.
 
 - *ELA Blend* — 0 = pure ELA map (original image replaced by the error map), 1 = original only. Values between blend the two.
 
@@ -970,9 +970,9 @@ Re-encodes the current frame as a JPEG at fixed quality, then computes the absol
 
 **Dtype Reinterpret**
 
-Takes the raw bytes of the frame buffer and reinterprets the first half as 16-bit floating-point values. Small noise is added in the float16 domain. The bytes are then reinterpreted back as unsigned 8-bit integers and reshaped into the frame.
+Takes the raw bytes of the frame buffer and reinterprets the first half as 16-bit floating-point values. Small noise gets added in the float16 domain, then the bytes are reinterpreted back as unsigned 8-bit integers and reshaped into the frame.
 
-The corruption is not random — it is determined by the specific numerical patterns in the pixel data. Certain pixel value combinations produce NaN or Inf when interpreted as float16, which resolve to specific byte patterns (0 or 255 in uint8), creating structured bright and dark corruptions that are entirely content-dependent.
+The corruption isn't random - it's determined by the specific numerical patterns in the pixel data. Certain pixel value combinations produce NaN or Inf when interpreted as float16, which resolve to specific byte patterns (0 or 255 in uint8), producing structured bright and dark corruptions that are entirely content-dependent.
 
 - *Noise Amount* — standard deviation of the float16-domain noise.
 
@@ -980,7 +980,7 @@ The corruption is not random — it is determined by the specific numerical patt
 
 **Spatial Reverb**
 
-Constructs a decaying impulse response (a series of diminishing echoes at fixed spatial intervals) and convolves it with each pixel row. The result is a horizontal reverberation — bright pixels produce trailing copies of themselves to the right, decaying in amplitude. This is room acoustic reverb applied to spatial light.
+Constructs a decaying impulse response (a series of diminishing echoes at fixed spatial intervals) and convolves it with each pixel row. The result is a horizontal reverberation: bright pixels trail copies of themselves to the right, decaying in amplitude. Room acoustic reverb, applied to spatial light.
 
 - *Reverb Decay* — rate at which echoes diminish. High values produce longer, louder reverb tails.
 
@@ -995,7 +995,7 @@ The **EFFECTS** tab has a checkbox in the navigation bar (§3.4b): **Hide color-
 3. If `Silence Treatment` was set to `Dim`, switches it to `None` and hides the `Dim` radio button.
 4. Locks `ASCII Filter`'s colour-mode dropdown to `original` only — its `fixed` and `inverted` modes recolour the frame, so they're removed from the dropdown while the toggle is on.
 
-When you uncheck it, the previous state of every affected effect — including the `Dim` choice and the ASCII colour mode if they were active — is restored from a snapshot taken at the moment you ticked it. So you can flip back and forth without losing your settings.
+Uncheck it and the previous state of every affected effect - including the `Dim` choice and the ASCII colour mode, if they were active - gets restored from a snapshot taken the moment you ticked it. Flip back and forth as much as you like without losing your settings.
 
 Effects classified as "color-altering" — every effect whose **primary action is to change the palette** and that has no built-in mode to preserve source colours. The list is grouped by *how* the colour is changed:
 
@@ -1014,13 +1014,13 @@ Effects intentionally **NOT** in the list — either their primary action isn't 
 - **Subtle modulation / small area**: `Scan Lines`, `Sharpen`, `Resonant Rows`, `Game of Life Mask`, `VHS Tracking`, `Block Glitch`, `Cursor Storm`, `Stutter`.
 - **User-controlled content**: `Overlays`, `Formula`.
 
-Use this when the source video's original colour grading matters (footage from a particular DP, a finished colour-corrected clip, archival material) and you want to layer cuts/glitches on top without the engine pushing the palette around. The default state is **off**.
+Use this when the source video's original colour grading matters - footage from a particular DP, a finished colour-corrected clip, archival material - and you want to layer cuts and glitches on top without the engine pushing the palette around. Default state is **off**.
 
 ---
 
 ### 3.10c Effects — Geometry Fault
 
-The **GEOMETRY FAULT** group bends pixels through displacement maps. Where Raster Fault and Tape Rot effects work locally (per-pixel or per-row), Geometry Fault effects move whole regions of the image around — they're closer to optical flow than to corruption. Subtle at low intensity, image-destroying at high.
+The **GEOMETRY FAULT** group bends pixels through displacement maps. Where Raster Fault and Tape Rot effects work locally, per-pixel or per-row, Geometry Fault effects move whole regions of the image around - closer to optical flow than to corruption. Subtle at low intensity, image-destroying at high.
 
 All four effects in this group support `always`-on for permanent baseline warping.
 
@@ -1030,7 +1030,7 @@ All four effects in this group support `always`-on for permanent baseline warpin
 
 *Trigger: IMPACT, NOISE, DROP, SUSTAIN*
 
-Closest CPU analogue to true datamosh. The previous frame's spatial gradient is used as a displacement field for the current frame, so motion in the source seeds smearing in the same direction. With **Feedback Loop** also enabled, the warp accumulates and produces datamosh-grade dragging.
+The closest CPU analogue to true datamosh. The previous frame's spatial gradient becomes a displacement field for the current frame, so motion in the source seeds smearing in the same direction. Enable **Feedback Loop** alongside it, and the warp accumulates into datamosh-grade dragging.
 
 - *Prev Blend* *(0.0 – 0.6)* — how much of the previous frame ghosts through. `0` = pure displacement, `0.6` = heavy persistent smear.
 
@@ -1040,9 +1040,9 @@ Closest CPU analogue to true datamosh. The previous frame's spatial gradient is 
 
 *Trigger: BUILD, IMPACT, SUSTAIN, DROP*
 
-Rotates pixels around the canvas centre. Rotation angle is `intensity × gaussian_falloff(radius)`, so the centre swirls more than the edges. At low intensity it's a subtle swirl; at high intensity the entire image collapses into a spiral.
+Rotates pixels around the canvas centre. Rotation angle is `intensity × gaussian_falloff(radius)`, so the centre swirls more than the edges. Low intensity gives a subtle swirl; high intensity collapses the entire image into a spiral.
 
-No params — strength is purely audio-driven (or fixed via the always-on intensity slider).
+No params - strength is purely audio-driven, or fixed via the always-on intensity slider.
 
 ---
 
@@ -1050,7 +1050,7 @@ No params — strength is purely audio-driven (or fixed via the always-on intens
 
 *Trigger: any segment type*
 
-Builds a multi-octave Simplex noise field and uses it as XY displacement. The field is reseeded on every audio segment, so the distortion shape constantly evolves rather than locking to one pattern. Produces an organic, "melting" warp.
+Builds a multi-octave Simplex noise field and uses it as XY displacement. The field reseeds on every audio segment, so the distortion shape keeps evolving instead of locking to one pattern. The result is an organic, "melting" warp.
 
 - *Octaves* *(2 – 5)* — number of noise scales summed. `2` = smooth blobs, `5` = jagged fractal.
 
@@ -1060,7 +1060,7 @@ Builds a multi-octave Simplex noise field and uses it as XY displacement. The fi
 
 *Trigger: IMPACT, NOISE, DROP, BUILD, SUSTAIN*
 
-A past frame's R channel becomes the X-displacement, its G channel becomes the Y-displacement. The image literally tears itself apart using its own colour values. Combined with `Feedback`, it cascades into datamosh-grade smear that reacts to scene structure rather than random noise.
+A past frame's R channel becomes the X-displacement, its G channel becomes the Y-displacement. The image literally tears itself apart using its own colour values. Combine it with `Feedback` and it cascades into datamosh-grade smear that reacts to scene structure rather than random noise.
 
 - *Depth (frames back)* *(1 – 8)* — how far back the displacement source is taken from. Larger = more pronounced lag-induced tearing.
 
@@ -1068,9 +1068,9 @@ A past frame's R channel becomes the X-displacement, its G channel becomes the Y
 
 ### 3.10d FORMULA Tab
 
-The **FORMULA** tab (third tab in the centre panel, BSOD-blue palette) is a free-form NumPy expression effect editor. Type a formula, hit `RENDER FULL VIDEO`, the engine evaluates it on every frame.
+The **FORMULA** tab (third tab in the centre panel, BSOD-blue palette) is a free-form NumPy expression effect editor. Type a formula, hit `RENDER FULL VIDEO`, and the engine evaluates it on every frame.
 
-This is a single effect — it appears in the effect chain alongside everything else — but its dedicated tab gives it more room than a normal accordion block, with a status line, snippet shortcuts, and four live parameter sliders.
+It's a single effect - it sits in the effect chain alongside everything else - but its dedicated tab gives it more room than a normal accordion block: a status line, snippet shortcuts, four live parameter sliders.
 
 **Enable checkbox + Chance + Blend** — top row.
 - `enable` toggles the effect.
@@ -1121,7 +1121,7 @@ frame * (1 + 0.5 * a * np.sin(t*3))              # pulse driven by `a`
 np.where((y % 2 == 0)[:,:,None], frame, frame//2)  # interlace
 ```
 
-Saving formulas: the expression and the four `a/b/c/d` values are part of the cfg, so saving a Preset persists them. To share a formula, save it as a preset and send the user the JSON entry.
+Saving formulas: the expression and the four `a/b/c/d` values live in the cfg, so saving a Preset persists them. To share a formula with someone, save it as a preset and send them the JSON entry.
 
 ---
 
@@ -1141,7 +1141,7 @@ Next to the FPS dropdown is a **Match Source FPS** button. Click it and the prog
 | **Match source** | Output dimensions match the first loaded source video pixel-for-pixel. |
 | **Custom** | Type any width/height in the spinboxes (`64 – 7680` × `64 – 4320`). |
 
-In all three modes, dimensions are silently rounded down to the nearest **even** number — `yuv420p` (and ProRes 422) require chroma subsampling on even axes, and odd numbers would crash the ffmpeg pipe. So `1281 × 721 → 1280 × 720`. This includes `Match source` when the source itself has an odd dimension.
+In all three modes, dimensions get silently rounded down to the nearest **even** number - `yuv420p` (and ProRes 422) require chroma subsampling on even axes, and odd numbers would crash the ffmpeg pipe. So `1281 × 721 → 1280 × 720`. This applies to `Match source` too, when the source itself has an odd dimension.
 
 **Quality** *(dropdown — Custom / Archive / High / Web / Compact)* — convenience preset that fills CRF / ffmpeg Preset / Tune below in one click. Manual edits flip this dropdown to `Custom`; the manual fields are **never disabled** by the preset — pick what you want.
 
@@ -1179,15 +1179,15 @@ The Save dialog auto-uses the matching extension. If you type a different one, t
 
 **Pipe pixel format** — when the output codec is `yuv420p` (everything except ProRes), frames are converted from RGB to planar I420 *on the Python side* before being piped to ffmpeg, halving inter-process bandwidth. ProRes 4:2:2 10-bit stays on rgb24 to preserve chroma precision. Invisible to the user.
 
-**HW encoder caveat (low resolutions)** — for very small outputs (≤480p) GPU encoders sometimes pay more in PCIe upload + HWFrame init than they save on the encode itself. If a short 480p render feels slower with NVENC/QSV/AMF than with libx264, that's expected — switch to `H.264 (MP4)` (libx264) for sub-720p material. HW encoders shine at 1080p and above.
+**HW encoder caveat (low resolutions)** — for very small outputs (≤480p), GPU encoders sometimes pay more in PCIe upload and HWFrame init than they save on the encode itself. If a short 480p render feels slower with NVENC/QSV/AMF than with libx264, that's expected - switch to `H.264 (MP4)` (libx264) for sub-720p material. HW encoders shine at 1080p and above.
 
-**HW encoder safety net** — `available_specs()` lists every encoder ffmpeg *advertises*, but advertised ≠ working. NVENC / QSV / AMF can all be listed and still hang on init (missing/broken driver, GPU locked by another process, sandboxed VM). To prevent a render from sitting at 0% forever, before each render the engine runs a **1-second self-probe** against the chosen HW encoder with a hard 8-second timeout. If the probe fails or times out, the render **automatically falls back to libx264** and logs the reason — no user intervention needed. Result is cached per-process so the cost is paid once per session.
+**HW encoder safety net** — `available_specs()` lists every encoder ffmpeg *advertises*, but advertised doesn't mean working. NVENC, QSV, and AMF can all show up in the list and still hang on init - missing or broken driver, GPU locked by another process, sandboxed VM. To keep a render from sitting at 0% forever, the engine runs a **1-second self-probe** against the chosen HW encoder before each render, with a hard 8-second timeout. If the probe fails or times out, the render **automatically falls back to libx264** and logs the reason, no user intervention needed. The result is cached per-process, so the cost is paid once per session.
 
-This makes the EXE distribution safe: even if the user has no Python installed and can't run diagnostic scripts, picking a broken HW encoder from the dropdown won't lock up the program.
+That's what makes the EXE distribution safe: even a user with no Python installed, unable to run diagnostic scripts, can pick a broken HW encoder from the dropdown without locking up the program.
 
-For developers running from source, `python tools/check_hw_encoders.py` runs the same probe across every advertised HW encoder at once and prints a status table — useful when validating a new machine or debugging a failing GPU.
+Developers running from source get `python tools/check_hw_encoders.py`, which runs the same probe across every advertised HW encoder at once and prints a status table - useful for validating a new machine or chasing down a failing GPU.
 
-**Progress + ETA** — during render the status line updates ~twice a second with current percentage, ETA estimate, and the actual encoded fps. Final log line shows total time and an `Nx realtime` factor.
+**Progress + ETA** — during render the status line updates about twice a second with current percentage, ETA estimate, and the actual encoded fps. The final log line shows total time and an `Nx realtime` factor.
 
 ---
 
@@ -1201,9 +1201,9 @@ The **Presets** panel (sidebar) lists every preset stored in `presets.json` in t
 |---|---|
 | **Empty** | All effects off, all sliders at 0, mystery zeroed, silence treatment `none`. The neutral starting point. |
 
-That's the only built-in. The previous "stylistic" presets (Drillcore, Datamosh, ASCII Rave, Death Grips, Rhythm Flash, Vortex Dream) have been removed — they were placeholders, not curated for production use. New curated presets will be added later.
+That's the only built-in. The old "stylistic" presets - Drillcore, Datamosh, ASCII Rave, Death Grips, Rhythm Flash, Vortex Dream - have been removed. They were placeholders, never curated for production use. New curated presets will show up later.
 
-If you upgrade from an older release that wrote those built-ins into your `presets.json`, the program drops them on first launch and keeps any presets you saved yourself. The `Empty` entry is regenerated automatically.
+If you upgrade from an older release that wrote those built-ins into your `presets.json`, the program drops them on first launch and keeps whatever presets you saved yourself. The `Empty` entry regenerates automatically.
 
 **Working with presets:**
 
@@ -1222,7 +1222,7 @@ Three render buttons are pinned to the bottom of the sidebar:
 
 **DRAFT (5 sec / 480p)**
 
-Renders the first 5 seconds of the audio track at 480p resolution. Effects that are computationally expensive (Optical Flow, True Datamosh, ASCII) use simplified fast paths. Use this to quickly check cut timing and basic effect behavior.
+Renders the first 5 seconds of the audio track at 480p resolution. Computationally expensive effects (Optical Flow, True Datamosh, ASCII) fall back to simplified fast paths. Use this to quickly check cut timing and basic effect behavior.
 
 ---
 
@@ -1230,7 +1230,7 @@ Renders the first 5 seconds of the audio track at 480p resolution. Effects that 
 
 Renders the first N seconds at full configured resolution and quality. All effects run at full fidelity. Use this to validate the visual result before committing to a full render.
 
-A **Preview length (s)** spinbox sits directly above the PREVIEW button (range `1 – 90`, default `5`). The button label updates to reflect the current length on each click (`PREVIEW (12 sec)`). Garbage typed into the spinbox falls back to the default safely — you can never break the render with a bad value. Draft is fixed at 5 seconds and is *not* affected by this control; only PREVIEW honours it.
+A **Preview length (s)** spinbox sits directly above the PREVIEW button (range `1 – 90`, default `5`). The button label updates to reflect the current length on each click (`PREVIEW (12 sec)`). Type garbage into the spinbox and it falls back to the default safely - you can never break the render with a bad value. Draft is fixed at 5 seconds and is *not* affected by this control; only PREVIEW honours it.
 
 ---
 
@@ -1238,7 +1238,7 @@ A **Preview length (s)** spinbox sits directly above the PREVIEW button (range `
 
 Renders the complete output video for the entire duration of the audio track. A progress bar and status log show real-time progress.
 
-A native Save dialog opens first; the suggested filename is `disc_XXXX.<ext>` where `XXXX` is a random 4-digit number and `<ext>` matches the codec/container chosen in EXPORT (`.mp4`, `.mkv`, `.mov`, `.webm`). Pick a folder and confirm — the render starts immediately. The final output path is echoed to the status log on completion.
+A native Save dialog opens first; the suggested filename is `disc_XXXX.<ext>` where `XXXX` is a random 4-digit number and `<ext>` matches the codec/container chosen in EXPORT (`.mp4`, `.mkv`, `.mov`, `.webm`). Pick a folder and confirm, and the render starts immediately. The final output path shows up in the status log on completion.
 
 The **STOP** button (right panel) interrupts any active render or preview playback.
 
@@ -1250,45 +1250,45 @@ The **[ ? ]** tab holds nine sliders. They are named.
 
 The names are not metaphors.
 
-Each one addresses a quantity that exists in the pipeline — a real parameter that shapes the signal in a real way — but the relationship between the name and what it does is not described here, because the description would be inaccurate. Not because we are concealing it. Because the accurate description requires a frame of reference that this document was not written in.
+Each one addresses a quantity that exists in the pipeline - a real parameter, shaping the signal in a real way. But the relationship between the name and what it does isn't described here, because the description would be inaccurate. Not because we're concealing it. Because an accurate description needs a frame of reference this document was never written in.
 
-The sliders are not independent. What you give to one changes what another is capable of. A position that does nothing alone may do a great deal in the presence of another. The system has memory of the other sliders. So do the effects.
+The sliders aren't independent. What you give to one changes what another is capable of. A position that does nothing alone may do a great deal in the presence of another. The system remembers the other sliders. So do the effects.
 
-**VESSEL** feeds. It is not empty. What you gave it earlier is still present — weighted, layered behind what you are giving it now. At high values, what was begins to outweigh what is. It speaks to DOT.
+**VESSEL** feeds. It is not empty. What you gave it earlier is still present - weighted, layered behind what you're giving it now. At high values, what was begins to outweigh what is. It speaks to DOT.
 
-**ENTROPY\_7** erodes a boundary that was never supposed to be there. The erosion is not random — it is living. It reads the frame as a condition and continues from it. What VESSEL has accumulated, ENTROPY\_7 grows inside.
+**ENTROPY\_7** erodes a boundary that was never supposed to be there. The erosion isn't random. It's living. It reads the frame as a condition and continues from it. What VESSEL has accumulated, ENTROPY\_7 grows inside.
 
-**DELTA\_OMEGA** governs the speed of a transformation that happens whether you turn it on or not. You are only adjusting how much of it the rest of the system is allowed to hear.
+**DELTA\_OMEGA** governs the speed of a transformation that happens whether you turn it on or not. You're only adjusting how much of it the rest of the system is allowed to hear.
 
-**STATIC\_MIND** is a gate, but it gates the wrong thing. What passes through at 0 is not what passes through at 1. The transition between them is not a blend. RESONANCE, if present, does something to the structure that STATIC\_MIND was trying to hold in place.
+**STATIC\_MIND** is a gate, but it gates the wrong thing. What passes through at 0 is not what passes through at 1, and the transition between them is not a blend. RESONANCE, if present, does something to the structure STATIC\_MIND was trying to hold in place.
 
 **RESONANCE** does not merely resonate. Rows ring. At sufficient values the image stops being an image and becomes the record of its own frequency. It speaks to COLLAPSE. Together they lower each other's thresholds.
 
-**COLLAPSE** initiates. It works in two directions simultaneously, though the second is not visible until the first is already underway. ZERO changes what it arrives at.
+**COLLAPSE** initiates. It works in two directions at once, though the second isn't visible until the first is already underway. ZERO changes what it arrives at.
 
-**ZERO** is not zero. It is a key. What was earlier is still nearby — not behind, not under, simply still — and ZERO chooses where it is allowed to surface. The choosing is patterned, never even, and the pattern is older than the moment it acts on. FLESH\_K teaches the pattern where to attend.
+**ZERO** is not zero. It's a key. What was earlier is still nearby - not behind, not under, simply still - and ZERO chooses where it's allowed to surface. The choosing is patterned, never even, and the pattern is older than the moment it acts on. FLESH\_K teaches the pattern where to attend.
 
 **FLESH\_K** is what it says. It converts. The conversion is not clean. What exits is not in the same space as what entered. At low values nothing appears to happen. The threshold is not fixed.
 
-**DOT** is small. It separates what arrived together. What was one departs in pieces, and the pieces no longer agree on when. Past a certain point a second disagreement begins, set against the first. It lengthens when VESSEL is present.
+**DOT** is small. It separates what arrived together. What was one departs in pieces, and the pieces stop agreeing on when. Past a certain point, a second disagreement begins, set against the first. It lengthens when VESSEL is present.
 
-Move them. Render. Observe what changed. Then move them again.
+Move them. Render. Watch what changed. Then move them again.
 
 No combination is wrong. Some combinations are irreversible within the session.
 
-Below each slider is a name. The names are not the same as the slider above. They are not labels. They are switches.
+Below each slider sits a name. It isn't the same as the slider above. Not a label. A switch.
 
-When a switch is closed — **PERPETUAL** under VESSEL, **UNCHAINED** under ENTROPY\_7, **BREACH//** under DELTA\_OMEGA, **awake.always** under STATIC\_MIND, **\_\_SUSTAIN** under RESONANCE, **INEVITABLE//** under COLLAPSE, **NULL.LOCK** under ZERO, **BLEED** under FLESH\_K, **\[ \* \]** under DOT — the slider above is no longer asked. It is told. The system does not pause to read whether the moment is right. It simply applies.
+When a switch is closed - **PERPETUAL** under VESSEL, **UNCHAINED** under ENTROPY\_7, **BREACH//** under DELTA\_OMEGA, **awake.always** under STATIC\_MIND, **\_\_SUSTAIN** under RESONANCE, **INEVITABLE//** under COLLAPSE, **NULL.LOCK** under ZERO, **BLEED** under FLESH\_K, **\[ \* \]** under DOT - the slider above is no longer asked. It's told. The system doesn't pause to read whether the moment is right. It simply applies.
 
-The switches are not louder versions of the sliders. They are not amplifiers. They are decisions about whether the system is allowed to wait. With them closed, the system is not allowed.
+The switches aren't louder versions of the sliders. Not amplifiers. They're decisions about whether the system is allowed to wait. With them closed, it isn't.
 
-A slider at zero, with its switch closed, is still zero. The switch only matters when the slider has something to say.
+A slider at zero, with its switch closed, is still zero. The switch only matters once the slider has something to say.
 
 ### 3.15 Multiple Video Sources
 
-The **Load Source Video** button accepts multiple files simultaneously. Hold `Ctrl` or `Shift` to select several files in the dialog, or drag-select a range.
+The **Load Source Video** button takes multiple files at once. Hold `Ctrl` or `Shift` to select several files in the dialog, or drag-select a range.
 
-When more than one file is loaded, the engine maintains an independent video reader for each source. At the beginning of every audio segment, a source is selected at random from the pool. Within that segment, frames are read sequentially from the chosen source.
+When more than one file is loaded, the engine keeps an independent video reader for each source. At the start of every audio segment, a source gets picked at random from the pool, and within that segment, frames read sequentially from the chosen source.
 
 This means:
 - Different segments can come from completely different video files with no preparation or manual splicing
@@ -1317,9 +1317,9 @@ Located in the **Cut Logic** section, under *Silence Treatment*. Default: **None
 
 ### 3.17 Passthrough Mode
 
-**Passthrough Mode** is a separate way of running the renderer for cases where you do **not** want any cuts at all — the source video plays from start to end in its original order, and the audio that drives the effects is the **video's own soundtrack**, not a separately loaded track.
+**Passthrough Mode** is a separate way of running the renderer for cases where you do **not** want any cuts at all. The source video plays from start to end in its original order, and the audio driving the effects is the **video's own soundtrack**, not a separately loaded track.
 
-Use it when you want every effect in this program (warps, glitches, mystery, formula, overlays) to react to a video clip's own audio without re-cutting the footage. Music videos, performance captures, full DJ-set recordings, anything where the picture and sound already belong together.
+Use it when you want every effect in the program - warps, glitches, mystery, formula, overlays - to react to a video clip's own audio without re-cutting the footage. Music videos, performance captures, full DJ-set recordings: anything where the picture and sound already belong together.
 
 **Where:** the **Cut Logic** section, top of the EFFECTS tab — checkbox **Passthrough Mode**.
 
@@ -1344,7 +1344,7 @@ The output file is a 1:1 re-encode of the source's runtime with effects applied 
 
 **Audio coupling — when "the picture breaks, the sound breaks too":**
 
-In Passthrough mode, certain visual effects gain a small `audio: ...` checkbox inside their block (right under the parameters). Tick it and the program also "breaks" the source audio in a way that pairs with that visual effect — applied to the entire track once before rendering. The checkbox is hidden when Passthrough is off.
+In Passthrough mode, certain visual effects gain a small `audio: ...` checkbox inside their block, right under the parameters. Tick it, and the program also "breaks" the source audio in a way that pairs with that visual effect - applied to the entire track once before rendering. The checkbox disappears when Passthrough is off.
 
 What each pairing actually does to the audio:
 
@@ -1359,17 +1359,17 @@ What each pairing actually does to the audio:
 | **Cursor Storm** | click crackle | ~12 short bipolar clicks per second sprinkled at random positions and amplitudes. Sounds like contact crackle / pointer-click rain. |
 | **BSOD Shred** | static bursts | Random ~90 ms windows (~1.5 per second) are *replaced* with harsh white noise — audio is shredded the same way the bluescreen bands shred the picture. |
 
-You can tick more than one — the defects layer on top of each other (Bit Flip's bitcrush bursts will themselves get echoed if Self Cannibalize's audio link is also on). All of them are completely free of cost: the WAV is mangled once before rendering starts, then ffmpeg muxes the mangled WAV back as the output audio.
+You can tick more than one - the defects layer on top of each other (Bit Flip's bitcrush bursts will themselves get echoed if Self Cannibalize's audio link is also on). None of them cost anything at render time: the WAV is mangled once before rendering starts, then ffmpeg muxes the mangled WAV back as the output audio.
 
-If you don't tick any audio link, the source audio plays back unchanged — Passthrough's default behaviour. Audio coupling is opt-in per effect.
+Leave every audio link unticked and the source audio plays back unchanged - Passthrough's default behaviour. Audio coupling is opt-in, per effect.
 
 ---
 
 ## 4. Disc VPC 01 R-T — Real-Time (C++)
 
-This is the live VJ version. You point it at whatever audio is playing — a microphone in front of the speakers, a "what's playing on this PC" loopback, the line-out of a mixer — and it runs video and effects on a screen, in time with the music, as it happens.
+This is the live VJ version. Point it at whatever audio is playing - a microphone in front of the speakers, a "what's playing on this PC" loopback, the line-out of a mixer - and it runs video and effects on a screen, in time with the music, as it happens.
 
-**Typical setup:** a laptop, a projector or second monitor, a music source (DJ, band, Spotify, anything). You drop a few video clips on the program, click START, and the program does the rest. The "control window" stays on your laptop screen; the "output window" goes fullscreen on the projector.
+**Typical setup:** a laptop, a projector or second monitor, a music source (DJ, band, Spotify, anything). Drop a few video clips on the program, click START, and it does the rest. The "control window" stays on your laptop screen; the "output window" goes fullscreen on the projector.
 
 > **Just want to use it, not understand the internals?** Skip §4.1 and §4.2 and go straight to §4.3 (interface). The build/architecture sections are only for people compiling the program themselves.
 >
@@ -1398,14 +1398,14 @@ This is the live VJ version. You point it at whatever audio is playing — a mic
                     └──────────────────────────────┘    at 1920×1080
 ```
 
-The control window holds the GUI. The output window is opened on demand on a
-chosen monitor as borderless fullscreen — it shares the OpenGL context with
-the control window, so the canvas FBO texture is sampled directly from both
+The control window holds the GUI. The output window opens on demand on a
+chosen monitor as borderless fullscreen - it shares the OpenGL context with
+the control window, so the canvas FBO texture gets sampled directly from both
 sides without any copy.
 
 All effects run in **canvas space** at the chosen canvas resolution, decoupled
-from any window's actual size. This means dragging or resizing the control
-window does not affect render cost or visual quality.
+from any window's actual size. Dragging or resizing the control window,
+as a result, never affects render cost or visual quality.
 
 ### 4.2 Build from source
 
@@ -1452,21 +1452,21 @@ The control window has a fixed top strip and a four-column control grid below.
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-Most of the window is dedicated to controls. The preview is a small thumbnail
+Most of the window is dedicated to controls. The preview stays a small thumbnail
 because the dedicated **Output Window** (§4.7) is the primary surface for
-audience-facing video — opened on whichever monitor the projector is on.
+audience-facing video, opened on whichever monitor the projector is on.
 
-Press **Tab** to hide the GUI: the canvas fills the control window, with no
-chrome.
+Press **Tab** to hide the GUI: the canvas fills the control window, no
+chrome left.
 
 ---
 
 ### 4.4 Loading Sources
 
 The fastest path is **drag-and-drop**: drop video files or whole folders onto
-the control window. Folders are scanned recursively; any video files found
-become individual sources in the pool. If the folder also contains images,
-they are loaded together as the overlay set.
+the control window. Folders get scanned recursively; any video files found
+become individual sources in the pool. If the folder also holds images,
+those get loaded together as the overlay set.
 
 Supported video extensions:
 `.mp4 .avi .mov .mkv .mpg .mpeg .wmv .webm .m4v .flv`
@@ -1477,16 +1477,16 @@ Supported overlay image extensions:
 On Windows, **Add Videos** in the *Video / Audio* panel opens a native file
 dialog. macOS / Linux rely on drag-and-drop only.
 
-All paths are handled as UTF-8 end-to-end — Cyrillic and other non-ASCII names
+All paths get handled as UTF-8 end-to-end, so Cyrillic and other non-ASCII names
 load and display correctly. The video list highlights the active clip slot
-(see §4.9) with a `[*]` marker and shows its slot number for the keyboard
-shortcut at a glance.
+(see §4.9) with a `[*]` marker and shows its slot number, so the keyboard
+shortcut is visible at a glance.
 
 ---
 
 ### 4.5 Audio
 
-This is where you tell the program *what to listen to*. Pick a mic, a line-in, or a "loopback" device that captures whatever your computer is playing — then start. The first ~1.5 seconds the program quietly listens to the room and decides what counts as silence; after that, every louder sound is a potential trigger.
+This is where you tell the program *what to listen to*. Pick a mic, a line-in, or a "loopback" device that captures whatever your computer is playing, then start. For the first ~1.5 seconds the program quietly listens to the room and decides what counts as silence; after that, every louder sound is a potential trigger.
 
 If meters stay flat after START, see §7 — most of the time it's the device pick.
 
@@ -1570,7 +1570,7 @@ the audio pipeline.
 
 ### 4.7 Output Window (Second Display)
 
-The control window is for you — buttons, sliders, the small preview thumbnail. The **output window** is what the audience sees: just the picture, fullscreen, no controls, on whatever monitor or projector you point it at.
+The control window is for you - buttons, sliders, the small preview thumbnail. The **output window** is what the audience sees: just the picture, fullscreen, no controls, on whatever monitor or projector you point it at.
 
 In the *Overlays / Presets / Output* panel:
 
@@ -1582,12 +1582,12 @@ In the *Overlays / Presets / Output* panel:
 3. **Close Output** — closes it. So does **Esc** while focus is on the output
    window, or **Shift+O** anywhere.
 
-The two windows share the OpenGL context, so the canvas texture is rendered
-into the output window with one shader pass — no CPU read-back, no GPU copy.
-Both windows have vsync enabled.
+The two windows share the OpenGL context, so the canvas texture renders
+into the output window with one shader pass, no CPU read-back, no GPU copy.
+Both windows run with vsync enabled.
 
-If only one monitor is available, you can still use the output window by
-opening it on monitor 0 and toggling the control window with **Tab**.
+With only one monitor available, you can still use the output window - open it
+on monitor 0 and toggle the control window with **Tab**.
 
 ---
 
@@ -1611,7 +1611,7 @@ Switch live with the **M** key.
 
 ### 4.9 Active Video — Clip Slots
 
-Think of the videos you loaded as numbered cards in your hand. By default the program shuffles through all of them. But you can also lock onto one card — say, the third one — and every cut will pull from that one until you let go. That's the "clip slot" idea, and it's how most VJs play live: load some footage before the set, then trigger pieces of it with number keys as the music moves.
+Think of the videos you loaded as numbered cards in your hand. By default the program shuffles through all of them. Lock onto one card, though - say the third one - and every cut pulls from that source until you let go. That's the "clip slot" idea, and it's how most VJs play live: load some footage before the set, then trigger pieces of it with number keys as the music moves.
 
 The video pool can be in one of two focus states:
 
@@ -1636,7 +1636,7 @@ The Transport panel shows the current state:
 
 This is the core "clip slot" workflow used by every modern VJ tool: load a
 handful of videos before the set, then trigger them on the fly as the music
-moves through sections. Combined with **Cut on beat**, focusing one clip
+moves through sections. Combine it with **Cut on beat**, and focusing one clip
 gives you classic beat-locked random-seek glitch editing within a single
 source.
 
@@ -1651,7 +1651,7 @@ active without expanding it.
 
 **Every effect is driven by an audio-reactive envelope.** Instead of blinking
 on and off frame-by-frame (the old behaviour, which strobed), an effect now
-*attacks* on a musical event and then *decays* smoothly — so it swells and fades
+*attacks* on a musical event and then *decays* smoothly, so it swells and fades
 with the track. Three per-effect controls shape this:
 
 - **Strength** *(S, 0–1)* — how strong the effect looks at full envelope.
@@ -1694,17 +1694,17 @@ range (e.g. `Q-P: #11-20`).
 
 Notable behaviours:
 
-- **Datamosh family** — temporal corruption that *compounds over time* because
-  each reads the engine's previous output. **P-Frame Lag** freezes static
+- **Datamosh family** — temporal corruption that *compounds over time*, since
+  each effect reads the engine's previous output. **P-Frame Lag** freezes static
   macroblocks so movement smears the background into a stuck mosaic; **MVec
   Bloom** drags blocks along bogus motion vectors into swimming streaks;
   **Self Cannibalize** warps the image by its own content so it flows and eats
-  itself. Best left on **Sustain** so the melt builds.
+  itself. Best left on **Sustain** so the melt has room to build.
 - **Visualizers** — draw imagery *from the audio*, over (or instead of) the
   video, and work even with no clip loaded. **Plasma** (liquid colour field),
   **Radial Spectrum** (polar "audio sun"), **Spectrum Bars** (16-band bars with
-  reflection), **Alchemy** (kaleidoscopic mandala). Default **Manual** (stay on
-  while enabled).
+  reflection), **Alchemy** (kaleidoscopic mandala). Default is **Manual** (stay
+  on while enabled).
 - **Kaleidoscope, Fisheye, RGB Shift, VHS Tracking, Pixel Drift** — classic
   geometric / channel effects; default **Sustain**.
 - **Deriv Warp / Self Displace / Fractal Noise** — datamosh-adjacent warps that
@@ -1733,12 +1733,12 @@ intensity, and for **every effect** its enable state plus **strength, mode and
 chance**. They are JSON files in the `presets/` folder next to the executable.
 
 Loading a preset first **resets everything to defaults**, then applies the
-file — so a preset never leaves stray effects from a previously-loaded one
+file, so a preset never leaves stray effects from a previously-loaded one
 enabled. Old presets that stored effects as a plain on/off boolean still load
-(strength/mode/chance fall back to their defaults).
+- strength, mode and chance just fall back to their defaults.
 
 The release bundle ships `presets/rt_blank.json` (loaded automatically at
-launch — it's the neutral starting point with all effects off) along with
+launch - the neutral starting point with all effects off) along with
 several stylistic presets.
 
 In the *Overlays / Presets / Output* panel:
@@ -1808,15 +1808,15 @@ inside an ImGui text-input field.
 **Tap Tempo / Metronome.** Tap the **TAP** button (or press `Enter`) a few times
 in time with the music. The program measures your tempo, shows the **BPM** in
 the Transport strip, and arms a **metronome**: a synthetic beat on the tapped
-grid that is combined (OR'd) with the audio-detected beat. This keeps cuts and
+grid, combined (OR'd) with the audio-detected beat. This keeps cuts and
 beat-driven effects locked to tempo even when the track's transient is weak or
 ambiguous. Toggle it with the **Metro** checkbox; a `>2 s` gap since your last
 tap restarts the count.
 
 **MIDI Control** *(optional).* The **MIDI** panel (in the *Overlays / Presets /
 Output* column) maps a hardware controller onto the program. It's entirely
-optional — if you have no MIDI device, the panel simply shows *(no device)* and
-nothing else changes.
+optional - with no MIDI device connected, the panel just shows *(no device)*
+and nothing else changes.
 
 - **Port** — pick your controller from the dropdown; **Rescan** re-probes.
 - **Learn** — click **Learn** next to a control, then move a knob/fader (for a
@@ -1828,9 +1828,9 @@ nothing else changes.
 - **Save Map** writes the bindings to `midi.json` next to the executable; they
   reload automatically on the next launch.
 
-CC values map 0–127 → 0–1; Note-On fires an action. Bindings survive a restart
-and the app never blocks or crashes if the device is unplugged mid-set — it just
-drops to a closed state and you can re-pick the port.
+CC values map 0–127 → 0–1; Note-On fires an action. Bindings survive a restart,
+and the app never blocks or crashes if the device gets unplugged mid-set - it
+just drops to a closed state and you can re-pick the port.
 
 ---
 
@@ -1851,13 +1851,13 @@ with unbuffered, line-flushed output. The log captures:
   the OS terminates the process.
 
 If something doesn't behave as expected, the log file is the first place to
-look. It is always overwritten on launch, so it never grows unbounded.
+look. It gets overwritten on every launch, so it never grows unbounded.
 
 ---
 
 ## 5. Segment Types Reference
 
-Both programs use the same segment classifier. Understanding segment types helps predict which effects will fire.
+Both programs use the same segment classifier. Knowing the segment types helps you predict which effects will fire.
 
 | Type | Condition | Typical audio moment |
 |---|---|---|
@@ -1911,114 +1911,114 @@ Effects declare which segment types they respond to. An effect will not fire on 
 
 ## 7. Troubleshooting
 
-If something isn't working, don't panic — almost every issue has a one-line cause and a one-line fix, and most of them are listed below.
+If something isn't working, don't panic. Almost every issue has a one-line cause and a one-line fix, and most of them are listed below.
 
-For the live (R-T) program: there's a file called `vpc01rt.log` that's written next to the program every time you start it. It records what audio devices were seen, what happened when you tried to open one, what happened when a video was loaded, and (if the program crashes) where it crashed. Open that file in any text editor — most issues become obvious within a few lines.
+For the live (R-T) program, there's a file called `vpc01rt.log` written next to the program every time you start it. It records what audio devices were seen, what happened when you tried to open one, what happened when a video was loaded, and, if the program crashes, where it crashed. Open that file in any text editor - most issues become obvious within a few lines.
 
 **R-T: audio meters flat — no reaction to sound**
 
 The audio stream may not have opened, or the OS isn't delivering samples.
 Open `vpc01rt.log` and look for `[audio]` lines. The Transport panel also
-shows `Audio cb: N` — if it stays at 0 after pressing START, samples aren't
-arriving. Common causes: muted exclusive-mode WASAPI device, picking a
+shows `Audio cb: N` - if it stays at 0 after pressing START, samples aren't
+arriving. Common causes: a muted exclusive-mode WASAPI device, or picking a
 loopback device that isn't enabled in Windows Sound settings. Try a
 different device from the dropdown. Pressing START with no device selected
-auto-picks the platform default — use that as a sanity check.
+auto-picks the platform default, which makes a good sanity check.
 
 **R-T: video doesn't load**
 
 Open the log and find the `[video]` lines for the file you tried. If it
 shows `avformat_open_input failed`, the path or format is the issue. UTF-8
-paths with Cyrillic / non-ASCII characters are supported — drag-and-drop
+paths with Cyrillic or other non-ASCII characters are supported - drag-and-drop
 delivers UTF-8 directly. Verify the file plays in another player.
 
 **R-T: engine reacts to silence**
 
 Increase **Threshold** in the Master panel. The first ~1.5 sec after START
-are calibration; if the room is loud during that window the gate stays low.
+is calibration; if the room is loud during that window, the gate stays low.
 Press STOP / START to recalibrate.
 
 **R-T: low FPS**
 
-Drop the canvas resolution to **1024×768** in the Master panel — effect
-passes get noticeably cheaper. Disable expensive effects: ASCII, Self
+Drop the canvas resolution to **1024×768** in the Master panel - effect
+passes get noticeably cheaper that way. Disable expensive effects: ASCII, Self
 Displace, Fractal Noise, and Feedback are the heaviest. Close other
-GPU-heavy apps. Check `Audio cb:` is growing normally so audio isn't
+GPU-heavy apps. Check that `Audio cb:` is growing normally, so audio isn't
 starving the loop.
 
 **R-T: Cyrillic file names show as garbage**
 
-This was fixed in 0.2.0 — make sure you are running the latest build. Both
+Fixed in 0.2.0 - make sure you're running the latest build. Both
 `OPENFILENAMEW` (Windows native dialog) and GLFW drag-and-drop deliver
 UTF-8 paths, and the GUI displays them via `fs::u8path`.
 
 **R-T: freeze doesn't actually freeze the image**
 
-Also fixed in 0.2.0 — the GPU upload pump now skips while freeze is on, so
+Also fixed in 0.2.0 - the GPU upload pump now skips while freeze is on, so
 the texture under `last_frame_tex_` no longer drifts.
 
 **R-T: effects feel weak even with Chaos and Master at max**
 
 The intensity model in 0.2.0 applies a sqrt boost to segment intensity and a
-0.25 floor to ensure fired effects are visible. If you're on an older build,
-update. If on 0.2.0+ and still subtle, consider that some effects (Ghost,
-Scanlines, Dither) are intentionally subtle by design — pair with a stronger
-warp (Vortex, Fractal Noise, Self Displace) for a punchier mix.
+0.25 floor to keep fired effects visible. Update if you're on an older build.
+If you're already on 0.2.0+ and it's still subtle, keep in mind some effects
+(Ghost, Scanlines, Dither) are intentionally subtle by design - pair them with
+a stronger warp (Vortex, Fractal Noise, Self Displace) for a punchier mix.
 
 **Offline editor: engine reacts to silence / fires constantly**
 
-The noise gate has not calibrated properly. Click **Recalibrate** and wait
+The noise gate hasn't calibrated properly. Click **Recalibrate** and wait
 2 seconds. If the problem persists, increase **Beat Threshold** in the Cut
 Logic section.
 
 **Offline editor: `Illegal Audio-MPEG-Header` in console**
 
-Benign FFmpeg warning from malformed MP3 headers. The audio is still
-decoded correctly. Safely ignored.
+A benign FFmpeg warning from malformed MP3 headers. The audio still
+decodes correctly. Safe to ignore.
 
 **Offline editor: `Invalid NAL unit size`, `partial file`, `moov atom not found` in console**
 
 Expected and harmless when the **Optical Flow** effect (the historical
 "Datamosh") is enabled: its legacy Final-mode prebake deliberately produces
-a broken H.264 stream with no I-frames — that's the whole point of the
-trick — and OpenCV's bundled ffmpeg honestly reports it
+a broken H.264 stream with no I-frames - that's the whole point of the
+trick - and OpenCV's bundled ffmpeg honestly reports it
 as broken when it reads the file. The program suppresses these warnings
 internally on launch (`OPENCV_FFMPEG_LOGLEVEL=-8`); if you still see them,
 you're on a build older than this fix. Stale `*_dmosh_src.mp4` files left
-behind by an aborted render are also cleaned up before each new render to
-prevent the `moov atom` warning specifically.
+behind by an aborted render also get cleaned up before each new render, to
+prevent that `moov atom` warning specifically.
 
 **Offline editor: video ends before the song does**
 
 Fixed in the latest build. The render now tracks total target frames
 explicitly (`round(target_duration × fps)`), pays back any rounding
 shortfall by padding the tail with the last produced frame, and drops the
-ffmpeg `-shortest` flag (which used to clip the audio under a too-short
-video stream). If you still see the issue, you're running an older
-checkout — pull and re-run.
+ffmpeg `-shortest` flag, which used to clip the audio under a too-short
+video stream. If you still see the issue, you're running an older
+checkout - pull and re-run.
 
 **Offline editor: Beat Snap Tolerance slider doesn't move / always reads 0**
 
 Fixed. The slider was being formatted as an integer (rounded `0.05` → `0`),
-which made it look stuck. Pull the latest build and the slider now displays
+which made it look stuck. Pull the latest build and the slider now shows
 the actual float value.
 
 **Offline editor: ffmpeg crash on render with custom resolution**
 
 `yuv420p` (and ProRes 422) require even width and height. The program now
 silently rounds custom dimensions down to the nearest even number, so
-`1281 × 721` becomes `1280 × 720` automatically. If you're on an older
-build and ffmpeg crashes immediately, type even values directly.
+`1281 × 721` becomes `1280 × 720` automatically. On an older build where
+ffmpeg still crashes immediately, type even values directly instead.
 
 **Offline editor: `madmom` install fails on Python 3.11+**
 
-Use Python 3.10.x exactly. `madmom` requires Cython extensions that do not
+Use Python 3.10.x exactly. `madmom` requires Cython extensions that don't
 build on newer Python versions.
 
 **R-T build: vcpkg can't find `pa_jack.h` on Linux**
 
 The provided `rt_cpp/CMakeLists.txt` adds explicit `jack` and `asound` link
-deps because vcpkg's static portaudio embeds `pa_jack.c` / `pa_alsa.c`
+deps, because vcpkg's static portaudio embeds `pa_jack.c` / `pa_alsa.c`
 without propagating the transitive link requirements. Make sure `libjack-dev`
 and `libasound2-dev` are installed system-wide before configuring.
 

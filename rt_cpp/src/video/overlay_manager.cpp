@@ -16,9 +16,9 @@ void OverlayManager::clear() {
     entries_.clear();
 }
 
-// stb_image's stbi_load() goes through fopen(), which on Windows interprets
-// the path as ANSI - Cyrillic / non-ASCII paths fail to open. Open the file
-// ourselves with the wide-char API and hand the FILE* to stb.
+// stbi_load() внутри дергает fopen(), а тот на Windows трактует путь как ANSI -
+// кириллица и вообще любой non-ASCII путь не открывается. Поэтому открываем
+// файл сами через wide-char API и отдаем stb уже готовый FILE*.
 static FILE* fopen_utf8(const fs::path& p) {
 #ifdef _WIN32
     FILE* fp = nullptr;
@@ -31,9 +31,8 @@ static FILE* fopen_utf8(const fs::path& p) {
 
 void OverlayManager::load_folder(const std::string& folder_path_utf8) {
     clear();
-    // u8path: treat the std::string as UTF-8 (matches how the GUI hands paths
-    // through). Plain fs::path(string) on Windows assumes ANSI and corrupts
-    // Cyrillic.
+    // u8path интерпретирует std::string как UTF-8 (так пути и приходят из GUI).
+    // Обычный fs::path(string) на Windows считает строку ANSI и ломает кириллицу.
     fs::path root = fs::u8path(folder_path_utf8);
     std::error_code ec;
     if (!fs::exists(root, ec) || !fs::is_directory(root, ec)) return;

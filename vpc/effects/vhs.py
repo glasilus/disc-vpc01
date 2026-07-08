@@ -1,16 +1,15 @@
-"""VHS tape simulation — single composite effect.
+"""Симуляция VHS-кассеты - составной эффект.
 
-Designed to *look like* the real artefacts of consumer VHS playback:
-luma stays sharp while chroma smears horizontally, tape grain modulates
-brightness in slow blobs, the bottom of the picture carries head-switch
-noise, and very slight wow-and-flutter shifts the whole picture sideways
-sub-pixel by sub-pixel. None of these layers individually is special;
-the combination is what reads as "VHS" to the eye.
+Собирает вместе артефакты бытового VHS-плеера: яркость остаётся чёткой,
+а цвет смазывается по горизонтали, зерно плёнки медленно колышет
+яркость пятнами, низ кадра забит шумом переключения видеоголовок,
+плюс лёгкий wow-and-flutter сдвигает картинку по горизонтали на
+доли пикселя. По отдельности каждый слой ничего не решает, но вместе
+они и дают узнаваемый "VHS"-вид.
 
-A single master `wear` knob (0..1, exposed through the standard
-intensity slider) scales every layer at once, so the user has one
-control to tune. An optional `dust` boolean adds rare scratch lines on
-top of everything.
+Единый параметр `wear` (0..1, это стандартный слайдер интенсивности)
+масштабирует все слои разом. Опциональный флаг `dust` добавляет редкие
+царапины поверх всего остального.
 """
 from __future__ import annotations
 
@@ -22,11 +21,10 @@ from .base import BaseEffect, _ensure_uint8
 
 
 class VHSTapeEffect(BaseEffect):
-    """Composite VHS-tape look: chroma smear + grain + head-switch +
-    sub-pixel wow + optional dust.
+    """Составной VHS-look: смаз цвета + зерно + head-switch + wow + опциональная пыль.
 
-    The intensity passed in (via `scaled_intensity`) is the master `wear`
-    knob: 0 means pristine source, 1 means heavy generation-loss.
+    Интенсивность (через `scaled_intensity`) - это и есть `wear`:
+    0 - чистый источник, 1 - сильная деградация от перезаписи.
     """
 
     def __init__(self, enabled: bool = True, chance: float = 1.0,
@@ -57,13 +55,14 @@ class VHSTapeEffect(BaseEffect):
 
     # ------------------------------------------------------------------ layers
     def _chroma_smear(self, frame: np.ndarray, wear: float) -> np.ndarray:
-        """Y/C separation + horizontal blur on chroma only.
+        """Разделение Y/C + горизонтальный блюр только по цветности.
 
-        Real VHS bandwidth-limits the chroma carrier far more than luma,
-        so colour smears sideways while edges stay reasonably crisp.
+        У реальной VHS полоса пропускания цветовой поднесущей гораздо уже,
+        чем у яркости, поэтому цвет плывёт по горизонтали, а края остаются
+        относительно чёткими.
         """
         ycc = cv2.cvtColor(frame, cv2.COLOR_RGB2YCrCb)
-        # Kernel width 3..21 px scaling with wear, always odd.
+        # Ширина ядра 3..21 px, растёт с wear, всегда нечётная.
         kw = int(3 + wear * 18) | 1
         cr = cv2.GaussianBlur(ycc[:, :, 1], (kw, 1), 0)
         cb = cv2.GaussianBlur(ycc[:, :, 2], (kw, 1), 0)
@@ -72,9 +71,9 @@ class VHSTapeEffect(BaseEffect):
         return cv2.cvtColor(ycc, cv2.COLOR_YCrCb2RGB)
 
     def _wow_flutter(self, frame: np.ndarray, wear: float) -> np.ndarray:
-        """Sub-pixel horizontal jitter — slow sin component (wow) + fast
-        random component (flutter). Maximum amplitude grows with wear up
-        to ~3 px so the picture visibly breathes sideways but never tears.
+        """Субпиксельное дрожание по горизонтали: медленная синусоида (wow)
+        + быстрый случайный компонент (flutter). Амплитуда растёт с wear
+        до ~3 px, так что картинка заметно "дышит" вбок, но не рвётся.
         """
         amp = wear * 3.0
         if amp < 0.2:
@@ -91,36 +90,37 @@ class VHSTapeEffect(BaseEffect):
                               borderMode=cv2.BORDER_REPLICATE)
 
     def _tape_grain(self, frame: np.ndarray, wear: float) -> np.ndarray:
-        """Low-frequency multiplicative noise on luma — emulates uneven
-        tape coating so the brightness slowly mottles in patches.
+        """Низкочастотный мультипликативный шум по яркости - имитирует
+        неровное магнитное покрытие плёнки, из-за которого яркость
+        медленно "плывёт" пятнами.
         """
         h, w = frame.shape[:2]
-        # Generate noise at 1/8 resolution and bilinearly upsample so the
-        # resulting "blobs" are large and smooth — this reads as analog
-        # tape unevenness, not pixel-level noise.
+        # Генерируем шум в 1/8 разрешения и апсемплим билинейно, чтобы
+        # пятна получились крупными и гладкими - это читается как
+        # неровность плёнки, а не как поэлементный шум.
         nh, nw = max(2, h // 8), max(2, w // 8)
         noise = np.random.rand(nh, nw).astype(np.float32)
         noise = cv2.resize(noise, (w, h), interpolation=cv2.INTER_LINEAR)
-        # Map noise to a multiplier in [1 - amp, 1 + amp]; amp grows with wear.
+        # Множитель в диапазоне [1 - amp, 1 + amp]; amp растёт вместе с wear.
         amp = 0.04 + wear * 0.12
         mult = 1.0 + (noise - 0.5) * 2.0 * amp
         out = frame.astype(np.float32) * mult[..., None]
         return out
 
     def _gen_loss(self, frame: np.ndarray, wear: float) -> np.ndarray:
-        """Generation-loss: mild contrast crush + low-amplitude additive
-        noise. Each VHS dub loses a little headroom and gains a little
-        hash; both are multiplicative in `wear`.
+        """Деградация от перезаписи: лёгкое сжатие контраста + слабый
+        аддитивный шум. Каждая копия VHS теряет немного динамического
+        диапазона и приобретает немного шума; оба эффекта масштабируются `wear`.
         """
         if frame.dtype != np.float32:
             frame = frame.astype(np.float32)
-        # Crush blacks toward 8 and whites toward 240 as wear grows.
+        # Чёрный подтягивается к 8, белый - к 240, по мере роста wear.
         lo = wear * 8.0
         hi = 255.0 - wear * 15.0
         frame = np.clip(frame, lo, hi)
-        # Additive uniform noise, sigma ~ wear * 6. Sample int8
-        # directly (1 byte/cell) instead of float64 from np.random.rand
-        # (8 bytes/cell). At 1080p that's 6 MB/frame instead of 50 MB.
+        # Равномерный шум, sigma ~ wear * 6. Берём int8 напрямую
+        # (1 байт на ячейку) вместо float64 из np.random.rand
+        # (8 байт на ячейку) - на 1080p это 6 МБ/кадр вместо 50 МБ.
         noise_sigma = wear * 6.0
         if noise_sigma > 0.25:
             scale = noise_sigma / 127.0
@@ -130,20 +130,20 @@ class VHSTapeEffect(BaseEffect):
         return frame
 
     def _head_switch(self, frame: np.ndarray, wear: float) -> np.ndarray:
-        """Bottom 6..14 rows become tape-head switching noise — that
-        characteristic torn / blurred / rainbow band at the very bottom
-        of every consumer-VHS playback.
+        """Нижние 6..14 строк превращаются в шум переключения видеоголовок -
+        та самая рваная/размытая/радужная полоса внизу кадра, характерная
+        для любого бытового VHS-плеера.
         """
         h, w = frame.shape[:2]
         band = int(6 + wear * 8)
         if band <= 0 or h - band <= 0:
             return frame
-        # Mix of scrambled noise and a horizontal smear of the row just
-        # above the band — that mixture is what makes a real head-switch
-        # look like "torn picture", not pure white noise.
+        # Смесь хаотичного шума и горизонтального смаза строки прямо над
+        # полосой - именно эта смесь даёт эффект "рваной картинки",
+        # а не просто белый шум.
         smear_src = frame[h - band - 1].astype(np.float32)
         smear = np.tile(smear_src, (band, 1, 1))
-        # Roll each row by a different amount to fake the tearing.
+        # Сдвигаем каждую строку на разную величину, имитируя разрыв.
         for i in range(band):
             roll = (i * 17 + self._t * 3) % w
             smear[i] = np.roll(smear[i], roll, axis=0)
@@ -155,9 +155,8 @@ class VHSTapeEffect(BaseEffect):
         return frame
 
     def _dust(self, frame: np.ndarray, wear: float) -> np.ndarray:
-        """Rare 1-px-wide vertical scratches of slightly translucent dark
-        colour — only drawn when the dust checkbox is on and wear is
-        non-trivial.
+        """Редкие вертикальные царапины шириной 1px, полупрозрачные тёмные -
+        рисуются только когда включена галка dust и wear заметный.
         """
         h, w = frame.shape[:2]
         n = int(wear * 3) + 1

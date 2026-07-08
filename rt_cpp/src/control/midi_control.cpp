@@ -1,25 +1,27 @@
-// midi_control.cpp - hardware MIDI mapping (knobs -> params, pads -> actions)
-// with runtime MIDI-Learn and JSON persistence.
+// midi_control.cpp - маппинг аппаратного MIDI (ручки -> параметры, пэды ->
+// действия) с рантайм MIDI-Learn и сохранением в JSON.
 //
-// Dependency: RtMidi (vcpkg package: `rtmidi`). CMake integration (done in a
-// separate step - do NOT duplicate here):
+// Зависимость: RtMidi (vcpkg-пакет `rtmidi`). Интеграция с CMake настроена
+// отдельно:
 //     find_package(unofficial-rtmidi CONFIG REQUIRED)
 //     target_link_libraries(<app_target> PRIVATE unofficial::rtmidi::rtmidi)
-// JSON persistence uses nlohmann/json, already a project dependency.
+// Для JSON используется nlohmann/json, он уже есть в зависимостях проекта.
 //
-// Design notes:
-//   * Polling model only - the app calls poll() once per render frame. RtMidi
-//     queues incoming messages internally (queue size set below); we drain the
-//     queue each frame. No callbacks, no threads, no locks.
-//   * Every RtMidi call is wrapped in try/catch - RtMidi throws RtMidiError
-//     (e.g. no backend compiled in, device unplugged mid-session). A missing
-//     device must never crash the app; failed calls degrade to no-ops.
+// Заметки по устройству:
+//   * Только модель поллинга - приложение вызывает poll() раз за кадр рендера.
+//     RtMidi сам копит входящие сообщения в очередь (размер задан ниже),
+//     мы вычерпываем её каждый кадр. Ни callback'ов, ни потоков, ни локов.
+//   * Каждый вызов RtMidi обёрнут в try/catch - RtMidi бросает RtMidiError
+//     (нет скомпилированного бэкенда, устройство отключили посреди сессии).
+//     Отсутствие устройства не должно ронять приложение; неудачные вызовы
+//     превращаются в no-op.
 
 #include "midi_control.h"
 
-// RtMidi's header location varies by distribution: vcpkg installs it under
-// <rtmidi/RtMidi.h> (the package's include dir is the root `include`), while a
-// system/pkg-config install typically exposes it as <RtMidi.h>. Probe both.
+// Путь до заголовка RtMidi отличается в зависимости от дистрибуции: vcpkg
+// ставит его как <rtmidi/RtMidi.h> (include-каталог пакета - корневой
+// `include`), а системная/pkg-config установка обычно даёт <RtMidi.h>.
+// Проверяем оба варианта.
 #if __has_include(<rtmidi/RtMidi.h>)
 #  include <rtmidi/RtMidi.h>
 #elif __has_include(<RtMidi.h>)
@@ -34,14 +36,15 @@
 
 namespace {
 
-// RtMidi's queue holds messages between poll() calls. A frame at 60 fps is
-// ~16 ms; a fast knob twist emits well under 100 CCs in that window, so 1024
-// gives a huge safety margin without meaningful memory cost.
+// Очередь RtMidi держит сообщения между вызовами poll(). Кадр на 60 fps - это
+// ~16 мс; даже быстрое вращение ручки даёт заметно меньше 100 CC за это время,
+// так что 1024 - большой запас без ощутимой цены по памяти.
 constexpr unsigned int kQueueSize = 1024;
 
-// Silence RtMidi's default behavior of printing warnings to std::cerr
-// (e.g. transient port glitches). Errors we care about surface as thrown
-// RtMidiError from the calls we wrap. Stateless - safe with many instances.
+// Отключаем стандартное поведение RtMidi печатать предупреждения в std::cerr
+// (например, при кратковременных глюках порта). Ошибки, которые нас волнуют,
+// приходят как брошенный RtMidiError из обёрнутых вызовов. Без состояния -
+// безопасно при нескольких экземплярах.
 void rtmidi_silent_error_cb(RtMidiError::Type /*type*/,
                             const std::string& /*text*/,
                             void* /*user*/) {}
@@ -50,17 +53,18 @@ void rtmidi_silent_error_cb(RtMidiError::Type /*type*/,
 
 MidiControl::MidiControl() = default;
 
-// Out-of-line dtor required: unique_ptr<RtMidiIn> with fwd-declared type.
+// Деструктор вынесен из класса: unique_ptr<RtMidiIn> с forward-declared типом
+// иначе не скомпилируется в заголовке.
 MidiControl::~MidiControl() {
     close();
 }
 
 // ---------------------------------------------------------------------------
-// Device / port management
+// Управление устройством / портом
 // ---------------------------------------------------------------------------
 
 bool MidiControl::init(int port_index) {
-    close();  // "safe to call again to reopen"
+    close();  // можно вызывать повторно, чтобы переоткрыть
     try {
         auto in = std::make_unique<RtMidiIn>(RtMidi::UNSPECIFIED,
                                              "Disc VPC 01 RT", kQueueSize);
@@ -69,21 +73,21 @@ bool MidiControl::init(int port_index) {
         const unsigned int count = in->getPortCount();
         if (count == 0 || port_index < 0 ||
             static_cast<unsigned int>(port_index) >= count) {
-            return false;  // no device / bad index - stay closed, no throw
+            return false;  // нет устройства / неверный индекс - остаёмся закрытыми, без исключений
         }
 
         in->openPort(static_cast<unsigned int>(port_index), "Disc VPC 01 RT In");
-        // Ignore SysEx, MIDI timing clock and active sensing - we only want
-        // channel voice messages (CC / notes); clock alone can be 24 msgs/beat.
+        // Игнорируем SysEx, MIDI timing clock и active sensing - нужны только
+        // channel voice messages (CC / ноты); один clock может давать 24 сообщения на бит.
         in->ignoreTypes(true, true, true);
 
         midi_in_      = std::move(in);
         current_port_ = port_index;
         return true;
     } catch (const RtMidiError&) {
-        // No backend compiled in / driver failure - module stays inert.
+        // Не скомпилирован бэкенд / сбой драйвера - модуль остаётся неактивным.
     } catch (...) {
-        // Never let anything escape a public method.
+        // Публичный метод не должен пропускать исключения наружу.
     }
     midi_in_.reset();
     current_port_ = -1;
@@ -104,7 +108,7 @@ void MidiControl::close() {
         try {
             midi_in_->closePort();
         } catch (...) {
-            // Ignore - we're tearing down anyway.
+            // Игнорируем - мы всё равно разрушаем объект.
         }
         midi_in_.reset();
     }
@@ -114,8 +118,8 @@ void MidiControl::close() {
 std::vector<std::string> MidiControl::list_ports() const {
     std::vector<std::string> names;
     try {
-        // Use the open instance if we have one; otherwise probe with a
-        // temporary (constructing RtMidiIn throws if no backend exists).
+        // Используем уже открытый инстанс, если есть; иначе пробуем через
+        // временный объект (конструктор RtMidiIn бросает, если нет бэкенда).
         std::unique_ptr<RtMidiIn> probe;
         RtMidiIn* in = midi_in_.get();
         if (!in) {
@@ -134,7 +138,7 @@ std::vector<std::string> MidiControl::list_ports() const {
             }
         }
     } catch (...) {
-        names.clear();  // no backend - empty list, caller shows "no devices"
+        names.clear();  // нет бэкенда - пустой список, вызывающий код покажет "нет устройств"
     }
     return names;
 }
@@ -144,14 +148,15 @@ int MidiControl::current_port() const {
 }
 
 // ---------------------------------------------------------------------------
-// Registration + pending-binding reconciliation
+// Регистрация + разбор отложенных привязок
 // ---------------------------------------------------------------------------
 
-// Reconciliation: load() may run before the app registers its controls (or a
-// preset may reference controls of a plugin loaded later). Such bindings park
-// in pending_; the moment the matching name registers *with the matching
-// type*, the binding becomes active. Type must match so that a saved CC
-// binding never fires a same-named action (and vice versa).
+// Разбор: load() может выполниться до того, как приложение зарегистрирует
+// свои контролы (или пресет ссылается на контролы плагина, который загрузится
+// позже). Такие привязки паркуются в pending_; как только совпадающее имя
+// регистрируется *с совпадающим типом*, привязка становится активной. Тип
+// обязателен: иначе сохранённая CC-привязка могла бы сработать на action
+// с тем же именем, и наоборот.
 void MidiControl::reconcile_pending(const std::string& name, BindType expected_type) {
     auto it = pending_.find(name);
     if (it != pending_.end() && it->second.type == expected_type) {
@@ -163,8 +168,8 @@ void MidiControl::reconcile_pending(const std::string& name, BindType expected_t
 void MidiControl::register_param(const std::string& name,
                                  std::function<void(float)> on_value) {
     if (name.empty()) return;
-    // Idempotent by name: re-registering replaces the callback only; any
-    // existing binding for `name` is untouched.
+    // Идемпотентно по имени: повторная регистрация меняет только callback,
+    // существующая привязка для `name` не трогается.
     params_[name] = std::move(on_value);
     reconcile_pending(name, BindType::CC);
 }
@@ -177,13 +182,14 @@ void MidiControl::register_action(const std::string& name,
 }
 
 // ---------------------------------------------------------------------------
-// MIDI-Learn state machine
+// Машина состояний MIDI-Learn
 // ---------------------------------------------------------------------------
-// States: None -> Param(name) or Action(name) via begin_learn_*; back to None
-// when (a) the first matching message arrives (CC for Param, Note-On for
-// Action - the message is *consumed*, i.e. binds but does not fire any
-// callback), (b) begin_learn_*("") cancels, or (c) begin_learn_* is called
-// with another name (rebind: the newer request simply wins).
+// Состояния: None -> Param(name) или Action(name) через begin_learn_*;
+// обратно в None, когда (a) приходит первое подходящее сообщение (CC для
+// Param, Note-On для Action - сообщение *поглощается*, то есть привязывается,
+// но не вызывает callback), (b) begin_learn_*("") отменяет обучение, или
+// (c) begin_learn_* вызван с другим именем (перепривязка: побеждает
+// последний запрос).
 
 void MidiControl::begin_learn_param(const std::string& name) {
     if (name.empty()) {
@@ -219,7 +225,7 @@ std::string MidiControl::learning_target() const {
 }
 
 std::string MidiControl::label_for(const Binding& b) {
-    // 1-based channel for humans, matching most controller manuals.
+    // Канал 1-based - так удобнее людям, совпадает с большинством мануалов контроллеров.
     const std::string ch = " ch" + std::to_string(b.channel + 1);
     if (b.type == BindType::CC)
         return "CC " + std::to_string(b.number) + ch;
@@ -229,22 +235,22 @@ std::string MidiControl::label_for(const Binding& b) {
 std::string MidiControl::binding_label(const std::string& name) const {
     auto it = bindings_.find(name);
     if (it != bindings_.end()) return label_for(it->second);
-    // A loaded-but-not-yet-registered binding is still worth showing in UI.
+    // Привязку, загруженную, но ещё не зарегистрированную, всё равно стоит показать в UI.
     it = pending_.find(name);
     if (it != pending_.end()) return label_for(it->second);
     return "-";
 }
 
 // ---------------------------------------------------------------------------
-// Message pump + dispatch
+// Разбор сообщений + диспетчеризация
 // ---------------------------------------------------------------------------
 
 void MidiControl::poll() {
     if (!midi_in_) return;
     try {
         std::vector<unsigned char> msg;
-        // Drain everything queued since last frame. getMessage returns an
-        // empty vector when the queue is empty.
+        // Вычерпываем всё, что накопилось с прошлого кадра. getMessage
+        // возвращает пустой вектор, когда очередь пуста.
         for (;;) {
             msg.clear();
             midi_in_->getMessage(&msg);
@@ -252,18 +258,19 @@ void MidiControl::poll() {
             handle_message(msg);
         }
     } catch (const RtMidiError&) {
-        // Device likely vanished mid-session (unplugged). Drop to closed
-        // state; the app can re-init from the device dropdown.
+        // Устройство, скорее всего, пропало посреди сессии (отключили).
+        // Переходим в закрытое состояние; переоткрыть можно из дропдауна устройств.
         close();
     } catch (...) {
-        // Never propagate - a user callback misbehaving must not kill poll's
-        // caller (the render loop). Remaining queue is retried next frame.
+        // Не пробрасываем дальше - сломанный пользовательский callback не
+        // должен убивать вызывающего poll() (render loop). Остаток очереди
+        // разберём на следующем кадре.
     }
 }
 
 void MidiControl::handle_message(const std::vector<unsigned char>& msg) {
-    // Channel voice messages we care about are exactly 3 bytes; anything
-    // shorter (or a system message >= 0xF0) is ignored as malformed/irrelevant.
+    // Интересующие нас channel voice messages всегда 3 байта; всё короче
+    // (или системное сообщение >= 0xF0) игнорируем как мусор/нерелевантное.
     if (msg.size() < 3) return;
     const unsigned char status = msg[0];
     if (status >= 0xF0) return;
@@ -274,8 +281,9 @@ void MidiControl::handle_message(const std::vector<unsigned char>& msg) {
     const int value   = msg[2] & 0x7F;
 
     if (type == 0xB0) {  // Control Change
-        // Learn consumes the first CC entirely: bind, exit learn, do NOT fire
-        // the callback for this message (constraint: learn must not trigger).
+        // Learn полностью поглощает первый CC: привязывает, выходит из
+        // режима обучения, но НЕ вызывает callback на это сообщение
+        // (обучение не должно ничего триггерить).
         if (learn_mode_ == LearnMode::Param) {
             bindings_[learn_target_] = { BindType::CC, channel, number };
             pending_.erase(learn_target_);  // fresh learn supersedes stale disk state
@@ -284,8 +292,8 @@ void MidiControl::handle_message(const std::vector<unsigned char>& msg) {
             return;
         }
         const float norm = static_cast<float>(value) / 127.0f;
-        // Collect matching callbacks first, invoke after: a callback may call
-        // register_*/begin_learn_* and mutate the maps we'd be iterating.
+        // Сначала собираем подходящие callback'и, вызываем после: callback
+        // может дёрнуть register_*/begin_learn_* и поменять карты, по которым мы итерируемся.
         std::vector<std::function<void(float)>> to_fire;
         for (const auto& [name, bind] : bindings_) {
             if (bind.type != BindType::CC) continue;
@@ -295,7 +303,7 @@ void MidiControl::handle_message(const std::vector<unsigned char>& msg) {
         }
         for (auto& fn : to_fire) fn(norm);
     } else if (type == 0x90) {  // Note-On
-        // Velocity 0 is Note-Off in disguise (running status) - never triggers.
+        // Velocity 0 - это замаскированный Note-Off (running status), никогда не триггерит.
         if (value == 0) return;
         if (learn_mode_ == LearnMode::Action) {
             bindings_[learn_target_] = { BindType::Note, channel, number };
@@ -313,11 +321,11 @@ void MidiControl::handle_message(const std::vector<unsigned char>& msg) {
         }
         for (auto& fn : to_fire) fn();
     }
-    // 0x80 (Note-Off) and everything else: intentionally ignored.
+    // 0x80 (Note-Off) и всё остальное сознательно игнорируется.
 }
 
 // ---------------------------------------------------------------------------
-// Persistence - name -> { type, channel (1-based), number }
+// Персистентность - name -> { type, channel (1-based), number }
 // ---------------------------------------------------------------------------
 
 bool MidiControl::save(const std::string& path) const {
@@ -327,19 +335,19 @@ bool MidiControl::save(const std::string& path) const {
             for (const auto& [name, bind] : src) {
                 b[name] = {
                     { "type",    bind.type == BindType::CC ? "cc" : "note" },
-                    { "channel", bind.channel + 1 },  // 1-based on disk (human-editable)
+                    { "channel", bind.channel + 1 },  // на диске 1-based (для ручного редактирования)
                     { "number",  bind.number },
                 };
             }
         };
         dump(bindings_);
-        dump(pending_);  // don't lose not-yet-registered bindings on round-trip
+        dump(pending_);  // не теряем ещё не зарегистрированные привязки при сохранении
 
         nlohmann::json j;
         j["bindings"] = std::move(b);
 
-        // u8path: MSVC's narrow ofstream uses the ANSI codepage, which breaks
-        // on non-ASCII paths (e.g. C:\Users\Майя). Route through fs::path.
+        // u8path: узкий ofstream у MSVC работает через ANSI-кодовую страницу,
+        // что ломается на не-ASCII путях (например, C:\Users\Майя). Идём через fs::path.
         std::ofstream f(std::filesystem::u8path(path),
                         std::ios::out | std::ios::trunc);
         if (!f) return false;
@@ -370,16 +378,16 @@ bool MidiControl::load(const std::string& path) {
             BindType type;
             if      (type_s == "cc")   type = BindType::CC;
             else if (type_s == "note") type = BindType::Note;
-            else continue;  // unknown type - skip, don't fail the whole file
+            else continue;  // неизвестный тип - пропускаем запись, весь файл не валим
 
-            const int channel = entry.value("channel", 1) - 1;  // disk is 1-based
+            const int channel = entry.value("channel", 1) - 1;  // на диске 1-based
             const int number  = entry.value("number", -1);
             if (channel < 0 || channel > 15) continue;
             if (number  < 0 || number  > 127) continue;
 
             const Binding bind{ type, channel, number };
-            // Reconcile now if the name is already registered with a matching
-            // type; otherwise park in pending_ until register_* claims it.
+            // Если имя уже зарегистрировано с подходящим типом - привязываем
+            // сразу; иначе паркуем в pending_ до вызова register_*.
             const bool registered =
                 (type == BindType::CC   && params_.count(name)  != 0) ||
                 (type == BindType::Note && actions_.count(name) != 0);

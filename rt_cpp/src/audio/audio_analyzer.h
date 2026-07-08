@@ -6,28 +6,28 @@
 #include <string>
 #include <atomic>
 
-// Audio-callback buffer request. Kept small for low latency; the callback
-// tolerates ANY frame count the driver actually delivers (WASAPI shared mode
-// commonly hands over ~448-480 frames regardless of this request).
+// Запрашиваемый размер буфера в audio-callback. Маленький ради низкой задержки;
+// сам callback спокойно принимает ЛЮБОЕ число фреймов, которое реально отдаёт
+// драйвер (WASAPI shared mode обычно шлёт ~448-480 фреймов независимо от запроса).
 static constexpr int   kChunkSize   = 256;
-static constexpr int   kSampleRateDefault = 48000;  // request; actual stored per-stream
+static constexpr int   kSampleRateDefault = 48000;  // запрос; реальный sample rate хранится отдельно на поток
 
-// FFT is DECOUPLED from the callback buffer: incoming samples feed a sliding
-// window of kFftSize and analysis runs every kHopSize new samples. This fixes
-// two things vs. the old "FFT the raw 256-sample callback" design:
-//   • bass resolution: 1024 @ 48k ⇒ ~47 Hz/bin (was ~187 Hz/bin - bass was 1 bin)
-//   • no sample loss: stereo callbacks are fully downmixed, not truncated.
+// FFT НЕ привязан к размеру буфера callback'а: входящие сэмплы копятся в
+// скользящее окно kFftSize, анализ запускается каждые kHopSize новых сэмплов.
+// Так решены две проблемы старого варианта ("FFT прямо по 256-сэмпловому callback'у"):
+//   - разрешение по басам: 1024 @ 48k => ~47 Гц/bin (было ~187 Гц/bin, бас укладывался в 1 bin)
+//   - нет потери сэмплов: стерео-callback полностью даунмиксится, а не обрезается.
 static constexpr int   kFftSize     = 1024;
-static constexpr int   kHopSize     = 256;   // analyze every 256 new samples
-static constexpr int   kCalibChunks = 256;   // ~1.4s of analysis frames
+static constexpr int   kHopSize     = 256;   // анализ каждые 256 новых сэмплов
+static constexpr int   kCalibChunks = 256;   // ~1.4с кадров анализа для калибровки
 static constexpr int   kTrendWindow = 10;
 static constexpr float kBeatCooldownMs = 80.f;
 
 struct AudioDevice {
     int         index = -1;
-    std::string name;          // UTF-8, may include "[API]" prefix
+    std::string name;          // UTF-8, может содержать префикс "[API]"
     std::string host_api;      // "WASAPI" / "MME" / "CoreAudio" / "ALSA" ...
-    int         host_api_type = 0;  // PaHostApiTypeId value
+    int         host_api_type = 0;  // значение PaHostApiTypeId
     bool        is_loopback = false;
 };
 
@@ -41,18 +41,18 @@ public:
     void   stop();
     bool   is_running() const { return running_.load(); }
 
-    // Default WASAPI (or platform-appropriate) input device index, or -1.
+    // Индекс дефолтного input-устройства WASAPI (или подходящего для платформы), либо -1.
     int    default_input_device();
     int    sample_rate() const { return sample_rate_; }
-    // Number of audio callbacks since stream started - should grow rapidly
-    // while the stream runs. If it stays at 0 the device is open but the
-    // OS isn't delivering samples (typical for misconfigured WASAPI loopback).
+    // Счётчик audio-callback'ов с момента старта потока - должен быстро расти,
+    // пока поток жив. Если стоит на 0, устройство открыто, но ОС не отдаёт
+    // сэмплы (типичный симптом неправильно настроенного WASAPI loopback).
     uint32_t callback_count() const { return callback_count_.load(); }
 
-    // Read latest stats (lock-free, safe from render thread)
+    // Чтение последней статистики (lock-free, безопасно из render-потока)
     AudioStats get_stats() const { return atomic_stats_.read(); }
 
-    // Gate threshold - can be adjusted from GUI
+    // Порог гейта - можно менять из GUI
     void  set_threshold_scale(float s) { threshold_scale_.store(s); }
     float get_gate()   const { return gate_.load(); }
     float get_rms_mean() const;
@@ -64,39 +64,39 @@ private:
                            PaStreamCallbackFlags flags,
                            void* user_data);
 
-    // Feed arbitrary-length mono samples from the callback into the sliding
-    // window; runs analyze_window() once per completed hop.
+    // Принимает моно-сэмплы произвольной длины из callback'а и кладёт их в
+    // скользящее окно; запускает analyze_window() на каждый завершённый hop.
     void ingest(const float* mono, unsigned long n);
     void analyze_window();
 
     PaStream*             stream_    = nullptr;
     std::atomic<bool>     running_   = false;
 
-    // FFTW (sized kFftSize)
+    // FFTW (размер kFftSize)
     float*        fft_in_  = nullptr;
     fftwf_complex* fft_out_ = nullptr;
     fftwf_plan    fft_plan_ = nullptr;
 
-    // Sliding analysis window (audio-thread only).
-    float   win_ring_[kFftSize] = {};   // ring holding the last kFftSize samples
-    int     ring_pos_           = 0;    // next write position in the ring
-    int     samples_since_hop_  = 0;    // new samples since last analyze_window()
-    bool    ring_primed_        = false;// true once kFftSize samples seen
-    float   hann_[kFftSize]     = {};   // precomputed Hann window
+    // Скользящее окно анализа (используется только в audio-потоке).
+    float   win_ring_[kFftSize] = {};   // кольцевой буфер последних kFftSize сэмплов
+    int     ring_pos_           = 0;    // следующая позиция записи в кольце
+    int     samples_since_hop_  = 0;    // новых сэмплов с последнего analyze_window()
+    bool    ring_primed_        = false;// true после того, как накопилось kFftSize сэмплов
+    float   hann_[kFftSize]     = {};   // предвычисленное окно Ханна
 
-    // Spectral-flux onset/beat detection state.
+    // Состояние детектора битов по spectral flux.
     float   prev_mag_[kFftSize/2 + 1] = {};
-    float   flux_mean_ = 0.f;           // adaptive threshold baseline
+    float   flux_mean_ = 0.f;           // база для адаптивного порога
     float   flux_std_  = 0.f;
 
-    // Per-band AGC for normalized visualizer spectrum (0..1).
+    // Поканальный AGC для нормализованного спектра визуализатора (0..1).
     float   bin_max_[kVizBins] = {};
     float   level_max_ = 1e-4f;
 
-    // Audio stats (written in callback, read in render thread)
+    // Статистика аудио (пишется в callback, читается в render-потоке)
     mutable AtomicAudioStats atomic_stats_;
 
-    // Internal state (only written in audio callback - no lock needed)
+    // Внутреннее состояние (пишется только в audio callback - лок не нужен)
     float rms_smooth_   = 0.f;
     float rms_mean_     = 0.f;
     float flat_mean_    = 0.f;
@@ -106,21 +106,21 @@ private:
     std::atomic<float> gate_{0.005f};
     std::atomic<float> threshold_scale_{1.0f};
 
-    // Beat detection
+    // Детекция битов
     float   beat_last_time_ms_ = 0.f;
     float   elapsed_ms_        = 0.f;
 
-    // Trend slope
+    // Тренд (наклон)
     float   rms_history_[kTrendWindow] = {};
     int     rms_hist_idx_              = 0;
     int     rms_hist_count_            = 0;
 
-    // Actual sample rate granted by PortAudio (may differ from requested).
+    // Реальный sample rate, выданный PortAudio (может отличаться от запрошенного).
     int     sample_rate_   = kSampleRateDefault;
     int     channel_count_ = 1;
     std::atomic<uint32_t> callback_count_{0};
 
-    // Calibration buffer
+    // Буфер калибровки
     float   cal_buf_[kCalibChunks] = {};
     int     cal_idx_               = 0;
 };

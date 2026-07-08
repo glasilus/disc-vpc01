@@ -1,14 +1,15 @@
-"""ImageCapture: a still image that quacks like a cv2.VideoCapture.
+"""ImageCapture: статичное изображение, притворяющееся cv2.VideoCapture.
 
-The render engine and VideoPool touch a source only through a narrow slice of
-the cv2.VideoCapture interface (get/set/read/grab/retrieve/isOpened/release).
-ImageCapture implements exactly that slice over one decoded image, so a photo
-can join the source pool as a frozen "clip" with no changes to the engine.
+Render engine и VideoPool трогают источник только через узкий срез интерфейса
+cv2.VideoCapture (get/set/read/grab/retrieve/isOpened/release). ImageCapture
+реализует ровно этот срез поверх одной декодированной картинки, так что фото
+может попасть в пул источников как замороженный "клип" без изменений движка.
 
-Key property: read()/grab() NEVER report end-of-stream — a still is infinitely
-readable, so no render loop is ever truncated by a photo's reported length.
-Its reported length (fps / frame count) is a small nominal value, used only so
-`max(durations)` and any UI stay sane; it is decoupled from readability.
+Важное свойство: read()/grab() НИКОГДА не сообщают о конце потока - картинка
+читается бесконечно, поэтому её "длительность" никогда не обрежет цикл рендера.
+Заявленная длительность (fps / frame count) - небольшое номинальное значение,
+нужное только чтобы `max(durations)` и UI не сходили с ума; на читаемость оно
+не влияет.
 """
 from __future__ import annotations
 
@@ -17,20 +18,21 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
-# Nominal "clip" the still reports itself as. Cosmetic only — read()/grab()
-# ignore position and never EOF, so these never bound the render.
+# Номинальный "клип", которым представляется картинка. Чисто косметика -
+# read()/grab() игнорируют позицию и никогда не отдают EOF, так что на
+# рендер эти числа не влияют.
 NOMINAL_FPS = 24.0
 NOMINAL_DURATION = 3.0
 NOMINAL_FRAME_COUNT = int(NOMINAL_FPS * NOMINAL_DURATION)  # 72
 
 
 def imread_unicode(path: str) -> Optional[np.ndarray]:
-    """Read an image to a BGR array, tolerant of non-ASCII paths.
+    """Читает изображение в BGR-массив, независимо от юникода в пути.
 
-    `cv2.imread` cannot open Unicode paths on Windows (it uses an ANSI file
-    API), which would break every photo under a Cyrillic/accented home
-    directory. Reading the bytes with numpy and decoding in memory sidesteps
-    that entirely. Returns None on any read/decode failure.
+    `cv2.imread` не открывает юникодные пути на Windows (использует ANSI file
+    API), из-за чего ломается любое фото из-под кириллической домашней папки.
+    Чтение байтов через numpy и декодирование в памяти обходит эту проблему.
+    Возвращает None при любой ошибке чтения/декодирования.
     """
     try:
         data = np.fromfile(path, dtype=np.uint8)
@@ -42,18 +44,18 @@ def imread_unicode(path: str) -> Optional[np.ndarray]:
 
 
 class ImageCapture:
-    """Duck-typed cv2.VideoCapture over a single still image (BGR)."""
+    """Duck-typing cv2.VideoCapture поверх одной статичной картинки (BGR)."""
 
     def __init__(self, path: str):
         img = imread_unicode(path)
         if img is None:
             raise RuntimeError(f'Cannot open image: {path}')
-        self._frame = img                    # BGR, matching VideoCapture.read()
+        self._frame = img                    # BGR, как у VideoCapture.read()
         self._h, self._w = img.shape[:2]
         self._pos = 0
         self._opened = True
 
-    # ── VideoCapture-compatible surface ──────────────────────────────────
+    # -- совместимый с VideoCapture интерфейс -----------------------------
     def isOpened(self) -> bool:
         return self._opened
 
@@ -71,8 +73,8 @@ class ImageCapture:
         return 0.0
 
     def set(self, prop: int, value: float) -> bool:
-        # Position is meaningless for a still, but honour the contract so the
-        # engine's cap.set(POS_FRAMES, ...) calls are no-ops rather than errors.
+        # Позиция для статичной картинки не имеет смысла, но контракт нужно
+        # соблюсти - иначе cap.set(POS_FRAMES, ...) в движке будет падать.
         if prop == cv2.CAP_PROP_POS_FRAMES:
             self._pos = int(value)
         return True
@@ -81,7 +83,7 @@ class ImageCapture:
         if not self._opened:
             return False, None
         self._pos += 1
-        return True, self._frame            # engine's next cvtColor allocates a copy
+        return True, self._frame            # следующий cvtColor в движке сам сделает копию
 
     def grab(self) -> bool:
         if not self._opened:

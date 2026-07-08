@@ -13,22 +13,22 @@ namespace Log {
 static FILE* g_file = nullptr;
 
 #if defined(_WIN32)
-// Re-open stderr & stdout to the log file. After this, every fprintf(stderr,...)
-// call in the program goes into vpc01rt.log automatically - no need to touch
-// existing call sites.
+// Переоткрываем stderr и stdout на файл лога. После этого каждый существующий
+// вызов fprintf(stderr,...) в программе автоматически пишет в vpc01rt.log -
+// сами места вызова трогать не нужно.
 static void redirect_streams_to_file(const char* path) {
     FILE* f = nullptr;
     if (freopen_s(&f, path, "w", stderr) == 0 && f) {
         setvbuf(f, nullptr, _IONBF, 0);
         g_file = f;
     }
-    // Mirror stdout into the same file. _dup2 connects fd1 → fd0.
+    // Дублируем stdout в тот же файл.
     FILE* fo = nullptr;
     freopen_s(&fo, path, "a", stdout);
     if (fo) setvbuf(fo, nullptr, _IONBF, 0);
 }
 
-// SEH handler - writes crash address into the log so users can send it to us.
+// SEH-хендлер - пишет адрес краша в лог, чтобы было что прислать для разбора.
 static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep) {
     if (g_file && ep && ep->ExceptionRecord) {
         fprintf(g_file,
@@ -37,7 +37,7 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep) {
                 ep->ExceptionRecord->ExceptionAddress);
         fflush(g_file);
     }
-    return EXCEPTION_CONTINUE_SEARCH;  // let Windows show its dialog
+    return EXCEPTION_CONTINUE_SEARCH;  // пусть Windows дальше сама покажет диалог
 }
 #endif
 
@@ -55,7 +55,7 @@ void init() {
 
 void shutdown() {
     if (g_file) { std::fflush(g_file); }
-    // Don't fclose - that would also close stderr's underlying handle.
+    // Не вызываем fclose - это заодно закрыло бы хендл, на который смотрит stderr.
 }
 
 } // namespace Log

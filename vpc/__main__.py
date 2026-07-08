@@ -1,17 +1,17 @@
-"""Entry point for `python -m vpc`.
+"""Точка входа для `python -m vpc`.
 
-Runs the Tk GUI. The same module powers `python -m vpc.gui` directly via
-the `if __name__ == '__main__'` block in `vpc/gui.py`.
+Запускает Tk GUI. Тот же модуль работает и при прямом `python -m vpc.gui`
+через блок `if __name__ == '__main__'` в `vpc/gui.py`.
 """
 import sys as _sys
 import subprocess as _subprocess
 
-# PyInstaller --splash injects a `pyi_splash` module at runtime that the
-# bootloader uses to keep a splash window alive while the onefile bundle
-# extracts and Python imports finish. On a cold start this can be 1–5
-# minutes for our build (librosa/numba/scipy/llvmlite tree). Without the
-# splash, users assume the program hung. Soft import — outside a frozen
-# build the module doesn't exist.
+# PyInstaller --splash подмешивает модуль `pyi_splash` в рантайме, чтобы
+# держать окно сплэша открытым, пока onefile-бандл распаковывается и
+# импорты Python завершаются. На холодном старте это может занимать 1-5
+# минут (дерево librosa/numba/scipy/llvmlite). Без сплэша пользователи
+# решат, что программа зависла. Импорт мягкий - вне собранного билда
+# модуля просто нет.
 try:
     import pyi_splash as _pyi_splash  # type: ignore
 except Exception:
@@ -23,11 +23,11 @@ if _pyi_splash is not None:
     except Exception:
         pass
 
-# On Windows, every subprocess.Popen (and subprocess.run, which uses it
-# internally) flashes a black console window unless we explicitly suppress
-# it via creationflags + STARTUPINFO. We shell out to ffmpeg from several
-# call sites; patching Popen once here covers all of them, including any
-# that third-party libs may add later.
+# На Windows любой subprocess.Popen (и subprocess.run, который использует
+# его внутри) мелькает чёрным окном консоли, если явно не подавить это
+# через creationflags + STARTUPINFO. ffmpeg запускается из нескольких мест
+# в коде; патч Popen в одном месте закрывает все случаи разом, включая
+# те, что могут добавить сторонние библиотеки.
 if _sys.platform == 'win32':
     _orig_popen_init = _subprocess.Popen.__init__
 
@@ -43,15 +43,15 @@ if _sys.platform == 'win32':
     _subprocess.Popen.__init__ = _silent_popen_init
 
 def _write_crash_log(exc: BaseException) -> str:
-    """Dump full traceback to a `crash.log` file next to the executable.
+    """Сбрасывает полный traceback в файл `crash.log` рядом с exe.
 
-    The PyInstaller bootloader's "Unhandled exception" dialog only shows
-    the first few lines of the message — useless for diagnosing import
-    failures (numpy C-ext, PIL, etc.) where the real cause is several
-    frames deep. Writing the traceback to a sibling file gives the user
-    something to actually send back.
+    Диалог "Unhandled exception" от бутлоадера PyInstaller показывает
+    только первые несколько строк сообщения - бесполезно для диагностики
+    сбоев импорта (numpy C-ext, PIL и т.п.), где настоящая причина лежит
+    на несколько кадров глубже. Запись traceback в соседний файл даёт
+    пользователю что-то реальное для отправки в баг-репорт.
 
-    Returns the path written (or an empty string if everything failed).
+    Возвращает путь к записанному файлу (или пустую строку, если не вышло).
     """
     import os as _os
     import traceback as _tb
@@ -60,7 +60,7 @@ def _write_crash_log(exc: BaseException) -> str:
     target = _os.path.join(base, 'crash.log')
     try:
         with open(target, 'w', encoding='utf-8') as f:
-            f.write('Disc VPC 01 — startup crash\n')
+            f.write('Disc VPC 01 - startup crash\n')
             f.write(f'Python: {_sys.version}\n')
             f.write(f'Executable: {_sys.executable}\n')
             f.write(f'Frozen: {getattr(_sys, "frozen", False)}\n')
@@ -73,11 +73,11 @@ def _write_crash_log(exc: BaseException) -> str:
         return ''
 
 
-# Late imports are wrapped: a failure here (numpy C-ext, missing DLL,
-# corrupt bundle, non-ASCII path collision) used to surface as the
-# bootloader's generic "Failed to execute script" dialog with no
-# actionable detail. Now we write the full traceback to crash.log AND
-# rethrow, so the dialog still pops but the real cause is on disk.
+# Поздние импорты обёрнуты: раньше сбой здесь (numpy C-ext, отсутствующая
+# DLL, битый бандл, коллизия non-ASCII путей) всплывал как общий диалог
+# бутлоадера "Failed to execute script" без каких-либо деталей. Теперь
+# полный traceback пишется в crash.log и исключение перебрасывается дальше,
+# так что диалог всё ещё появляется, но настоящая причина лежит на диске.
 try:
     try:
         from .gui import MainGUI
@@ -88,8 +88,8 @@ except BaseException as _import_err:
     if _pyi_splash is not None:
         try: _pyi_splash.close()
         except Exception: pass
-    # Re-raise so the bootloader still shows its dialog. crash.log now
-    # contains the real traceback regardless of what the dialog truncates.
+    # Перебрасываем, чтобы бутлоадер всё равно показал диалог. crash.log
+    # при этом уже содержит полный traceback, что бы диалог ни обрезал.
     raise
 
 
@@ -97,10 +97,10 @@ def main() -> None:
     try:
         app = MainGUI()
         app.protocol('WM_DELETE_WINDOW', app.on_closing)
-        # Close the PyInstaller splash window once the Tk root exists.
-        # Doing it after MainGUI() means the splash stays up through
-        # the heavy imports + Tk init, then disappears the moment the
-        # real window is ready to be drawn.
+        # Закрываем сплэш PyInstaller уже после создания Tk root. Если
+        # сделать это после MainGUI(), сплэш держится всё время тяжёлых
+        # импортов и инициализации Tk и пропадает ровно тогда, когда
+        # настоящее окно готово к отрисовке.
         if _pyi_splash is not None:
             try:
                 _pyi_splash.close()

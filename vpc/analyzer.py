@@ -1,4 +1,4 @@
-"""Audio segment analysis: data structures, classifier, and AudioAnalyzer."""
+"""Анализ аудио на сегменты: структуры данных, классификатор и AudioAnalyzer."""
 import enum
 import os
 import sys
@@ -16,41 +16,42 @@ N_BINS = 24
 
 @dataclass
 class AudioFeatures:
-    """Per-frame audio feature track, time-aligned to STFT hop frames.
+    """Покадровые аудио-фичи, синхронизированные по времени с hop-фреймами STFT.
 
-    Every band array is normalized to ~0..1 against its own running max so
-    visualizers get a stable dynamic range regardless of master level.
+    Каждый массив полосы нормирован к ~0..1 относительно собственного
+    максимума, чтобы визуализаторы получали стабильный динамический
+    диапазон вне зависимости от общего уровня громкости.
     """
-    times: np.ndarray          # (n_frames,) seconds
+    times: np.ndarray          # (n_frames,) секунды
     bass: np.ndarray           # (n_frames,) 0..1
     mid: np.ndarray            # (n_frames,) 0..1
     high: np.ndarray           # (n_frames,) 0..1
-    onset: np.ndarray          # (n_frames,) 0..1 onset strength
-    bins: np.ndarray           # (n_frames, N_BINS) 0..1 log-spaced magnitude
+    onset: np.ndarray          # (n_frames,) 0..1 сила онсета
+    bins: np.ndarray           # (n_frames, N_BINS) 0..1, лог-полосы амплитуды
     sr: int
     hop: int
 
 
 @dataclass
 class AudioSample:
-    """One frame's worth of smoothed, render-ready audio reactivity.
+    """Сглаженная аудио-реактивность одного кадра, готовая для рендера.
 
-    Lives here (not in the render layer) so effect modules can depend on it
-    without importing the render package — keeping the effect→render edge
-    one-directional and avoiding an import cycle.
+    Живет здесь, а не в слое рендера, чтобы модули эффектов могли
+    зависеть от нее, не импортируя пакет render - связь effect→render
+    остается однонаправленной, без цикла импортов.
     """
     bass: float
     mid: float
     high: float
     onset: float
     beat: bool
-    bins: np.ndarray   # (N_BINS,) 0..1, peak-hold smoothed
+    bins: np.ndarray   # (N_BINS,) 0..1, сглажено по peak-hold
     t: float
 
 
 @contextmanager
 def _suppress_stderr():
-    """Redirect C-level stderr to /dev/null to silence ffmpeg/audioread noise."""
+    """Перенаправляет C-level stderr в /dev/null, чтобы заглушить шум ffmpeg/audioread."""
     try:
         devnull = os.open(os.devnull, os.O_WRONLY)
         old_stderr = os.dup(2)
@@ -62,16 +63,16 @@ def _suppress_stderr():
             os.dup2(old_stderr, 2)
             os.close(old_stderr)
     except Exception:
-        yield  # if fd tricks fail, just continue without suppression
+        yield  # если трюк с fd не сработал, просто продолжаем без заглушения
 
 
 class SegmentType(enum.Enum):
-    IMPACT = "impact"     # loud transient, short
-    NOISE = "noise"       # high spectral flatness
-    SUSTAIN = "sustain"   # loud, longer duration
-    SILENCE = "silence"   # low RMS
-    BUILD = "build"       # rising RMS trend
-    DROP = "drop"         # falling RMS after high
+    IMPACT = "impact"     # громкий короткий транзиент
+    NOISE = "noise"       # высокая спектральная плоскостность
+    SUSTAIN = "sustain"   # громко, длительно
+    SILENCE = "silence"   # низкий RMS
+    BUILD = "build"       # нарастающий тренд RMS
+    DROP = "drop"         # падение RMS после пика
 
 
 @dataclass
@@ -80,15 +81,15 @@ class Segment:
     t_end: float
     duration: float
     type: SegmentType
-    intensity: float      # 0.0–1.0, normalized within segment type
+    intensity: float      # 0.0-1.0, нормировано внутри своего типа сегмента
     rms: float
     flatness: float
     rms_change: float
-    live: object = None   # transient per-frame AudioSample, set at render time
+    live: object = None   # временный покадровый AudioSample, выставляется при рендере
 
 
 class SegmentClassifier:
-    """Classifies a segment into one of 6 types based on audio metrics."""
+    """Определяет тип сегмента (один из 6) по аудио-метрикам."""
 
     TREND_WINDOW = 5
 
@@ -98,14 +99,15 @@ class SegmentClassifier:
                  transient_rms_mean: float = None):
         self.rms_mean = rms_mean
         self.flat_mean = flat_mean
-        # loud_thresh: how many × rms_mean a segment must be to count as "loud"
-        # mirrors the old cfg.get('threshold', 1.2) the original engine exposed in GUI
+        # loud_thresh: во сколько раз rms_mean сегмент должен превышать,
+        # чтобы считаться "громким"; значение приходит из настройки GUI
         self.loud_thresh = loud_thresh
-        self.silence_thresh = 0.5     # fraction of rms_mean below which = silence
-        self.noise_thresh = 1.5       # flatness multiplier
-        self.impact_max_dur = 0.3     # seconds; short + loud = IMPACT
-        # transient_thresh: rms_change / rms_mean above which = sharp attack → IMPACT
-        # mirrors old  is_transient = rms_change > rms_mean * 0.5  used for flash
+        self.silence_thresh = 0.5     # доля от rms_mean, ниже которой = тишина
+        self.noise_thresh = 1.5       # множитель flatness
+        self.impact_max_dur = 0.3     # секунды; короткий + громкий = IMPACT
+        # transient_thresh: порог rms_change / rms_mean, выше которого
+        # резкая атака классифицируется как IMPACT (нужно для флеш-кадров
+        # на перкуссионных ударах)
         self.transient_thresh = transient_thresh
         self.transient_rms_mean = transient_rms_mean if transient_rms_mean is not None else rms_mean
 
@@ -131,13 +133,13 @@ class SegmentClassifier:
 
     def _determine_type(self, is_loud, is_silent, is_noisy, is_short,
                         is_transient, rms_change, rms_history):
-        """Priority order (highest first):
-        1. BUILD / DROP  — multi-segment trend
-        2. SILENCE       — too quiet to classify further
-        3. IMPACT        — sharp transient attack OR loud+short hit
-        4. NOISE         — high spectral flatness
-        5. SUSTAIN       — loud, longer duration
-        6. SILENCE       — fallback
+        """Порядок приоритета (от высшего к низшему):
+        1. BUILD / DROP  - тренд по нескольким сегментам
+        2. SILENCE       - слишком тихо, дальше не классифицируем
+        3. IMPACT        - резкая транзиентная атака ИЛИ громкий короткий удар
+        4. NOISE         - высокая спектральная плоскостность
+        5. SUSTAIN       - громко, длительно
+        6. SILENCE       - запасной вариант
         """
         if len(rms_history) >= self.TREND_WINDOW:
             slope = np.polyfit(range(len(rms_history)), rms_history, 1)[0]
@@ -150,9 +152,9 @@ class SegmentClassifier:
         if is_silent:
             return SegmentType.SILENCE
 
-        # Transient: sharp upward RMS spike → treat as IMPACT regardless of duration.
-        # Restored from the original engine's  is_transient = rms_change > rms_mean * 0.5
-        # which was used specifically to trigger flash frames on percussive attacks.
+        # Резкий скачок RMS вверх считаем IMPACT независимо от длительности
+        # сегмента - иначе долгий, но начинающийся с удара сегмент терял
+        # бы флеш-эффект.
         if is_transient:
             return SegmentType.IMPACT
 
@@ -165,10 +167,11 @@ class SegmentClassifier:
         return SegmentType.SILENCE
 
     def _calc_intensity(self, seg_type, rms, flatness, rms_change):
-        """Normalize intensity to 0.0–1.0 using the primary metric for this segment type."""
+        """Нормирует интенсивность в 0.0-1.0 по основной метрике для данного типа сегмента."""
         if seg_type == SegmentType.IMPACT:
-            # Take the larger of absolute loudness and spike magnitude so both
-            # "hard hit" and "sharp attack from quiet" score correctly.
+            # Берем максимум из абсолютной громкости и величины скачка,
+            # чтобы правильно оценивались и "жесткий удар", и "резкая
+            # атака из тишины".
             raw = max(rms / (self.rms_mean * 3.0),
                       abs(rms_change) / (self.rms_mean * 2.5))
         elif seg_type == SegmentType.NOISE:
@@ -183,7 +186,7 @@ class SegmentClassifier:
 
 
 class AudioAnalyzer:
-    """Loads audio via librosa, detects onsets, returns classified Segment list."""
+    """Загружает аудио через librosa, ищет онсеты, возвращает список классифицированных Segment."""
 
     def __init__(self, audio_path: str, min_segment_dur: float = 0.05,
                  loud_thresh: float = 1.2, transient_thresh: float = 0.5,
@@ -195,32 +198,31 @@ class AudioAnalyzer:
         self.transient_thresh = transient_thresh
         self.snap_to_beat = snap_to_beat
         self.snap_tolerance = snap_tolerance
-        # Manual BPM override: when both `use_manual_bpm` is True and a
-        # positive `manual_bpm` is provided, the beat grid for snap-to-beat
-        # is generated from the user value instead of running librosa's
-        # tempo estimator. Useful when the track has weak/ambiguous onsets
-        # or the user knows the exact target tempo.
+        # Ручной BPM: если use_manual_bpm=True и manual_bpm положительный,
+        # сетка битов для snap-to-beat строится из значения пользователя
+        # вместо запуска librosa-детектора темпа. Полезно, когда онсеты в
+        # треке слабые/неоднозначные или темп известен заранее.
         self.manual_bpm = float(manual_bpm)
         self.use_manual_bpm = bool(use_manual_bpm)
-        self.detected_bpm: float = 0.0  # filled after analyze()
+        self.detected_bpm: float = 0.0  # заполняется после analyze()
 
     def _load_audio(self, path: str):
-        """Try to load audio, falling back to ffmpeg transcoding if needed.
+        """Пробует загрузить аудио, при неудаче транскодирует через ffmpeg.
 
-        For very large source files we explicitly downsample to 11025 Hz at
-        load time. Default `librosa.load` (sr=22050) needs ~600 MB of float32
-        STFT scratch for a 30-minute track on top of the raw waveform; on a
-        machine with 8 GB free that's a frequent OOM kill of the render
-        thread. Downsampling cuts both the waveform and the STFT in half
-        with no measurable loss for onset/RMS/flatness detection (those are
-        all sensitive to sub-Nyquist content for typical music).
+        Для очень больших файлов сразу занижаем частоту до 11025 Гц.
+        Дефолтный `librosa.load` (sr=22050) на 30-минутном треке требует
+        ~600 МБ float32 под STFT сверх самой волны - на машине со
+        свободными 8 ГБ это регулярно роняет поток рендера по OOM.
+        Понижение sr вдвое режет и волну, и STFT, а на детекции
+        onset/RMS/flatness для обычной музыки это не сказывается заметно
+        (весь нужный контент лежит ниже пониженного Найквиста).
         """
         import subprocess, tempfile
 
-        # Pick a working sample rate based on file size. Anything above
-        # ~150 MB on disk is almost certainly a long uncompressed WAV
-        # (passthrough extracts at 44.1 kHz s16 stereo → ~10.6 MB/min) or a
-        # very long compressed track — either way we want the lower sr.
+        # Выбираем рабочий sample rate по размеру файла. Все, что больше
+        # ~150 МБ на диске, почти наверняка длинный несжатый WAV
+        # (passthrough-экстракция дает 44.1 кГц s16 стерео, ~10.6 МБ/мин)
+        # или очень длинный сжатый трек - в обоих случаях нужен sr пониже.
         try:
             file_bytes = os.path.getsize(path)
         except OSError:
@@ -240,7 +242,7 @@ class AudioAnalyzer:
         if y is not None and len(y) > 0:
             return y, sr
 
-        # First attempt failed — transcode to 16-bit mono WAV via ffmpeg
+        # Первая попытка не удалась - транскодируем в 16-битный моно WAV через ffmpeg
         print('[ANALYZER] Direct load failed; transcoding via ffmpeg...')
         from vpc.render.sink import ffmpeg_bin
         _ffmpeg = ffmpeg_bin()
@@ -272,10 +274,10 @@ class AudioAnalyzer:
     @staticmethod
     def _snap_onsets_to_beats(onsets: list, beat_times: np.ndarray,
                                tolerance: float) -> list:
-        """Pull each onset to the nearest beat within tolerance seconds.
+        """Притягивает каждый онсет к ближайшему биту в пределах tolerance секунд.
 
-        Duplicates that appear after snapping (two onsets land on the same
-        beat) are deduplicated — only the first is kept.
+        Дубликаты, возникающие после притяжения (два онсета попадают на
+        один бит), схлопываются - остается только первый.
         """
         beat_arr = np.asarray(beat_times, dtype=float)
         snapped = []
@@ -287,7 +289,7 @@ class AudioAnalyzer:
             else:
                 snapped.append(float(t))
 
-        # Deduplicate while preserving order
+        # Убираем дубли, сохраняя порядок
         seen: set = set()
         result = []
         for t in sorted(snapped):
@@ -297,11 +299,12 @@ class AudioAnalyzer:
         return result
 
     def analyze(self) -> Tuple[List[Segment], float, Optional[AudioFeatures]]:
-        """Returns (segments, audio_duration, features).
+        """Возвращает (segments, audio_duration, features).
 
-        If the audio file is unreadable or corrupt, attempts to transcode it
-        to PCM WAV via ffmpeg first.  If that also fails, returns an empty
-        segment list so the engine can still run (no effects, but no crash).
+        Если файл не читается или поврежден, сначала пробует
+        транскодировать его в PCM WAV через ffmpeg. Если и это не
+        помогло, возвращает пустой список сегментов, чтобы движок мог
+        отработать дальше (без эффектов, но без падения).
         """
         y, sr = self._load_audio(self.audio_path)
 
@@ -312,24 +315,25 @@ class AudioAnalyzer:
 
         duration = len(y) / sr
 
-        # Temporal Resolution Tuning:
-        # Instead of jumping to a giant hop of 2048 (which degrades frame accuracy to 186ms),
-        # we target a constant frame rate of ~40-50 FPS (~20-25ms step) where possible.
-        # At sr=22050: hop=512 gives 23.2ms.
-        # At sr=11025: hop=256 gives 23.2ms.
-        # Only use hop=1024 (46.4ms/92.9ms resolution) for extremely long mixes to keep STFT size optimal.
-        if duration > 1200.0:  # > 20 minutes
+        # Подбор временного разрешения: вместо того чтобы сразу брать
+        # огромный hop=2048 (просадка точности кадра до 186 мс), где
+        # возможно держим частоту кадров ~40-50 FPS (шаг ~20-25 мс).
+        # При sr=22050: hop=512 дает 23.2 мс.
+        # При sr=11025: hop=256 дает 23.2 мс.
+        # hop=1024 (разрешение 46.4/92.9 мс) берем только для очень
+        # длинных миксов, чтобы не раздувать STFT.
+        if duration > 1200.0:  # > 20 минут
             hop = 1024
             n_fft = 1024
         else:
             hop = 512 if sr == 22050 else 256
             n_fft = 2048
 
-        # --- Harmonic-Percussive Source Separation (HPSS) & Fallback ---
+        # --- Harmonic-Percussive Source Separation (HPSS) и фолбэк ---
         print('[ANALYZER] Computing Harmonic-Percussive Source Separation (HPSS)...')
         try:
             y_harmonic, y_percussive = librosa.effects.hpss(y)
-            # Estimate percussive energy ratio
+            # Доля перкуссионной энергии в сигнале
             rms_raw_total = float(np.sqrt(np.mean(y**2)))
             rms_perc_total = float(np.sqrt(np.mean(y_percussive**2)))
             percussive_ratio = (rms_perc_total / rms_raw_total) if rms_raw_total > 1e-5 else 0.0
@@ -340,8 +344,9 @@ class AudioAnalyzer:
             y_harmonic = y
             percussive_ratio = 0.0
 
-        # Dynamic fallback: if the track is predominantly harmonic (ambient, acoustic, solo vocals),
-        # analyze the raw mix. Otherwise, use isolated percussive components for grid/onset detection.
+        # Если трек преимущественно гармонический (эмбиент, акустика,
+        # соло-вокал) - анализируем сырой микс. Иначе используем
+        # выделенную перкуссионную составляющую для сетки/онсетов.
         use_raw_fallback = percussive_ratio < 0.15
         if use_raw_fallback:
             print('[ANALYZER] Track has low percussive energy. Using raw signal for onset & transient analysis.')
@@ -352,8 +357,9 @@ class AudioAnalyzer:
             y_onsets = y_percussive
             y_transients = y_percussive
 
-        # Onset feature extraction with custom settings tailored for fast breakcore drum rolls
-        # wait=max(1, 40ms in frames) to capture fast hits without double-trigger debounces.
+        # Настройки детекции онсетов под быстрые breakcore-дроны на барабанах:
+        # wait = 40 мс в кадрах, чтобы ловить частые удары без двойного
+        # срабатывания на одном ударе.
         wait_frames = max(1, int(round(0.040 * sr / hop)))
         onset_env = librosa.onset.onset_strength(
             y=y_onsets, sr=sr, hop_length=hop, n_fft=n_fft)
@@ -362,9 +368,9 @@ class AudioAnalyzer:
             units='time', backtrack=True, wait=wait_frames
         )
 
-        # RMS and Flatness arrays:
-        # 1. rms_raw_frames: Overall volume of the mix (used for loudness/silence classification)
-        # 2. rms_transient_frames: Target signal volume (used to calculate rms_change for transient spikes)
+        # Массивы RMS и flatness:
+        # 1. rms_raw_frames - общая громкость микса (для классификации loud/silence)
+        # 2. rms_transient_frames - громкость целевого сигнала (для rms_change при поиске транзиентов)
         rms_raw_frames = librosa.feature.rms(y=y, hop_length=hop)[0]
         if use_raw_fallback:
             rms_transient_frames = rms_raw_frames
@@ -374,10 +380,10 @@ class AudioAnalyzer:
         flat_frames = librosa.feature.spectral_flatness(
             y=y, hop_length=hop, n_fft=n_fft)[0]
 
-        # --- Per-frame band / spectrum feature track for visualizers ---
-        # Reuses the same hop / n_fft so the track is time-aligned to the
-        # features the classifier already consumes. Every array is normalized
-        # to ~0..1 against its own max for a stable visual dynamic range.
+        # --- Покадровые полосы/спектр для визуализаторов ---
+        # Используем те же hop / n_fft, чтобы дорожка была синхронизирована
+        # с фичами, которые уже потребляет классификатор. Каждый массив
+        # нормируется к ~0..1 относительно своего максимума.
         def _norm01(a: np.ndarray) -> np.ndarray:
             a = np.asarray(a, dtype=np.float32)
             m = float(a.max()) if a.size else 0.0
@@ -399,7 +405,7 @@ class AudioAnalyzer:
             np.arange(len(onset_env)), sr=sr, hop_length=hop)
         onset_track = _norm01(np.interp(times_track, onset_env_times, onset_env))
 
-        # Log-spaced magnitude bins for true equalizer bars.
+        # Лог-полосы амплитуды для полос настоящего эквалайзера.
         edges = np.logspace(np.log10(20), np.log10(sr / 2), N_BINS + 1)
         bins = np.zeros((n_t, N_BINS), dtype=np.float32)
         for b in range(N_BINS):
@@ -415,7 +421,7 @@ class AudioAnalyzer:
 
         onsets = list(onsets)
 
-        # ---- Snap-to-beat -----------------------------------------------
+        # ---- Притяжение к битам -------------------------------------------
         if self.snap_to_beat:
             if self.use_manual_bpm and self.manual_bpm > 0:
                 period = 60.0 / self.manual_bpm
@@ -438,14 +444,15 @@ class AudioAnalyzer:
         if not onsets or onsets[-1] < duration - 0.1:
             onsets.append(duration)
 
-        # Median calculation for raw audio features
+        # Медианные значения по сырым аудио-фичам
         noise_floor = float(np.percentile(rms_raw_frames, 15))
         active_rms = rms_raw_frames[rms_raw_frames > noise_floor]
         rms_mean = float(np.median(active_rms)) if len(active_rms) > 0 \
                    else float(np.mean(rms_raw_frames))
         flat_mean = float(np.median(flat_frames))
 
-        # Separate transient mean to ensure relative peaks are detected properly in HPSS mode
+        # Отдельное среднее для транзиентного сигнала - иначе в HPSS-режиме
+        # относительные пики определялись бы некорректно
         active_transient = rms_transient_frames[rms_transient_frames > float(np.percentile(rms_transient_frames, 15))]
         transient_rms_mean = float(np.median(active_transient)) if len(active_transient) > 0 \
                              else float(np.mean(rms_transient_frames))

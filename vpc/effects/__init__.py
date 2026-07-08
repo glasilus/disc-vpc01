@@ -1,8 +1,8 @@
-"""Effects package — re-exports every concrete effect for backward compat.
+"""Пакет эффектов - реэкспортирует все конкретные эффекты для обратной совместимости.
 
-Old code can still do `from vpc.effects import PixelSortEffect`. The flat
-shim module `effects.py` at the project root re-exports all of these for
-the original `from effects import ...` form too.
+Старый код по-прежнему может делать `from vpc.effects import PixelSortEffect`.
+Плоский shim-модуль `effects.py` в корне проекта реэкспортирует всё это же
+и для исходной формы `from effects import ...`.
 """
 from .base import BaseEffect, _ensure_uint8, _reseg
 

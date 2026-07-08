@@ -1,4 +1,4 @@
-"""CRT / VHS / JPEG / dither degradation effects."""
+"""Эффекты деградации сигнала: CRT / VHS / JPEG / дизеринг."""
 from __future__ import annotations
 
 import random
@@ -162,15 +162,15 @@ class DitheringEffect(BaseEffect):
 
 
 class ZoomGlitchEffect(BaseEffect):
-    """Anisotropic squash/stretch on one axis with a curved return.
+    """Анизотропное сжатие/растяжение по одной оси с плавным возвратом.
 
-    On trigger (IMPACT / DROP) the effect arms an animation: it picks an axis
-    (X or Y), a direction (squash to ~0.45× or stretch to ~1.85× — chosen
-    randomly), and a duration of N frames. Each subsequent frame interpolates
-    the current scale toward 1.0 along an ease-out cubic, so the image yanks
-    sharply on the hit and elastically settles back. While the animation is
-    active the effect runs every frame regardless of segment type — once it
-    finishes, it goes idle until the next trigger.
+    По триггеру (IMPACT / DROP) запускается анимация: выбирается ось (X или
+    Y), направление (сжатие до ~0.45x или растяжение до ~1.85x, случайно) и
+    длительность в N кадров. Каждый следующий кадр интерполирует текущий
+    масштаб обратно к 1.0 по ease-out кубической кривой, поэтому картинку
+    резко дёргает на ударе и она упруго "садится" обратно. Пока анимация
+    активна, эффект работает на каждом кадре независимо от типа сегмента -
+    после завершения простаивает до следующего триггера.
     """
     trigger_types = [SegmentType.IMPACT, SegmentType.DROP]
 
@@ -181,12 +181,12 @@ class ZoomGlitchEffect(BaseEffect):
         self._progress = 0
         self._total = 1
         self._axis = 'x'
-        self._peak = 1.0   # peak scale on the active axis at progress=0
+        self._peak = 1.0   # пиковый масштаб по активной оси при progress=0
 
     def apply(self, frame, seg, draft):
-        # While an animation is in flight, keep applying every frame regardless
-        # of trigger gating. Otherwise fall through to BaseEffect's gating chain
-        # which may arm a fresh animation on this trigger.
+        # Пока анимация идёт, применяем эффект на каждом кадре независимо
+        # от гейтинга по триггерам. Иначе передаём управление в цепочку
+        # гейтинга BaseEffect, которая может запустить новую анимацию.
         if not self.enabled:
             return frame
         if self._active:
@@ -198,22 +198,22 @@ class ZoomGlitchEffect(BaseEffect):
         self._progress = 0
         self._total = max(3, int(self.duration_frames * (0.6 + intensity * 0.8)))
         self._axis = random.choice(('x', 'y'))
-        # 50/50 split: stretch (>1) or squash (<1). Magnitude scales with
-        # intensity so loud hits yank harder.
+        # 50/50: растяжение (>1) или сжатие (<1). Величина растёт с
+        # интенсивностью - громкие удары дёргают сильнее.
         if random.random() < 0.5:
             self._peak = 1.0 + 0.4 + intensity * 0.6   # 1.4 .. 2.0
         else:
             self._peak = 1.0 - (0.3 + intensity * 0.25)  # 0.45 .. 0.7
 
     def _apply(self, frame, seg, draft):
-        # Reached only on a fresh trigger — arm the animation and render
-        # the first frame of it.
+        # Сюда попадаем только на новом триггере - запускаем анимацию и
+        # рендерим её первый кадр.
         self._arm(self.scaled_intensity(seg))
         return self._step(frame, draft)
 
     def _step(self, frame, draft):
         h, w = frame.shape[:2]
-        # Ease-out cubic from peak back to 1.0 over `_total` frames.
+        # Ease-out кубическая кривая от peak обратно к 1.0 за `_total` кадров.
         u = min(1.0, self._progress / max(1, self._total - 1))
         ease = 1.0 - (1.0 - u) ** 3
         scale = self._peak + (1.0 - self._peak) * ease
@@ -223,15 +223,14 @@ class ZoomGlitchEffect(BaseEffect):
         else:
             sx, sy = 1.0, scale
 
-        # Crop-and-rescale around the centre so the framing stays put.
         nw = max(2, int(round(w / sx)))
         nh = max(2, int(round(h / sy)))
-        # When sx > 1, we read from a smaller central crop and stretch up
-        # (zoom-in along that axis); when sx < 1 we read from a larger
-        # region by extending past edges via REFLECT, giving a squashed
-        # look. cv2.warpAffine handles both via a single matrix.
+        # При sx > 1 читаем из меньшей центральной области и растягиваем
+        # (зум по этой оси); при sx < 1 читаем из большей области,
+        # выходя за края через BORDER_REFLECT - получается сжатие.
+        # cv2.warpAffine справляется с обоими случаями одной матрицей.
         cx, cy = w * 0.5, h * 0.5
-        # Affine that maps centre→centre and scales by (sx, sy) about it.
+        # Аффинное преобразование: центр остаётся на месте, масштаб (sx, sy).
         M = np.array([
             [sx, 0.0, cx * (1.0 - sx)],
             [0.0, sy, cy * (1.0 - sy)],
@@ -248,7 +247,7 @@ class ZoomGlitchEffect(BaseEffect):
 
 
 class SharpenEffect(BaseEffect):
-    """Strong unsharp-mask sharpening: frame + amount·(frame − blur(frame))."""
+    """Сильная нерезкая маска: frame + amount·(frame - blur(frame))."""
     trigger_types = [SegmentType.IMPACT, SegmentType.DROP,
                      SegmentType.SUSTAIN, SegmentType.BUILD]
 
@@ -259,11 +258,11 @@ class SharpenEffect(BaseEffect):
 
     def _apply(self, frame, seg, draft):
         intensity = self.scaled_intensity(seg)
-        # Effective amount scales with audio intensity AND the user's `amount`
-        # ceiling. At low intensity the kernel produces a polite crispness;
-        # at peak it overshoots into hard halo / edge-glow territory.
+        # Итоговая сила зависит и от интенсивности звука, и от потолка
+        # `amount`, заданного пользователем. На низкой интенсивности -
+        # аккуратная чёткость, на пике - явный овершут с ореолами на краях.
         amt = float(self.amount) * (0.4 + intensity * 1.6)
-        # Kernel radius rounded to nearest odd integer ≥ 3.
+        # Радиус ядра округляется до ближайшего нечётного числа >= 3.
         r = max(3, int(round(self.radius)) | 1)
         if draft:
             r = max(3, r // 2 | 1)

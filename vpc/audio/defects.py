@@ -1,18 +1,18 @@
-"""Pure functions that mangle a stereo float32 audio buffer in ways
-that match specific visual effects.
+"""Чистые функции, которые портят стерео float32-буфер так, чтобы звук
+соответствовал конкретным визуальным эффектам.
 
-Every function here takes (samples, sr) where:
-  samples : np.ndarray of shape (n_samples, n_channels), dtype float32,
-            values in roughly [-1.0, 1.0]
-  sr      : int sample rate (Hz)
+Каждая функция принимает (samples, sr), где:
+  samples : np.ndarray формы (n_samples, n_channels), dtype float32,
+            значения примерно в [-1.0, 1.0]
+  sr      : int, частота дискретизации (Гц)
 
-and returns a new array of the SAME shape and dtype. They never mutate
-the input. This makes them trivially testable and stackable.
+и возвращает новый массив ТОЙ ЖЕ формы и dtype, не трогая исходный.
+Благодаря этому функции легко тестировать и комбинировать в цепочку.
 
-scipy.signal is required (already a project dependency via the SIGNAL
-DOMAIN effects). On any unexpected scipy import error the affected
-defect degrades to a no-op that just returns the input unchanged — the
-audio pipeline never raises into the render thread.
+scipy.signal уже используется в проекте (эффекты SIGNAL DOMAIN). Если
+scipy вдруг не импортировался, конкретный дефект превращается в no-op
+и возвращает вход как есть - аудио-пайплайн не должен падать в потоке
+рендера.
 """
 from __future__ import annotations
 
@@ -26,35 +26,36 @@ except ImportError:                              # pragma: no cover
 
 
 # ──────────────────────────────────────────────────────────────────────
-#   VHS tape — bandlimit to ~6 kHz + comb resonance + slow pitch wobble
+#   VHS tape - завал АЧХ до ~6 кГц + гребенчатый резонанс + плавание питча
 # ──────────────────────────────────────────────────────────────────────
 
 
 def defect_vhs_tape(samples: np.ndarray, sr: int) -> np.ndarray:
-    """Bandlimit + comb resonance + slow LFO pitch warble.
+    """ФНЧ + гребенчатый резонанс + медленное LFO-плавание питча.
 
-    Three-stage pipeline:
-      1. 4th-order Butterworth lowpass at 6 kHz — VHS audio HiFi tracks
-         topped out there; non-HiFi linear tracks were even narrower.
-      2. IIR notching comb at ~120 Hz — adds the characteristic harmonic
-         resonance / phase-smear that makes consumer-grade tape audio
-         sound "thin and metallic".
-      3. Wow & flutter via varying-rate resampling using linear interp:
-         a slow sine drives the read-position so pitch drifts ~ +/- 0.5%.
+    Три стадии:
+      1. ФНЧ Баттерворта 4-го порядка на 6 кГц - именно на этой частоте
+         обрывались HiFi-дорожки VHS, обычные линейные дорожки были еще уже.
+      2. Гребенчатый notch-фильтр на ~120 Гц - дает ту самую гармоническую
+         "тонкую и металлическую" окраску бытового ленточного звука.
+      3. Wow & flutter через ресемплинг с переменной скоростью (линейная
+         интерполяция): медленная синусоида двигает позицию чтения, из-за
+         чего питч плавает на ~0.5%.
     """
     if samples.size == 0 or not _SCIPY_OK:
         return samples
     out = samples.astype(np.float32, copy=True)
 
-    # 1. Lowpass at 6 kHz (Nyquist guard if sr is unusually low).
+    # 1. ФНЧ на 6 кГц (с защитой от превышения Найквиста при низком sr).
     nyq = sr * 0.5
     cutoff = min(6000.0, nyq * 0.9) / nyq
     sos = butter(4, cutoff, btype='lowpass', output='sos')
     for c in range(out.shape[1]):
         out[:, c] = sosfilt(sos, out[:, c])
 
-    # 2. Comb notching at ~120 Hz with moderate Q. iircomb requires
-    # sr % w0_freq == 0 for stable design, so we round to nearest divisor.
+    # 2. Гребенка на ~120 Гц с умеренной добротностью. iircomb требует
+    # sr % w0_freq == 0 для устойчивого расчета, поэтому округляем до
+    # ближайшего целочисленного делителя.
     base = 120.0
     period = max(1, int(round(sr / base)))
     w0 = sr / period / nyq
@@ -66,8 +67,8 @@ def defect_vhs_tape(samples: np.ndarray, sr: int) -> np.ndarray:
         except (ValueError, ZeroDivisionError):
             pass
 
-    # 3. Wow & flutter — vary read position by a slow sine so pitch
-    # wanders ~0.4%. Implemented as np.interp on a float-index timeline.
+    # 3. Wow & flutter - позиция чтения гуляет по медленной синусоиде,
+    # питч плавает на ~0.4%. Реализовано как np.interp по float-индексу.
     n = out.shape[0]
     t = np.arange(n, dtype=np.float32)
     wow = np.sin(t * (2.0 * np.pi * 0.6 / sr)) * 0.004 * sr
@@ -83,23 +84,23 @@ def defect_vhs_tape(samples: np.ndarray, sr: int) -> np.ndarray:
 
 
 # ──────────────────────────────────────────────────────────────────────
-#   SelfCannibalize — feedback echo (audio "eats itself")
+#   SelfCannibalize - эхо с обратной связью (звук "поедает сам себя")
 # ──────────────────────────────────────────────────────────────────────
 
 
 def defect_self_echo(samples: np.ndarray, sr: int,
                      delay_ms: float = 220.0,
                      feedback: float = 0.45) -> np.ndarray:
-    """Single-tap delay with feedback. The same audio appears repeatedly
-    at fading amplitude — auditory analogue of the visual recursion.
+    """Однотаповая задержка с обратной связью: звук повторяется с
+    затуханием - звуковой аналог визуальной рекурсии.
 
-    Vectorised in chunks of `delay_n` samples. Each chunk depends ONLY
-    on the chunk that finished `delay_n` samples earlier, so within a
-    chunk we can do a single vector-add of the prior chunk scaled by
-    feedback — no per-sample Python loop, no scipy IIR (lfilter on a
-    sparse 10k-coefficient denominator is paradoxically slower than the
-    naive Python loop because it traverses the whole `a` vector per
-    sample). On 60 s stereo @ 44.1 kHz this is ~5 ms.
+    Векторизовано блоками по `delay_n` сэмплов. Каждый блок зависит
+    ТОЛЬКО от блока, завершившегося на `delay_n` сэмплов раньше, поэтому
+    внутри блока достаточно одного векторного сложения с предыдущим
+    блоком, умноженным на feedback - без Python-цикла по сэмплам и без
+    scipy IIR (lfilter на разреженном знаменателе из тысяч коэффициентов
+    как ни странно медленнее наивного Python-цикла, т.к. проходит весь
+    вектор `a` на каждый сэмпл). На 60 с стерео @ 44.1 кГц это ~5 мс.
     """
     if samples.size == 0:
         return samples
@@ -109,33 +110,31 @@ def defect_self_echo(samples: np.ndarray, sr: int,
     if delay_n >= n:
         return out
     fb = float(np.clip(feedback, 0.0, 0.85))
-    # Walk the buffer in non-overlapping windows of `delay_n` samples.
-    # Each window mixes in (fb * the immediately preceding window) which
-    # has already been fully written and is therefore stable. Because
-    # the source window ends exactly where the destination begins, no
-    # within-window self-dependency exists, so the operation vectorises.
+    # Идем по буферу непересекающимися окнами по `delay_n` сэмплов.
+    # В каждое окно подмешивается (fb * предыдущее окно), которое уже
+    # полностью записано и потому стабильно. Источник заканчивается
+    # ровно там, где начинается назначение - внутриоконной зависимости
+    # нет, поэтому операция векторизуется.
     pos = delay_n
     while pos < n:
         end = min(n, pos + delay_n)
-        src_end = pos                      # = end - delay_n + (end-pos<delay_n offset) ⇒ trimmed below
         src_start = pos - delay_n
         actual = end - pos
         out[pos:end] += out[src_start:src_start + actual] * fb
         pos = end
-    # Soft clip so heavy feedback can't blow past full-scale.
+    # Мягкий клиппинг, чтобы сильная обратная связь не улетала за шкалу.
     return np.tanh(out)
 
 
 # ──────────────────────────────────────────────────────────────────────
-#   CursorStorm — sparse impulse "click crackle"
+#   CursorStorm - редкие импульсные щелчки
 # ──────────────────────────────────────────────────────────────────────
 
 
 def defect_cursor_clicks(samples: np.ndarray, sr: int,
                          density_per_sec: float = 12.0) -> np.ndarray:
-    """Sprinkle short bipolar impulses across the track. Sounds like
-    contact-crackle / pointer-click rain. Density scales with how much
-    swarm the user wants visually; default is moderate.
+    """Разбрасывает по треку короткие биполярные импульсы - звучит как
+    треск контакта / дождь из щелчков курсора.
     """
     if samples.size == 0:
         return samples
@@ -146,8 +145,7 @@ def defect_cursor_clicks(samples: np.ndarray, sr: int,
         return out
     rng = np.random.default_rng(0x5C5C5C)
     positions = rng.integers(0, n, size=n_clicks)
-    # Each click is a bipolar 4-sample blip. Amplitudes randomised to
-    # avoid a metronomic feel.
+    # Амплитуды рандомизированы, чтобы щелчки не звучали метрономом.
     amps = (rng.random(n_clicks).astype(np.float32) * 0.45 + 0.15)
     for pos, amp in zip(positions, amps):
         end = min(n, pos + 4)
@@ -158,16 +156,16 @@ def defect_cursor_clicks(samples: np.ndarray, sr: int,
 
 
 # ──────────────────────────────────────────────────────────────────────
-#   BSODShred — brief white-noise bursts
+#   BSODShred - короткие вспышки белого шума
 # ──────────────────────────────────────────────────────────────────────
 
 
 def defect_bsod_static(samples: np.ndarray, sr: int,
                        bursts_per_sec: float = 1.5,
                        burst_ms: float = 90.0) -> np.ndarray:
-    """Random short bursts where the signal is REPLACED by harsh
-    white noise. Mirrors the visual band-cutting: the audio is also
-    "shredded" wherever a bluescreen band would land.
+    """В случайных коротких участках сигнал ЗАМЕНЯЕТСЯ резким белым
+    шумом - звуковой аналог визуальной нарезки на полосы: там, где
+    появляется полоса синего экрана, звук тоже "рвется".
     """
     if samples.size == 0:
         return samples
@@ -181,9 +179,8 @@ def defect_bsod_static(samples: np.ndarray, sr: int,
     starts = rng.integers(0, max(1, n - burst_len), size=n_bursts)
     for start in starts:
         end = min(n, start + burst_len)
-        # Slight per-burst gain randomisation so the bursts vary in
-        # severity; otherwise they all sound identical and the effect
-        # reads as a deliberate ostinato.
+        # Небольшая рандомизация громкости каждой вспышки - иначе все
+        # они звучат одинаково и эффект воспринимается как заученный ритм.
         gain = 0.55 + rng.random() * 0.35
         noise = rng.standard_normal(size=(end - start, ch)).astype(np.float32) * gain
         out[start:end] = noise
@@ -191,26 +188,26 @@ def defect_bsod_static(samples: np.ndarray, sr: int,
 
 
 # ──────────────────────────────────────────────────────────────────────
-#   VSyncRoll — slow pitch wobble (audio analogue of vertical roll)
+#   VSyncRoll - медленное плавание питча (аналог вертикальной прокрутки)
 # ──────────────────────────────────────────────────────────────────────
 
 
 def defect_pitch_wobble(samples: np.ndarray, sr: int,
                         rate_hz: float = 0.4,
                         depth: float = 0.012) -> np.ndarray:
-    """Slow LFO-driven pitch warble — a stronger version of VHS wow,
-    audible as a deliberate detuning. Same underlying technique
-    (vary read-position via linear interp), but ~3x deeper and ~3x
-    slower so it reads as "the player is unstable" rather than tape
-    grain. Pairs with the visual seam crawling vertically.
+    """Медленное LFO-плавание питча - усиленная версия VHS wow, звучит
+    как намеренная расстройка. Та же техника (сдвиг позиции чтения
+    линейной интерполяцией), но глубина и период примерно втрое больше,
+    чем в VHS - должно читаться как "плеер сбоит", а не как зерно ленты.
+    Парная пара к визуальному шву, ползущему по вертикали.
     """
     if samples.size == 0:
         return samples
     out = samples.astype(np.float32, copy=True)
     n, ch = out.shape
     t = np.arange(n, dtype=np.float32)
-    # Position offset (in samples) follows a sine of period 1/rate_hz
-    # with peak displacement ~depth*sr.
+    # Смещение позиции (в сэмплах) идет по синусоиде с периодом 1/rate_hz
+    # и амплитудой ~depth*sr.
     lfo = np.sin(t * (2.0 * np.pi * rate_hz / sr)) * depth * sr
     src_idx = np.clip(t + lfo, 0, n - 1)
     floor = src_idx.astype(np.int32)
@@ -223,17 +220,17 @@ def defect_pitch_wobble(samples: np.ndarray, sr: int,
 
 
 # ──────────────────────────────────────────────────────────────────────
-#   PFrameLag — short multi-tap "ghost reverb"
+#   PFrameLag - короткая многотаповая "призрачная реверберация"
 # ──────────────────────────────────────────────────────────────────────
 
 
 def defect_ghost_reverb(samples: np.ndarray, sr: int) -> np.ndarray:
-    """Three short delayed copies summed at decreasing amplitude — a
-    poor man's early-reflection reverb. Audio "lags behind itself" the
-    same way the visual decoder lags behind the source frame: the
-    present is the dominant signal but the past is constantly bleeding
-    in at low level. Distinct from `defect_self_echo` which uses a
-    single tap with feedback (recursive); this one is a fixed-tap FIR.
+    """Три короткие задержанные копии суммируются с убывающей
+    амплитудой - примитивная имитация ранних отражений. Звук "отстает
+    от самого себя" так же, как визуальный декодер отстает от исходного
+    кадра: текущий момент доминирует, но прошлое постоянно просачивается
+    на низком уровне. В отличие от `defect_self_echo` (один тап с
+    обратной связью, рекурсивно) здесь фиксированный набор тапов, FIR.
     """
     if samples.size == 0:
         return samples
@@ -251,7 +248,7 @@ def defect_ghost_reverb(samples: np.ndarray, sr: int) -> np.ndarray:
 
 
 # ──────────────────────────────────────────────────────────────────────
-#   BitFlip — sample-level bitcrush bursts
+#   BitFlip - точечные всплески битового кранча
 # ──────────────────────────────────────────────────────────────────────
 
 
@@ -259,11 +256,11 @@ def defect_bitcrush_bursts(samples: np.ndarray, sr: int,
                            bursts_per_sec: float = 4.0,
                            burst_ms: float = 60.0,
                            bits: int = 4) -> np.ndarray:
-    """Random short windows are aggressively bit-crushed (quantised to
-    `bits` levels). Audio "drops to 4-bit" in patches the same way the
-    visual frame picks up XOR shifts in patches. Outside the bursts the
-    audio is untouched, so the effect is percussive rather than a
-    wash — matches the spotty visual look of bit-rot.
+    """В случайных коротких окнах сигнал грубо квантуется до `bits`
+    уровней. Звук "проседает до 4 бит" пятнами - так же, как визуальный
+    кадр местами ловит XOR-сдвиги. Вне вспышек звук не тронут, поэтому
+    эффект получается точечным, а не сплошной кашей - соответствует
+    пятнистой картине битового гниения на видео.
     """
     if samples.size == 0:
         return samples
@@ -279,25 +276,24 @@ def defect_bitcrush_bursts(samples: np.ndarray, sr: int,
     for start in starts:
         end = min(n, start + burst_len)
         chunk = out[start:end]
-        # Symmetric quantisation around 0.
+        # Симметричное квантование вокруг нуля.
         out[start:end] = np.round(chunk * levels) / levels
     return out
 
 
 # ──────────────────────────────────────────────────────────────────────
-#   WrongMotionVector — sample-window swaps from displaced positions
+#   WrongMotionVector - подмена окон сэмплов из смещенных позиций
 # ──────────────────────────────────────────────────────────────────────
 
 
 def defect_sample_swap(samples: np.ndarray, sr: int,
                        swaps_per_sec: float = 6.0,
                        window_ms: float = 35.0) -> np.ndarray:
-    """Short windows of audio are REPLACED with audio copied from a
-    random other position in the track. Direct audio analogue of the
-    visual macroblock displacement: the right kind of audio appears
-    in the wrong place, just like the right kind of pixels appear in
-    the wrong block. Distinct from sample tile/loop because the source
-    position is uncorrelated with the destination.
+    """Короткие окна аудио ЗАМЕНЯЮТСЯ фрагментами, скопированными из
+    случайной другой позиции трека. Прямой звуковой аналог визуального
+    смещения макроблоков: правильный звук попадает не в то место, как
+    правильные пиксели попадают не в тот блок. В отличие от тайлинга/
+    зацикливания, позиция источника никак не связана с позицией назначения.
     """
     if samples.size == 0:
         return samples

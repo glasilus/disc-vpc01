@@ -1,4 +1,4 @@
-"""Complex compound effects: Feedback, PhaseShift, Mosaic, Echo, Kali, Cascade."""
+"""Составные эффекты: Feedback, PhaseShift, Mosaic, Echo, Kali, Cascade."""
 from __future__ import annotations
 
 import random

@@ -1,4 +1,4 @@
-"""Tests for analyzer.py — SegmentClassifier."""
+"""Тесты для analyzer.py - SegmentClassifier."""
 import pytest
 import numpy as np
 from vpc.analyzer import Segment, SegmentType, SegmentClassifier

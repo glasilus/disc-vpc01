@@ -12,11 +12,11 @@ struct EngineSettings {
     float master_intensity  = 1.0f;
     float cut_interval      = 0.3f;
     float overlay_intensity = 0.0f;
-    // Frame-selection policy:
-    //   0 = Continuous - linear playback through one source, effects only.
-    //   1 = Cut        - random cuts on beats / impacts / drops.
+    // Политика выбора кадра:
+    //   0 = Continuous - линейное воспроизведение одного источника, только эффекты.
+    //   1 = Cut        - случайные склейки на битах / импактах / дропах.
     int   cut_mode          = 1;
-    bool  sequential        = false;  // legacy; preserved for old presets
+    bool  sequential        = false;  // легаси, оставлено ради старых пресетов
     float ck_tolerance      = 30.f;
     float ck_softness       = 5.f;
     float ck_r = 0.f, ck_g = 255.f, ck_b = 0.f;
@@ -26,11 +26,11 @@ struct EngineSettings {
     int   aspect_mode       = 1;   // AspectMode: 0=Contain 1=Cover 2=Stretch 3=Native
     EffectParams fx[(int)FxId::COUNT];
 
-    // Sensible per-effect trigger-mode defaults so the chain looks right out of
-    // the box (and after a preset reset). Continuous "look" filters track audio
-    // smoothly (Sustained); visualizers stay on when enabled (Manual); punchy
-    // glitches keep the default Auto (attack-on-accent, decay). These are only
-    // defaults - the GUI/presets can override any of them.
+    // Разумные дефолты trigger-mode для каждого эффекта, чтобы цепочка выглядела
+    // адекватно сразу после старта (и после сброса пресета). "Смотрящие" фильтры
+    // плавно следуют за аудио (Sustained); визуализаторы просто горят, если включены
+    // (Manual); резкие глитчи остаются на дефолтном Auto (атака на акцент, спад).
+    // Это только дефолты - GUI и пресеты могут переопределить любой из них.
     EngineSettings() {
         auto set_mode = [&](FxId id, TriggerMode m){ fx[(int)id].mode = (int)m; };
         for (FxId id : { FxId::SCANLINES, FxId::NEGATIVE, FxId::DITHER, FxId::BITCRUSH,
@@ -48,7 +48,7 @@ struct CanvasPreset {
     int         width;
     int         height;
 };
-// Canvas resolutions exposed to the GUI. Engine defaults to the first one.
+// Разрешения канваса, доступные из GUI. Движок по умолчанию берёт первое.
 static constexpr CanvasPreset kCanvasPresets[] = {
     {"1280 x 720  (16:9)",  1280,  720},
     {"1920 x 1080 (16:9)",  1920, 1080},
@@ -64,14 +64,14 @@ public:
     bool init(int width, int height);
     void destroy();
 
-    // Reconfigure the internal canvas (FBO) resolution. Safe to call at any
-    // time from the render thread - recreates all ping-pong / history FBOs.
+    // Переконфигурировать разрешение внутреннего канваса (FBO). Можно звать в любой
+    // момент из render-потока - пересоздаёт все ping-pong и history FBO.
     void set_canvas_size(int w, int h);
 
     int canvas_width()  const { return width_; }
     int canvas_height() const { return height_; }
 
-    // Call once per render frame. Returns GL texture to display.
+    // Вызывается раз за кадр рендера. Возвращает GL-текстуру для отображения.
     GLuint process_frame(float dt, EngineSettings& settings);
 
     AudioAnalyzer&  audio()    { return audio_; }
@@ -84,10 +84,10 @@ public:
     bool blackout = false;
     bool freeze   = false;
 
-    // ── Tap-tempo metronome ───────────────────────────────────────────────────
-    // When enabled, injects a synthetic beat on the tapped BPM grid (OR'd with
-    // the audio-detected beat) so cuts/effects stay locked to tempo even when
-    // the material has a weak or ambiguous transient.
+    // ── Tap-tempo метроном ────────────────────────────────────────────────────
+    // Если включён, подмешивает синтетический бит по сетке настуканного BPM
+    // (через OR с детектированным из аудио битом), чтобы склейки и эффекты
+    // держали темп даже когда в материале слабый или неоднозначный transient.
     bool  metronome = false;
     void  set_bpm(float b) { bpm_ = (b < 0.f) ? 0.f : (b > 300.f ? 300.f : b); }
     float bpm() const { return bpm_; }
@@ -113,7 +113,7 @@ private:
 
     int width_ = 0, height_ = 0;
 
-    // Active overlay state (beat-snapped persistent values)
+    // Состояние активного оверлея (значения фиксируются по биту и держатся между кадрами)
     GLuint current_overlay_tex_ = 0;
     float  current_overlay_x_   = 0.f;
     float  current_overlay_y_   = 0.f;

@@ -1,4 +1,4 @@
-"""Codec/Block-level glitch effects."""
+"""Глитч-эффекты уровня кодека и блоков."""
 from __future__ import annotations
 
 import random

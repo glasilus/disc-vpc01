@@ -1,4 +1,4 @@
-"""Overlay compositing + ChromaKey utility."""
+"""Композитинг оверлеев + утилита ChromaKey."""
 from __future__ import annotations
 
 import os
@@ -24,7 +24,7 @@ def _dominant_hue(img_rgb: np.ndarray, rank: int = 0) -> int:
 
 
 class ChromaKeyEffect:
-    """Standalone chroma-key utility used by OverlayEffect (not a BaseEffect)."""
+    """Отдельная утилита chroma-key, используется OverlayEffect (сама не BaseEffect)."""
 
     def __init__(self, key_color=(0, 255, 0), tolerance=30, edge_softness=5):
         self.key_color = key_color
@@ -65,12 +65,12 @@ class ChromaKeyEffect:
 
 
 class _LazyVideoFrame:
-    """Stand-in for a single overlay-video frame, decoded on demand.
+    """Заглушка для одного кадра оверлей-видео, декодируется по требованию.
 
-    Eager-loading every frame of every overlay clip into RAM was the source
-    of OOM crashes on long renders (a one-minute 1080p clip ≈ 11 GB). Now
-    we keep a sparse sample of frame indices per clip and re-open the file
-    only when a frame is actually requested.
+    Жадная загрузка каждого кадра каждого оверлей-клипа в RAM была причиной
+    OOM на длинных рендерах (минутный клип 1080p ~= 11 ГБ). Теперь храним
+    разреженную выборку индексов кадров по клипу и открываем файл заново
+    только когда кадр реально понадобился.
     """
     __slots__ = ('_path', '_idx', '_max_w', '_cache')
 
@@ -102,7 +102,7 @@ class _LazyVideoFrame:
         if self._cache is None:
             self._cache = self._decode()
             if self._cache is None:
-                # Tiny black placeholder so callers' .shape access doesn't crash.
+                # Маленькая чёрная заглушка, чтобы обращение к .shape у вызывающего кода не падало.
                 self._cache = np.zeros((4, 4, 3), dtype=np.uint8)
         return self._cache.shape
 
@@ -123,20 +123,20 @@ class _LazyVideoFrame:
 
 def load_overlay_frames(folder: str, *, max_video_samples: int = 48,
                         max_w: int = 1920):
-    """Load PNG/JPG images eagerly; sample N lazy frames per video.
+    """Жадно грузит PNG/JPG, для видео берёт N ленивых кадров.
 
-    The old behaviour eager-decoded every frame of every video file into a
-    list of numpy arrays, which blew up RAM on anything longer than a few
-    seconds. The new contract:
+    Старое поведение жадно декодировало каждый кадр каждого видеофайла в
+    список numpy-массивов, что раздувало RAM на чём угодно длиннее пары
+    секунд. Новый контракт:
 
-    * Image files → real numpy arrays (small, decoded once).
-    * Video files → at most `max_video_samples` evenly-spaced `_LazyVideoFrame`
-      handles. Each handle decodes on first access and caches its single
-      frame downscaled to `max_w` width.
+    * Файлы-картинки -> реальные numpy-массивы (маленькие, декодируются один раз).
+    * Видеофайлы -> не больше `max_video_samples` равномерно расставленных
+      хэндлов `_LazyVideoFrame`. Каждый хэндл декодируется при первом
+      обращении и кэширует свой единственный кадр, уменьшенный до ширины `max_w`.
 
-    The composite path in `OverlayEffect._apply` already calls `cv2.resize`
-    on the frame, so an opaque object that satisfies `.shape` + array
-    coercion is enough — callers don't need to change.
+    Композитинг в `OverlayEffect._apply` и так вызывает `cv2.resize` на
+    кадре, так что достаточно непрозрачного объекта с `.shape` и
+    приведением к массиву - вызывающий код менять не пришлось.
     """
     from PIL import Image as PILImage
     img_exts = {'.png', '.jpg', '.jpeg', '.bmp', '.webp'}
@@ -162,7 +162,6 @@ def load_overlay_frames(folder: str, *, max_video_samples: int = 48,
                 total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
                 if total <= 0:
                     continue
-                # Sparse, evenly-spaced sample of frame indices.
                 n = max(1, min(max_video_samples, total))
                 step = max(1, total // n)
                 idxs = list(range(0, total, step))[:max_video_samples]
@@ -177,10 +176,11 @@ def load_overlay_frames(folder: str, *, max_video_samples: int = 48,
 
 
 class OverlayEffect(BaseEffect):
-    """Composite image overlays at scaled size and random/fixed position.
+    """Накладывает оверлей масштабированным по размеру, позиция случайная/фиксированная.
 
-    Per-segment decision: show/hide, frame index, position and scale are
-    decided ONCE per segment to match the original moviepy contract.
+    Решение принимается на уровне сегмента: показать/скрыть, индекс кадра,
+    позиция и масштаб выбираются ОДИН РАЗ на сегмент - так же, как было в
+    исходном контракте на moviepy.
     """
     trigger_types = list(SegmentType)
 
@@ -270,7 +270,7 @@ class OverlayEffect(BaseEffect):
         tw, th = self._seg_tw, self._seg_th
         x0, y0 = self._seg_x0, self._seg_y0
         ov_src = self.overlay_frames[self._seg_ov_idx]
-        # _LazyVideoFrame is not a real ndarray — coerce before cv2 calls.
+        # _LazyVideoFrame - не настоящий ndarray, приводим перед вызовами cv2.
         ov_arr = np.asarray(ov_src)
         interp = cv2.INTER_AREA if draft else cv2.INTER_LINEAR
         ov = cv2.resize(ov_arr, (tw, th), interpolation=interp)

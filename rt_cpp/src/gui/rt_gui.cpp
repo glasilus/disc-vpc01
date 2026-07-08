@@ -15,9 +15,9 @@
 
 namespace fs = std::filesystem;
 
-// ── File dialog (Windows-native, UTF-8) ──────────────────────────────────────
-// On Linux/macOS the primary mechanism is drag-and-drop into the window
-// (GLFW's drop callback already delivers UTF-8 paths cross-platform).
+// ── Диалог выбора файлов (нативный Windows, UTF-8) ───────────────────────────
+// На Linux/macOS основной способ загрузки - drag-and-drop в окно (drop-колбэк
+// GLFW сам отдаёт UTF-8 пути на всех платформах).
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
@@ -43,7 +43,7 @@ static std::vector<std::string> open_file_dialog_multi(const wchar_t* filter) {
     ofn.nMaxFile    = sizeof(buf) / sizeof(wchar_t);
     ofn.Flags       = OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_EXPLORER;
     if (!GetOpenFileNameW(&ofn)) return result;
-    // Multi-select result: dir\0file1\0file2\0\0
+    // Результат мультивыбора: dir\0file1\0file2\0\0
     wchar_t* p = buf;
     std::wstring wdir = p; p += wdir.size() + 1;
     std::string dir = wide_to_utf8(wdir.c_str(), (int)wdir.size());
@@ -68,7 +68,7 @@ static std::string open_folder_dialog() {
     return wide_to_utf8(buf);
 }
 #elif defined(__APPLE__)
-// Route to the Cocoa NSOpenPanel implementation (mac_dialogs.mm).
+// Переадресация в реализацию на Cocoa NSOpenPanel (mac_dialogs.mm).
 #include "native_dialogs.h"
 static std::vector<std::string> open_file_dialog_multi(const wchar_t*) { return native_open_files(); }
 static std::string open_folder_dialog() { return native_open_folder(); }
@@ -77,7 +77,7 @@ static std::vector<std::string> open_file_dialog_multi(const wchar_t*) { return 
 static std::string open_folder_dialog() { return {}; }
 #endif
 
-// ── Static drop callback bridge (GLFW gives us a window pointer, not `this`) ─
+// ── Мост для drop-колбэка (GLFW отдаёт указатель на окно, а не `this`) ───────
 static RtGui* g_drop_owner = nullptr;
 static void drop_callback(GLFWwindow* /*w*/, int count, const char** paths) {
     if (!g_drop_owner) return;
@@ -94,8 +94,8 @@ bool RtGui::init(GLFWwindow* window, RtEngine* engine, const std::string& preset
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;
 
-    // Load a system font with full Cyrillic glyph coverage BEFORE the GL backend
-    // builds the atlas - otherwise Cyrillic shows as '?'.
+    // Шрифт с кириллицей нужно загрузить ДО того, как GL-бэкенд соберёт атлас -
+    // иначе кириллица отрисуется как '?'.
     FontLoader::load_default(14.f);
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
@@ -103,9 +103,9 @@ bool RtGui::init(GLFWwindow* window, RtEngine* engine, const std::string& preset
 
     Theme::apply_win95();
 
-    // Cross-platform file ingest: drag-and-drop. GLFW delivers UTF-8 paths on
-    // Win/macOS/Linux, so we don't need any per-OS dialog code for the common
-    // case.
+    // Основной способ загрузки файлов кроссплатформенный - drag-and-drop. GLFW
+    // сам отдаёт UTF-8 пути на Win/macOS/Linux, поэтому для базового сценария
+    // платформенные диалоги не нужны.
     g_drop_owner = this;
     glfwSetDropCallback(window, drop_callback);
 
@@ -138,9 +138,10 @@ void RtGui::handle_drop(int count, const char** paths) {
     static const std::initializer_list<const char*> kImageExts =
         {".png",".jpg",".jpeg",".bmp",".gif",".tga"};
 
-    // Filesystem iteration over dropped paths may throw on permission errors
-    // or invalid paths, especially on Windows. A throw inside a GLFW callback
-    // will tear down the whole process - wrap the entire scan.
+    // Обход файловой системы по перетащенным путям может бросить исключение
+    // из-за прав доступа или битых путей, особенно на Windows. Исключение,
+    // вылетевшее из GLFW-колбэка, уронит весь процесс - оборачиваем всё
+    // сканирование целиком.
     try {
         bool any_image_folder = false;
         for (int i = 0; i < count; ++i) {
@@ -148,16 +149,16 @@ void RtGui::handle_drop(int count, const char** paths) {
             fs::path p = fs::u8path(paths[i]);
             if (fs::is_directory(p, ec)) {
                 bool has_image = false;
-                // The non-throwing iterator ctor still may throw on
-                // operator++; catch it too.
+                // Неисключающий конструктор итератора всё равно может
+                // бросить исключение в operator++, ловим и его.
                 try {
                     for (auto it = fs::recursive_directory_iterator(p, ec);
                          it != fs::recursive_directory_iterator();
                          it.increment(ec)) {
                         if (ec) break;
                         if (!it->is_regular_file(ec)) continue;
-                        // path.u8string() guarantees UTF-8 output on Windows;
-                        // .string() would return ANSI and corrupt non-ASCII.
+                        // path.u8string() гарантированно даёт UTF-8 на Windows;
+                        // .string() вернул бы ANSI и побил не-ASCII символы.
                         auto u8 = it->path().u8string();
                         std::string sp(u8.begin(), u8.end());
                         if (has_ext(sp, kVideoExts))      engine_->video().add_source(sp);
@@ -190,7 +191,7 @@ void RtGui::render(EngineSettings& settings, float fps, GLuint display_tex) {
     int win_w, win_h;
     glfwGetWindowSize(window_, &win_w, &win_h);
 
-    // Full-window dockspace-style layout
+    // Layout на всё окно в стиле dockspace
     ImGui::SetNextWindowPos({0, 0});
     ImGui::SetNextWindowSize({(float)win_w, (float)win_h});
     ImGui::Begin("##root", nullptr,
@@ -198,11 +199,10 @@ void RtGui::render(EngineSettings& settings, float fps, GLuint display_tex) {
         ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoBringToFrontOnFocus |
         ImGuiWindowFlags_NoScrollbar);
 
-    // ── Top strip: compact preview + audio meters + transport ────────────────
-    // The preview is a THUMBNAIL now (the primary output surface is the
-    // dedicated OutputWindow on a chosen monitor). This frees the bulk of
-    // the control window for controls, which is what a VJ actually needs on
-    // their control surface.
+    // ── Верхняя полоса: превью + аудио-метры + транспорт ──────────────────────
+    // Превью здесь - просто МИНИАТЮРА, реальный вывод идёт через отдельное
+    // OutputWindow на выбранном мониторе. Это освобождает основную площадь
+    // control-окна под элементы управления, что и нужно VJ на рабочей поверхности.
     const float kPrevH = 180.f;
     const float kPrevW = 320.f;
     ImGui::BeginChild("##prev", {kPrevW, kPrevH}, false);
@@ -216,17 +216,17 @@ void RtGui::render(EngineSettings& settings, float fps, GLuint display_tex) {
 
     ImGui::Separator();
 
-    // ── Control panels (4 columns) ───────────────────────────────────────────
-    // Content is balanced across columns so none sits half-empty:
-    //   1 Master   : master sliders + canvas + live audio device/meters
-    //   2 Effects  : FX-region gate + the grouped effect list (the tallest, so
-    //                it gets a touch more width)
-    //   3 Sources  : video files + overlays + chroma-key compositing
-    //   4 Session  : presets + output + MIDI learn
+    // ── Панели управления (4 колонки) ─────────────────────────────────────────
+    // Контент распределён по колонкам так, чтобы ни одна не пустовала:
+    //   1 Master   : мастер-слайдеры + канвас + аудиоустройство/метры
+    //   2 Effects  : гейт FX-региона + сгруппированный список эффектов (самая
+    //                длинная колонка, поэтому ей отдаём чуть больше ширины)
+    //   3 Sources  : видеофайлы + оверлеи + chroma-key композитинг
+    //   4 Session  : пресеты + output + MIDI learn
     const float kGap = 8.f;
     float avail_w = win_w - kGap * 3.f - 8.f;
-    float narrow  = avail_w * 0.225f;   // cols 1,3,4
-    float wide    = avail_w - narrow * 3.f; // col 2 (effects) gets the remainder
+    float narrow  = avail_w * 0.225f;   // колонки 1,3,4
+    float wide    = avail_w - narrow * 3.f; // колонке 2 (эффекты) достаётся остаток
     float ctrl_h  = win_h - kPrevH - 40.f;
 
     ImGui::BeginChild("##master",  {narrow, ctrl_h}, true);
@@ -269,8 +269,8 @@ void RtGui::render(EngineSettings& settings, float fps, GLuint display_tex) {
 }
 
 void RtGui::draw_video_preview(GLuint tex, int win_w, int win_h) {
-    // Preserve the canvas aspect ratio inside the allocated preview rectangle
-    // (letterbox / pillarbox with black borders).
+    // Сохраняем аспект канваса внутри выделенного прямоугольника превью
+    // (letterbox / pillarbox с чёрными полосами).
     int cw = engine_->canvas_width();
     int ch = engine_->canvas_height();
     float cA = (cw > 0 && ch > 0) ? (float)cw / (float)ch : 16.f / 9.f;
@@ -298,7 +298,7 @@ void RtGui::draw_video_preview(GLuint tex, int win_w, int win_h) {
 }
 
 void RtGui::draw_transport(EngineSettings& s, float fps) {
-    // Left: big START/STOP button + toggles.
+    // Слева: большая кнопка START/STOP + переключатели.
     if (!running_) {
         if (Win95::button("START", 110.f, 32.f)) { want_start_ = true; running_ = true; }
     } else {
@@ -319,9 +319,10 @@ void RtGui::draw_transport(EngineSettings& s, float fps) {
 
     ImGui::SameLine();
     ImGui::BeginGroup();
-    // Tap-tempo metronome: TAP a few times, arms a synthetic beat grid that is
-    // OR'd with audio detection (keeps cuts/effects on tempo when the beat is
-    // weak). Also drivable from the keyboard (Enter) and MIDI.
+    // Метроном tap-tempo: несколько нажатий TAP взводят синтетическую сетку
+    // битов, которая ИЛИ-ится с аудиодетектором (держит каты/эффекты в темпе,
+    // даже если бит в сигнале слабый). Управляется также с клавиатуры (Enter)
+    // и с MIDI.
     if (Win95::button("TAP", 60.f, 22.f)) gui_tap();
     ImGui::SameLine();
     ImGui::Checkbox("Metro##tr", &engine_->metronome);
@@ -332,7 +333,7 @@ void RtGui::draw_transport(EngineSettings& s, float fps) {
 
     ImGui::Separator();
 
-    // Right: live audio meters, segment readout, device line.
+    // Справа: живые аудио-метры, текущий сегмент, строка устройства.
     AudioStats st = engine_->audio().get_stats();
     float vals[3]     = { st.bass, st.mid, st.treble };
     const char* lbl[3]= {"Bass", "Mid ", "Treb"};
@@ -348,19 +349,19 @@ void RtGui::draw_transport(EngineSettings& s, float fps) {
     const char* dev_label = (selected_device_ >= 0 &&
                              selected_device_ < (int)devices_.size())
                           ? devices_[selected_device_].name.c_str()
-                          : "(no device selected - will auto-pick on Start)";
+                          : "(устройство не выбрано - подберётся автоматически при Start)";
     ImGui::TextDisabled("Device: %s", dev_label);
 
-    // Diagnostic: live audio-callback counter. If running_ but this stays
-    // at 0, the stream is open but the OS isn't delivering samples.
+    // Диагностика: счётчик вызовов аудио-колбэка. Если running_, но счётчик
+    // стоит на 0 - поток открыт, но ОС не отдаёт сэмплы.
     if (engine_->audio().is_running()) {
         ImGui::TextDisabled("Audio cb: %u   sr=%d Hz",
             engine_->audio().callback_count(),
             engine_->audio().sample_rate());
     }
 
-    // Active-video readout. Shows the keyboard-slot number so the binding
-    // is self-documenting during a set.
+    // Индикатор активного видео. Показывает номер клавиатурного слота, чтобы
+    // биндинг был понятен без подсказок прямо во время сета.
     int act = engine_->video().active();
     int total = engine_->video().size();
     if (total == 0) {
@@ -378,8 +379,9 @@ void RtGui::draw_master_panel(EngineSettings& s) {
     ImGui::Separator();
     ImGui::SliderFloat("Chaos##m",     &s.chaos,            0.f, 1.f, "%.2f");
     ImGui::SliderFloat("Intensity##m", &s.master_intensity, 0.f, 1.f, "%.2f");
-    // Higher = the audio gate sits higher, so only louder passages trigger
-    // segments/effects (a noise-gate threshold, not a boost).
+    // Чем выше значение, тем выше порог аудио-гейта: сегменты/эффекты
+    // реагируют только на более громкие места (это порог шумоподавления,
+    // а не усиление).
     ImGui::SliderFloat("Gate Thresh##m", &s.sensitivity,    0.1f,3.f, "%.2f");
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Audio gate level: higher = only louder material reacts.");
@@ -388,7 +390,7 @@ void RtGui::draw_master_panel(EngineSettings& s) {
     ImGui::Separator();
     ImGui::TextUnformatted("CANVAS");
 
-    // Canvas resolution preset
+    // Пресет разрешения канваса
     int cur_preset = canvas_preset_;
     const char* cur_label = kCanvasPresets[cur_preset].label;
     if (ImGui::BeginCombo("Resolution", cur_label)) {
@@ -403,24 +405,24 @@ void RtGui::draw_master_panel(EngineSettings& s) {
         ImGui::EndCombo();
     }
 
-    // Aspect fit mode
+    // Режим вписывания по аспекту
     static const char* kAspectLabels[] = {"Contain", "Cover", "Stretch", "Native 1:1"};
     ImGui::Combo("Scale Mode", &s.aspect_mode, kAspectLabels, 4);
 }
 
-// Draw one effect's row: colored checkbox (blue if in the active keyboard
-// bank) plus, when enabled, a compact indented control line.
+// Рисует строку одного эффекта: цветной чекбокс (синий, если эффект в
+// активном банке клавиш) и, если включен, компактную строку настроек с отступом.
 void RtGui::draw_effect_row(EngineSettings& s, int i, int b0, int b1) {
     static const char* modes[] = {"Auto", "Beat", "Sustain", "Manual"};
-    // The keyboard row that toggles the current bank, in slot order.
+    // Ряд клавиш клавиатуры, переключающий текущий банк, по порядку слотов.
     static const char* kBankKeys[10] = {"Q","W","E","R","T","Y","U","I","O","P"};
     ImGui::PushID(i);
     int  slot    = fx_id_to_slot(i);
     bool in_bank = (slot >= b0 && slot <= b1);
     if (in_bank) ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 220, 255, 255));
     if (in_bank) {
-        // Prefix the row with the physical key that toggles it, so the binding
-        // is self-documenting during a set (e.g. "[E] Stutter").
+        // Добавляем в начало строки физическую клавишу-переключатель, чтобы
+        // биндинг был понятен прямо в интерфейсе (например "[E] Stutter").
         char label[96];
         std::snprintf(label, sizeof(label), "[%s] %s", kBankKeys[slot - b0], fx_label((FxId)i));
         ImGui::Checkbox(label, &s.fx[i].enabled);
@@ -430,9 +432,10 @@ void RtGui::draw_effect_row(EngineSettings& s, int i, int b0, int b1) {
     if (in_bank) ImGui::PopStyleColor();
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", fx_tip((FxId)i));
 
-    // Controls appear only while the effect is on, keeping the list scannable.
-    // Strength scales the shader; Mode picks how the audio envelope is driven;
-    // Chance gates how often Auto/Beat modes fire on an eligible musical event.
+    // Настройки показываются только пока эффект включен - так список легче
+    // просматривать. Strength масштабирует шейдер; Mode задаёт, как эффектом
+    // управляет аудио-огибающая; Chance ограничивает, как часто режимы
+    // Auto/Beat срабатывают на подходящем музыкальном событии.
     if (s.fx[i].enabled) {
         ImGui::Indent(16.f);
         ImGui::SetNextItemWidth(78.f);
@@ -456,18 +459,18 @@ void RtGui::draw_effect_row(EngineSettings& s, int i, int b0, int b1) {
 void RtGui::draw_effects_panel(EngineSettings& s) {
     ImGui::TextUnformatted("EFFECTS");
     ImGui::SameLine();
-    // The blue [Q]..[P] rows below are the ones the keyboard toggles right now;
-    // \ cycles to the next bank. Slots follow the grouped list order, so a bank
-    // is always a contiguous run.
+    // Синие строки [Q]..[P] ниже - это те, что сейчас переключаются
+    // клавиатурой; \ переключает на следующий банк. Слоты идут в порядке
+    // сгруппированного списка, поэтому банк всегда непрерывный диапазон.
     int b0 = fx_bank_ * 10;
     int b1 = std::min(b0 + 9, (int)FxId::COUNT - 1);
     ImGui::TextDisabled("(keys Q..P  \\ = bank %d/%d)",
                         fx_bank_ + 1, ((int)FxId::COUNT + 9) / 10);
 
-    // FX-region gate: restrict where effects land using the chroma-key mask.
-    // This is about effect scope, so it belongs here - the key itself is set up
-    // in the Chroma Key panel. Presented as one 3-way choice mapping onto the
-    // ck_gate_fx flag + ck_gate_mode.
+    // Гейт FX-региона: ограничивает, куда попадают эффекты, по маске chroma-key.
+    // Это про область действия эффектов, поэтому элемент здесь, а сам key
+    // настраивается в панели Chroma Key. Три варианта выбора мапятся на
+    // пару флагов ck_gate_fx + ck_gate_mode.
     int gate = s.ck_gate_fx ? (s.ck_gate_mode == 1 ? 2 : 1) : 0;
     static const char* kGateLabels[] = {"Everywhere", "Foreground only", "Background only"};
     ImGui::SetNextItemWidth(150.f);
@@ -483,8 +486,8 @@ void RtGui::draw_effects_panel(EngineSettings& s) {
 
     bool shown[(int)FxId::COUNT] = {};
 
-    // Collapsible category sections in the canonical order. Header shows the
-    // enabled/total count so you can see active effects without expanding.
+    // Сворачиваемые секции категорий в каноническом порядке. В заголовке
+    // видно счётчик включено/всего - активные эффекты видны без разворачивания.
     for (int g = 0; g < kFxGroupOrderCount; ++g) {
         const char* grp = kFxGroupOrder[g];
         int total = 0, on = 0;
@@ -505,8 +508,8 @@ void RtGui::draw_effects_panel(EngineSettings& s) {
         }
     }
 
-    // Safety net: any effect whose group isn't in the canonical order still
-    // shows up (so a newly-added group can never become unreachable in the UI).
+    // Подстраховка: эффект из группы, не входящей в канонический порядок,
+    // всё равно показывается (новая группа не может стать недоступной в UI).
     bool any_other = false;
     for (int i = 0; i < (int)FxId::COUNT; ++i) if (!shown[i]) { any_other = true; break; }
     if (any_other && ImGui::CollapsingHeader("OTHER###grp_other", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -541,20 +544,20 @@ void RtGui::draw_video_panel() {
 
     ImGui::BeginChild("##vlist", {0, 110}, true);
     for (int i = 0; i < (int)paths.size(); ++i) {
-        // u8path ensures UTF-8 → UTF-8 round-trip on Windows; .string()
-        // would mangle Cyrillic via the ANSI code page.
+        // u8path гарантирует, что UTF-8 останется UTF-8 на Windows; .string()
+        // пропустил бы путь через ANSI-кодовую страницу и побил кириллицу.
         auto u8 = fs::u8path(paths[i]).filename().u8string();
         std::string name(u8.begin(), u8.end());
         char label[512];
-        // Number prefix gives the keyboard shortcut at a glance: 1..9, 0
-        // for slot 10. ImGui needs unique IDs per row so we suffix ##i.
+        // Числовой префикс сразу показывает клавиатурный шорткат: 1..9, 0
+        // для 10-го слота. ImGui нужен уникальный ID для строки - добавляем ##i.
         std::snprintf(label, sizeof(label), "%s%d. %s##v%d",
                       (i == active) ? "[*] " : "    ",
                       (i + 1) % 10,        // slot 10 shows "0"
                       name.c_str(), i);
         bool selected = (i == active);
         if (ImGui::Selectable(label, selected)) {
-            // Click toggles: clicking the active row releases focus.
+            // Клик переключает: клик по активной строке снимает фокус.
             pool.set_active(selected ? -1 : i);
         }
     }
@@ -572,7 +575,7 @@ void RtGui::draw_audio_panel(EngineSettings& s) {
 
     if (ImGui::Button("Refresh##dev")) devices_dirty_ = true;
 
-    // Device dropdown
+    // Выпадающий список устройств
     const char* preview = (selected_device_ >= 0 && selected_device_ < (int)devices_.size())
         ? devices_[selected_device_].name.c_str() : "(none)";
     if (ImGui::BeginCombo("Device", preview)) {
@@ -584,7 +587,7 @@ void RtGui::draw_audio_panel(EngineSettings& s) {
         ImGui::EndCombo();
     }
 
-    // Audio meters
+    // Аудио-метры
     AudioStats st = engine_->audio().get_stats();
     float vals[3] = { st.bass, st.mid, st.treble };
     const char* labels[3] = {"B","M","T"};
@@ -610,20 +613,20 @@ void RtGui::draw_overlay_panel(EngineSettings& s) {
     ImGui::Text("Loaded: %d image(s)", n_overlays);
 
     if (ImGui::SliderFloat("OvIntensity", &s.overlay_intensity, 0.f, 1.f, "%.2f")) {
-        // The overlay composite pass also requires the OVERLAYS effect toggle
-        // to be on. Auto-flip it as the user dials intensity up - without this
-        // the slider silently does nothing, which is the surprise we hit in
-        // earlier sessions.
+        // Проход композита оверлея работает только если включен тумблер
+        // эффекта OVERLAYS. Включаем его автоматически, как только пользователь
+        // подкручивает intensity - иначе слайдер молча ничего не делает,
+        // что регулярно всех сбивало с толку.
         if (s.overlay_intensity > 0.01f)
             s.fx[(int)FxId::OVERLAYS].enabled = true;
     }
 }
 
-// Chroma key belongs to the OVERLAY composite: it keys the chosen colour out of
-// the overlay image so the video shows through those areas (see chroma_key.frag).
-// That is why it sits directly under the overlay controls. The separate "gate
-// effects by this mask" option lives in the Effects panel, since that is about
-// where effects apply, not about the overlay key itself.
+// Chroma key относится к композиту OVERLAY: он выбивает выбранный цвет из
+// оверлейного изображения, чтобы в этих местах просвечивало видео (см.
+// chroma_key.frag). Поэтому элемент стоит прямо под контролами оверлея.
+// Отдельная опция "гейтить эффекты по этой маске" живёт в панели Effects,
+// т.к. она про область применения эффектов, а не про сам ключ оверлея.
 void RtGui::draw_chroma_panel(EngineSettings& s) {
     ImGui::TextUnformatted("OVERLAY CHROMA KEY");
     ImGui::Separator();
@@ -650,10 +653,10 @@ void RtGui::draw_output_panel() {
         return;
     }
 
-    // Clamp stored selection
+    // Ограничиваем сохранённый выбор количеством мониторов
     if (requested_monitor_ >= mon_count) requested_monitor_ = 0;
 
-    // Build a human-readable label for each monitor
+    // Формируем читаемую подпись для каждого монитора
     char preview[128];
     const GLFWvidmode* mode = glfwGetVideoMode(monitors[requested_monitor_]);
     const char* mname = glfwGetMonitorName(monitors[requested_monitor_]);

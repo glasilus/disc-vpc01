@@ -1,4 +1,4 @@
-"""VisualizerEffect: render→composite flow shared by all WMP visualizers."""
+"""VisualizerEffect: общий для всех WMP-визуализаторов цикл render→composite."""
 from __future__ import annotations
 
 from abc import abstractmethod
@@ -12,13 +12,13 @@ from .compose import composite
 
 
 class VisualizerEffect(BaseEffect):
-    """Base for audio-reactive visualizers.
+    """Базовый класс аудиореактивных визуализаторов.
 
-    Subclasses implement ``_render(h, w, sample)`` returning ``(visual_rgb,
-    field_gray)``. The base class handles reading the per-frame audio sample
-    off the segment and compositing onto the source via the shared modes.
+    Наследники реализуют ``_render(h, w, sample)``, возвращающий ``(visual_rgb,
+    field_gray)``. Базовый класс сам читает аудиосэмпл кадра с сегмента и
+    компонует результат с исходным кадром через общие режимы.
     """
-    trigger_types = list(SegmentType)   # reactive on every segment type
+    trigger_types = list(SegmentType)   # реагирует на любой тип сегмента
 
     def __init__(self, mode: str = 'replace', opacity: float = 0.85,
                  blend: str = 'screen', **kw):
@@ -36,5 +36,5 @@ class VisualizerEffect(BaseEffect):
 
     @abstractmethod
     def _render(self, h: int, w: int, sample) -> tuple[np.ndarray, np.ndarray]:
-        """Return (visual_rgb HxWx3 uint8, field_gray HxW uint8)."""
+        """Возвращает (visual_rgb HxWx3 uint8, field_gray HxW uint8)."""
         ...

@@ -1,8 +1,8 @@
-"""HW-encoder fallback logic — verified without an actual GPU.
+"""Логика фолбэка HW-энкодера - проверяется без реального GPU.
 
-We mock FFmpegSink so we can deterministically simulate a HW encoder
-that dies at init (`early_failure` returns a string), and assert that
-the engine re-opens with libx264 instead of letting the render crash.
+FFmpegSink замокан, чтобы детерминированно сымитировать HW-энкодер,
+падающий при инициализации (`early_failure` возвращает строку), и
+убедиться, что движок переоткрывает синк с libx264 вместо падения рендера.
 """
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ from vpc.render import encoders as enc
 
 
 def test_hw_failure_falls_back_to_libx264(monkeypatch, tmp_path):
-    """Simulate NVENC init failure → engine must rebuild the sink with
-    libx264 and continue rather than propagating the failure."""
-    # Force the catalogue to act as if NVENC is available.
+    """Имитация сбоя инициализации NVENC: движок должен пересобрать синк
+    с libx264 и продолжить работу, а не пробрасывать ошибку дальше."""
+    # Подделываем каталог, будто NVENC доступен.
     monkeypatch.setattr(enc, '_AVAILABLE_VCODECS_CACHE',
                         {'libx264', 'libx265', 'libvpx-vp9', 'prores_ks',
                          'h264_nvenc'})
@@ -44,10 +44,9 @@ def test_hw_failure_falls_back_to_libx264(monkeypatch, tmp_path):
 
     monkeypatch.setattr(eng_mod, 'FFmpegSink', FakeSink)
 
-    # Drive the relevant block by calling the helper logic directly,
-    # bypassing the audio analysis, scene detect, and effect chain. We
-    # simulate just the sink-resolve + early_failure path. This is the
-    # surface area we changed; it's enough for the regression.
+    # Вызываем логику напрямую, минуя анализ аудио, детект сцен и цепочку
+    # эффектов - проверяем только путь resolve-синка + early_failure,
+    # этого достаточно для регрессионного теста.
     rc_label = 'H.264 NVENC (MP4)'
     spec = enc.find_spec(rc_label)
     assert spec is not None and spec.is_hw
@@ -56,7 +55,7 @@ def test_hw_failure_falls_back_to_libx264(monkeypatch, tmp_path):
     err = sink.early_failure()
     assert err is not None, 'fake should report failure'
 
-    # The fallback the engine uses on HW init failure:
+    # Фолбэк, который движок использует при сбое инициализации HW:
     fb = enc.fallback_spec()
     sink2 = FakeSink(vcodec=fb.vcodec, pix_fmt=fb.pix_fmt)
     assert sink2.early_failure() is None
@@ -64,18 +63,18 @@ def test_hw_failure_falls_back_to_libx264(monkeypatch, tmp_path):
 
 
 def test_unknown_codec_label_resolves_to_h264_libx264():
-    """Loading a preset saved on a machine with HW we don't have →
-    `find_spec` returns None → engine.run swaps in fallback_spec."""
+    """Пресет, сохранённый на машине с недоступным нам HW: `find_spec`
+    вернёт None, и engine.run подставит fallback_spec."""
     assert enc.find_spec('H.264 SomeFutureGPU (MP4)') is None
     fb = enc.fallback_spec()
     assert fb.vcodec == 'libx264'
 
 
-# ----- runtime probe -----
+# ----- проверка энкодера в рантайме -----
 
 def test_probe_caches_result(monkeypatch):
-    """probe_encoder must cache per-vcodec to avoid re-running ffmpeg
-    on every render in the same session."""
+    """probe_encoder должен кэшировать результат по vcodec, чтобы не
+    перезапускать ffmpeg на каждый рендер в рамках одной сессии."""
     enc._PROBE_CACHE.clear()
     enc._PROBE_LAST_ERROR.clear()
 
@@ -89,7 +88,7 @@ def test_probe_caches_result(monkeypatch):
 
     def fake_run(*args, **kwargs):
         calls['n'] += 1
-        # Simulate a successful encoder by writing a non-empty file.
+        # Имитируем успешную работу энкодера, записав непустой файл.
         out = args[0][-1]
         with open(out, 'wb') as f:
             f.write(b'\x00' * 2048)
@@ -97,12 +96,12 @@ def test_probe_caches_result(monkeypatch):
 
     monkeypatch.setattr(enc.subprocess, 'run', fake_run)
     assert enc.probe_encoder(spec) is True
-    assert enc.probe_encoder(spec) is True  # second call hits cache
+    assert enc.probe_encoder(spec) is True  # второй вызов берёт из кэша
     assert calls['n'] == 1
 
 
 def test_probe_reports_failure_on_timeout(monkeypatch):
-    """Timeout maps to False + a human-readable error reason."""
+    """Таймаут превращается в False + читаемую причину ошибки."""
     enc._PROBE_CACHE.clear()
     enc._PROBE_LAST_ERROR.clear()
 
@@ -117,13 +116,13 @@ def test_probe_reports_failure_on_timeout(monkeypatch):
 
 
 def test_probe_skipped_for_soft_codecs(monkeypatch):
-    """libx264 and friends should never spawn an ffmpeg probe — they
-    are guaranteed to work, so probing is dead weight."""
+    """libx264 и подобные не должны запускать проверку через ffmpeg -
+    они гарантированно работают, так что проверка тут лишняя."""
     enc._PROBE_CACHE.clear()
     spec = enc.fallback_spec()  # libx264
 
     def fake_run(*args, **kwargs):
-        raise AssertionError('soft codecs must not be probed')
+        raise AssertionError('программные кодеки не должны проверяться')
 
     monkeypatch.setattr(enc.subprocess, 'run', fake_run)
     assert enc.probe_encoder(spec) is True

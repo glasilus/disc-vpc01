@@ -1,10 +1,10 @@
-"""Shape / dtype / non-trivial-change tests for the four new visual effects.
+"""Проверка shape/dtype и реального изменения кадра для новых visual-эффектов.
 
-We don't golden-hash any of these — they all involve random sources or
-state — but each one MUST: preserve frame shape, return uint8, and
-actually mutate the frame at non-zero intensity. Wired through the
-public BaseEffect.apply() so we also implicitly test that the chain
-gating doesn't accidentally skip them.
+Golden-хэши тут не годятся - у всех эффектов есть случайность или
+внутреннее состояние. Вместо этого каждый эффект обязан: сохранять
+форму кадра, возвращать uint8 и реально менять кадр при ненулевой
+интенсивности. Вызов идёт через публичный BaseEffect.apply(), так что
+заодно проверяется, что гейтинг цепочки не пропускает эффекты.
 """
 from __future__ import annotations
 
@@ -71,8 +71,8 @@ def test_actually_mutates_at_non_zero_intensity(cls, kwargs):
 
 
 def test_pframe_lag_warmup_then_smear():
-    """PFrameLag is a no-op on its very first frame (no prev buffer
-    yet) but must produce a smear on the second different frame."""
+    """На самом первом кадре PFrameLag - no-op (буфера prev ещё нет),
+    но на втором, отличающемся кадре обязан дать смаз."""
     fx = PFrameLagEffect(enabled=True, chance=1.0,
                          intensity_min=0.7, intensity_max=0.7)
     a = _frame(seed=1)
@@ -84,32 +84,32 @@ def test_pframe_lag_warmup_then_smear():
 
 
 def test_pframe_lag_keeps_prev_fresh_when_chance_fails():
-    """When chance roll fails, PFrameLag.apply must still update its
-    prev buffer (custom apply override) — otherwise the next firing
-    would smear against an outdated frame and snap visibly."""
-    # Disable by setting chance=0; apply() will short-circuit but our
-    # override must still update _prev.
+    """Даже если бросок chance не выпал, PFrameLag.apply обязан обновить
+    свой буфер prev (кастомный override apply) - иначе следующее
+    срабатывание смажет кадр против устаревшего prev и даст заметный скачок."""
+    # chance=0 отключает эффект; apply() уйдёт по короткому пути, но
+    # override всё равно должен обновлять _prev.
     fx = PFrameLagEffect(enabled=True, chance=0.0,
                          intensity_min=0.7, intensity_max=0.7)
     a = _frame(seed=1)
     b = _frame(seed=2)
     fx.apply(a, _seg(), draft=False)
     fx.apply(b, _seg(), draft=False)
-    # _prev must reflect b (the most recent input), not a.
+    # _prev должен отражать b (последний вход), а не a.
     assert fx._prev is not None
     assert np.allclose(fx._prev, b.astype(np.float32))
 
 
 def test_pframe_lag_disabled_drops_state_no_copy():
-    """When the effect is structurally disabled, the `apply` override
-    must early-return without copying frame to float32 (perf path) and
-    must drop the prev buffer so a future re-enable starts cleanly."""
+    """Когда эффект структурно выключен, override `apply` обязан выйти
+    рано без копирования кадра в float32 (путь производительности) и
+    сбросить буфер prev, чтобы повторное включение стартовало с чистого листа."""
     fx = PFrameLagEffect(enabled=True, chance=1.0,
                          intensity_min=0.7, intensity_max=0.7)
     a = _frame(seed=1)
     b = _frame(seed=2)
     fx.apply(a, _seg(), draft=False)
-    # Prime: now disable
+    # Прогрели буфер, теперь выключаем
     fx.enabled = False
     out = fx.apply(b, _seg(), draft=False)
     assert out is b, 'disabled apply should return frame by identity (no copy)'
@@ -117,11 +117,10 @@ def test_pframe_lag_disabled_drops_state_no_copy():
 
 
 def test_bit_flip_random_alloc_is_uint8_not_float64():
-    """Regression guard against re-introducing the float64 mask alloc.
-    We can't directly inspect the temporary, but we CAN check that the
-    effect runs in much less memory than a float64 mask would imply.
-    Indirect: just verify it produces correct output on a large frame
-    without OOM (4K is too big for CI; we use 1080p)."""
+    """Регрессия на повторное появление аллокации маски в float64.
+    Напрямую temporary не проверить, но можно косвенно убедиться, что
+    эффект отрабатывает на большом кадре без OOM (4K для CI слишком
+    тяжело, берём 1080p)."""
     fx = BitFlipEffect(enabled=True, chance=1.0,
                        intensity_min=0.5, intensity_max=0.5)
     big = np.random.randint(0, 256, (1080, 1920, 3), dtype=np.uint8)
@@ -131,7 +130,7 @@ def test_bit_flip_random_alloc_is_uint8_not_float64():
 
 
 def test_zero_intensity_is_passthrough():
-    """All effects must be a no-op when intensity is pinned to 0."""
+    """При интенсивности 0 все эффекты обязаны быть no-op."""
     src = _frame()
     for cls in (VHSTapeEffect, SelfCannibalizeEffect,
                 CursorStormEffect, BSODShredEffect,
@@ -144,8 +143,8 @@ def test_zero_intensity_is_passthrough():
 
 
 def test_cursor_storm_state_persists_across_frames():
-    """Stateful pointer positions must move between frames — verifies
-    `_pointers` carries state, not re-seeds each call."""
+    """Позиции курсоров должны двигаться между кадрами - проверяет,
+    что `_pointers` хранит состояние, а не пересоздаётся на каждом вызове."""
     fx = CursorStormEffect(enabled=True, chance=1.0,
                            intensity_min=0.5, intensity_max=0.5)
     src = _frame()
@@ -157,8 +156,8 @@ def test_cursor_storm_state_persists_across_frames():
 
 
 def test_vhstape_dust_changes_output():
-    """Toggling `dust` must produce a different result from the same input
-    (proves the dust path runs at all)."""
+    """Переключение `dust` обязано дать другой результат на том же входе
+    (доказывает, что ветка dust вообще выполняется)."""
     src = _frame()
     common = dict(enabled=True, chance=1.0,
                   intensity_min=0.5, intensity_max=0.5)
@@ -168,8 +167,8 @@ def test_vhstape_dust_changes_output():
     out_a = a.apply(src, _seg(), draft=False)
     random.seed(0); np.random.seed(0)
     out_b = b.apply(src, _seg(), draft=False)
-    # Dust draws dark vertical lines — they SHOULD make the result differ
-    # somewhere even with matched RNG seeds. (Not guaranteed every seed
-    # because dust has its own probability gate; we use seed 0 which
-    # was empirically chosen to fire the gate at least once.)
+    # Dust рисует тёмные вертикальные линии - результат должен отличаться
+    # даже при одинаковом seed RNG. Гарантии на любой seed нет: у dust
+    # свой вероятностный гейт, seed 0 подобран опытным путём так, чтобы
+    # гейт сработал хотя бы раз.
     assert not np.array_equal(out_a, out_b), 'dust off vs on identical'

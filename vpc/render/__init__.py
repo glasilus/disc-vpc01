@@ -1,4 +1,4 @@
-"""Render subsystem: config, source, sink, engine."""
+"""Подсистема рендера: config, source, sink, engine."""
 from .config import RenderConfig, RENDER_DRAFT, RENDER_PREVIEW, RENDER_FINAL
 from .engine import BreakcoreEngine
 from .source import VideoPool

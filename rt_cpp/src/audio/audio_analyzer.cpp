@@ -11,19 +11,19 @@
 #  include <windows.h>
 #endif
 
-// Device names coming from PortAudio MME/DirectSound on Windows are in the
-// current ANSI code page. WASAPI & WDM-KS are already UTF-8. Convert via
-// CP_ACP → UTF-8 when the string contains high bytes that aren't valid UTF-8.
+// Имена устройств от PortAudio MME/DirectSound на Windows приходят в текущей
+// ANSI-кодовой странице. WASAPI и WDM-KS уже отдают UTF-8. Конвертируем через
+// CP_ACP -> UTF-8, только если в строке есть байты, не валидные как UTF-8.
 static std::string to_utf8(const char* raw) {
     if (!raw || !*raw) return "";
 #if defined(_WIN32)
-    // Detect whether the string is already valid UTF-8. MB_ERR_INVALID_CHARS
-    // makes MultiByteToWideChar return 0 on any invalid sequence, so a positive
-    // result means the bytes are valid UTF-8 and we keep them as-is.
+    // Проверяем, не UTF-8 ли строка уже. MB_ERR_INVALID_CHARS заставляет
+    // MultiByteToWideChar вернуть 0 при любой невалидной последовательности,
+    // так что положительный результат значит "это валидный UTF-8, оставляем как есть".
     int len = (int)std::strlen(raw);
     int wlen = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, raw, len, nullptr, 0);
-    if (wlen > 0) return std::string(raw, len); // valid UTF-8
-    // Otherwise decode as system ANSI → wide → UTF-8
+    if (wlen > 0) return std::string(raw, len); // валидный UTF-8
+    // Иначе декодируем как системную ANSI -> wide -> UTF-8
     wlen = MultiByteToWideChar(CP_ACP, 0, raw, len, nullptr, 0);
     if (wlen <= 0) return std::string(raw, len);
     std::wstring w(wlen, L'\0');
@@ -37,8 +37,8 @@ static std::string to_utf8(const char* raw) {
 #endif
 }
 
-// Priority of host APIs for dedup - higher value wins when names collide.
-// Lower latency + better stability → higher score.
+// Приоритет host API для дедупликации - при совпадении имён побеждает большее
+// значение. Ниже задержка и стабильнее API - выше очки.
 static int host_api_priority(PaHostApiTypeId t) {
     switch (t) {
         case paWASAPI:          return 100;
@@ -65,8 +65,8 @@ AudioAnalyzer::AudioAnalyzer() {
         fprintf(stderr, "[audio] Pa_Initialize failed: %s\n", Pa_GetErrorText(e));
     } else {
         fprintf(stderr, "[audio] Pa_Initialize OK (%s)\n", Pa_GetVersionText());
-        // Dump every device PortAudio sees, including non-input ones, so
-        // diagnostic logs reveal exactly what the user has available.
+        // Пишем в лог вообще все устройства, которые видит PortAudio, включая
+        // output-only - диагностика должна показывать полную картину.
         int total = Pa_GetDeviceCount();
         fprintf(stderr, "[audio] %d devices total:\n", total);
         for (int i = 0; i < total; ++i) {
@@ -83,15 +83,15 @@ AudioAnalyzer::AudioAnalyzer() {
     fft_out_ = fftwf_alloc_complex(kFftSize / 2 + 1);
     fft_plan_ = fftwf_plan_dft_r2c_1d(kFftSize, fft_in_, fft_out_, FFTW_MEASURE);
 
-    // Precompute a Hann window once - applied to every analysis frame to cut
-    // spectral leakage (raw rectangular windows smear the bass badly).
+    // Окно Ханна считаем один раз - применяется к каждому кадру анализа, чтобы
+    // подавить spectral leakage (прямоугольное окно сильно размазывает бас).
     for (int i = 0; i < kFftSize; ++i)
         hann_[i] = 0.5f * (1.f - std::cos(2.f * 3.14159265358979f * i / (kFftSize - 1)));
 }
 
 int AudioAnalyzer::default_input_device() {
-    // Prefer WASAPI's default input device on Windows; otherwise fall back
-    // to PortAudio's global default. Returns -1 if nothing is available.
+    // На Windows предпочитаем дефолтное input-устройство WASAPI, иначе
+    // берём глобальный дефолт PortAudio. Возвращает -1, если нет ничего.
     int count = Pa_GetHostApiCount();
     for (int h = 0; h < count; ++h) {
         const PaHostApiInfo* ha = Pa_GetHostApiInfo(h);
@@ -114,14 +114,14 @@ AudioAnalyzer::~AudioAnalyzer() {
 }
 
 std::vector<AudioDevice> AudioAnalyzer::enumerate_devices() {
-    // 1) Collect every input-capable device with UTF-8 name + API info.
+    // 1) Собираем все устройства с input-каналами, имя в UTF-8 + инфо об API.
     std::vector<AudioDevice> all;
     int count = Pa_GetDeviceCount();
     for (int i = 0; i < count; ++i) {
         const PaDeviceInfo* info = Pa_GetDeviceInfo(i);
         if (!info) continue;
-        // WASAPI loopback counts as an output device in PortAudio but reports
-        // input channels, so we keep any device with inputs available.
+        // WASAPI loopback в PortAudio числится как output-устройство, но
+        // репортит input-каналы, поэтому оставляем всё, где они есть.
         if (info->maxInputChannels < 1) continue;
 
         AudioDevice d;
@@ -139,16 +139,16 @@ std::vector<AudioDevice> AudioAnalyzer::enumerate_devices() {
         all.push_back(std::move(d));
     }
 
-    // 2) Dedup: group by base name (strip " [Loopback]" suffix, lowercase),
-    //    keep the highest-priority host API for each group.
+    // 2) Дедуп: группируем по базовому имени (без суффикса "[Loopback]",
+    //    в нижнем регистре), для каждой группы оставляем API с высшим приоритетом.
     struct Best { int idx; int prio; };
     std::unordered_map<std::string, Best> best;
     for (int i = 0; i < (int)all.size(); ++i) {
         const auto& d = all[i];
         std::string key = lower_ascii(d.name);
-        // Strip the "(loopback)" / "[loopback]" annotations so that a mic
-        // called "Foo" and "Foo (loopback)" aren't merged, but DirectSound
-        // "Foo" and MME "Foo" are.
+        // Помечаем loopback отдельным суффиксом ключа, чтобы микрофон "Foo"
+        // и "Foo (loopback)" не схлопывались в одну запись - а вот
+        // DirectSound "Foo" и MME "Foo" должны схлопнуться.
         if (d.is_loopback) key += "#lb";
         int prio = host_api_priority((PaHostApiTypeId)d.host_api_type);
         auto it = best.find(key);
@@ -157,8 +157,8 @@ std::vector<AudioDevice> AudioAnalyzer::enumerate_devices() {
         }
     }
 
-    // 3) Build final list, annotating the host API so duplicates across
-    //    truly different physical devices remain distinguishable.
+    // 3) Собираем финальный список, добавляя host API в имя, чтобы разные
+    //    физические устройства с одинаковым именем оставались различимыми.
     std::vector<AudioDevice> result;
     result.reserve(best.size());
     for (auto& kv : best) {
@@ -168,7 +168,7 @@ std::vector<AudioDevice> AudioAnalyzer::enumerate_devices() {
         result.push_back(std::move(d));
     }
 
-    // 4) Stable ordering: loopbacks last, then alphabetical.
+    // 4) Стабильный порядок: сначала обычные устройства, loopback - в конце, дальше по алфавиту.
     std::sort(result.begin(), result.end(), [](const AudioDevice& a, const AudioDevice& b){
         if (a.is_loopback != b.is_loopback) return !a.is_loopback;
         return a.name < b.name;
@@ -179,7 +179,7 @@ std::vector<AudioDevice> AudioAnalyzer::enumerate_devices() {
 bool AudioAnalyzer::start(int device_index) {
     stop();
 
-    // Auto-pick a sensible default when the GUI hasn't selected anything yet.
+    // Если GUI ещё ничего не выбрал, подбираем разумный дефолт сами.
     if (device_index < 0) {
         device_index = default_input_device();
         if (device_index < 0) {
@@ -200,8 +200,8 @@ bool AudioAnalyzer::start(int device_index) {
             device_index, dev->name ? dev->name : "?",
             ha ? ha->name : "?", dev->defaultSampleRate, dev->maxInputChannels);
 
-    // Try mono first; if the device refuses, fall back to the device's native
-    // channel count (we mix to mono in the callback).
+    // Сначала пробуем моно; если устройство отказывается, откатываемся на его
+    // родное число каналов (даунмикс в моно делаем уже в callback'е).
     int channels = 1;
     if (dev->maxInputChannels < 1) {
         fprintf(stderr, "[audio] device has no input channels\n");
@@ -209,20 +209,19 @@ bool AudioAnalyzer::start(int device_index) {
     }
     if (dev->maxInputChannels > 1) channels = std::min(dev->maxInputChannels, 2);
 
-    // Use the device's native sample rate when available. WASAPI shared mode
-    // almost always runs at 48 kHz on modern Windows and will reject a 44.1
-    // kHz request outright.
+    // Берём родной sample rate устройства, если он в разумных пределах.
+    // WASAPI shared mode на современной Windows почти всегда работает на
+    // 48 кГц и напрямую отклонит запрос 44.1 кГц.
     double requested_sr = (dev->defaultSampleRate >= 16000.0 &&
                            dev->defaultSampleRate <= 96000.0)
                         ? dev->defaultSampleRate : (double)kSampleRateDefault;
 
-    // Try pairs of (channel_count, frames_per_buffer, latency) until one
-    // works. Pa_IsFormatSupported is unreliable on WASAPI (returns
-    // \"supported\" for things that fail at OpenStream time and vice versa),
-    // so we just try OpenStream directly. paFramesPerBufferUnspecified
-    // (= 0) lets PortAudio pick a buffer size compatible with the driver,
-    // which some WASAPI drivers REQUIRE - they reject any fixed buffer
-    // size we'd choose ourselves.
+    // Перебираем пары (число каналов, frames_per_buffer, latency), пока
+    // что-то не сработает. Pa_IsFormatSupported на WASAPI врёт (говорит
+    // "supported" для того, что падает при OpenStream, и наоборот), поэтому
+    // просто пробуем OpenStream напрямую. paFramesPerBufferUnspecified (= 0)
+    // разрешает PortAudio самому подобрать размер буфера под драйвер - часть
+    // WASAPI-драйверов это ТРЕБУЕТ и отклоняет любой фиксированный размер.
     struct Attempt { int ch; unsigned long fpb; double lat; const char* tag; };
     const Attempt attempts[] = {
         {channels, kChunkSize,                       dev->defaultLowInputLatency,  "ch=N fpb=256 low"},
@@ -267,7 +266,7 @@ bool AudioAnalyzer::start(int device_index) {
         return false;
     }
 
-    // Reset analyzer state.
+    // Сброс состояния анализатора.
     rms_smooth_        = 0.f;
     rms_mean_          = 0.f;
     flat_mean_         = 0.f;
@@ -281,7 +280,7 @@ bool AudioAnalyzer::start(int device_index) {
     rms_hist_count_    = 0;
     std::fill(std::begin(rms_history_), std::end(rms_history_), 0.f);
     callback_count_.store(0);
-    // Sliding-window / detector state.
+    // Состояние скользящего окна / детектора.
     std::fill(std::begin(win_ring_),  std::end(win_ring_),  0.f);
     std::fill(std::begin(prev_mag_),  std::end(prev_mag_),  0.f);
     std::fill(std::begin(bin_max_),   std::end(bin_max_),   1e-4f);
@@ -304,7 +303,7 @@ bool AudioAnalyzer::start(int device_index) {
     if (si) {
         fprintf(stderr, "[audio] stream running: actual sr=%.0f input_lat=%.3fs\n",
                 si->sampleRate, si->inputLatency);
-        sample_rate_ = (int)si->sampleRate;  // adopt actual rate
+        sample_rate_ = (int)si->sampleRate;  // берём фактический sample rate
     } else {
         fprintf(stderr, "[audio] stream running (Pa_GetStreamInfo returned null)\n");
     }
@@ -327,13 +326,13 @@ int AudioAnalyzer::pa_callback(const void* input, void* /*output*/,
                                void* user_data) {
     auto* self = static_cast<AudioAnalyzer*>(user_data);
     self->callback_count_.fetch_add(1, std::memory_order_relaxed);
-    if (!input) return paContinue;   // some WASAPI edge cases pass null briefly
+    if (!input) return paContinue;   // в некоторых WASAPI-случаях кратковременно приходит null
     const float* src = static_cast<const float*>(input);
 
-    // Downmix to mono in bounded blocks and feed the sliding window. We do NOT
-    // truncate to a fixed buffer any more - WASAPI shared mode routinely
-    // delivers 448-480 frames; the old code processed only the first 256,
-    // dropping ~half the audio and running the analysis clock ~1.9× slow.
+    // Даунмикс в моно блоками ограниченного размера, скармливаем скользящему
+    // окну. Буфер больше НЕ обрезается до фиксированного размера - WASAPI
+    // shared mode регулярно отдаёт 448-480 фреймов; старый код обрабатывал
+    // только первые 256, теряя ~половину аудио и замедляя анализ в ~1.9 раза.
     const int ch = std::max(1, self->channel_count_);
     if (ch <= 1) {
         self->ingest(src, frames);
@@ -362,7 +361,7 @@ static float compute_rms(const float* buf, int n) {
 }
 
 static float linear_slope(const float* y, int n) {
-    // Simple least-squares slope over n evenly-spaced points
+    // Наклон методом наименьших квадратов по n равномерно расставленным точкам
     if (n < 2) return 0.f;
     float mx = (n - 1) * 0.5f;
     float sx2 = 0.f, sxy = 0.f;
@@ -389,18 +388,19 @@ void AudioAnalyzer::ingest(const float* mono, unsigned long n) {
 }
 
 void AudioAnalyzer::analyze_window() {
-    // Assemble the ordered window (oldest → newest) from the ring; the oldest
-    // sample sits exactly at ring_pos_ (the next write slot). Apply Hann.
+    // Собираем окно по порядку (старые -> новые сэмплы) из кольца; самый
+    // старый сэмпл лежит ровно в ring_pos_ (следующая позиция записи).
+    // Применяем окно Ханна.
     for (int i = 0; i < kFftSize; ++i) {
         float s = win_ring_[(ring_pos_ + i) % kFftSize];
         fft_in_[i] = s * hann_[i];
     }
 
-    // RMS over the raw (un-windowed) window for a stable loudness estimate.
+    // RMS по сырому (без окна) буферу для стабильной оценки громкости.
     float raw_rms = compute_rms(win_ring_, kFftSize);
     rms_smooth_ = 0.7f * rms_smooth_ + 0.3f * raw_rms;
 
-    // ── Calibration (noise floor) ─────────────────────────────────────────────
+    // ── Калибровка (уровень шума) ─────────────────────────────────────────────
     if (!calibrated_) {
         cal_buf_[cal_idx_++ % kCalibChunks] = raw_rms;
         calibration_count_++;
@@ -421,8 +421,8 @@ void AudioAnalyzer::analyze_window() {
     const int max_bin = kFftSize / 2;
     const float bin_hz = (float)sample_rate_ / (float)kFftSize;
 
-    // Magnitude spectrum (also feeds spectral flux + bins).
-    // Reuse fft_in_ is done; compute magnitudes on the fly where needed.
+    // Спектр магнитуд (нужен и для spectral flux, и для полос).
+    // fft_in_ больше не нужен; магнитуды считаем по требованию.
     auto mag_at = [&](int b) -> float {
         return std::sqrt(fft_out_[b][0]*fft_out_[b][0] + fft_out_[b][1]*fft_out_[b][1]);
     };
@@ -443,7 +443,7 @@ void AudioAnalyzer::analyze_window() {
     float geo_sum = 0.f, arith_sum = 0.f;
     int   nbins = 0;
     float flux = 0.f;
-    const int flux_hi = std::min(max_bin, (int)(4000.f / bin_hz)); // kick/snare band
+    const int flux_hi = std::min(max_bin, (int)(4000.f / bin_hz)); // полоса kick/snare
     for (int b = 1; b <= max_bin; ++b) {
         float mag = mag_at(b);
         geo_sum   += std::log(mag + 1e-9f);
@@ -460,7 +460,7 @@ void AudioAnalyzer::analyze_window() {
         flatness = std::exp(geo_sum / nbins) / (arith_sum / nbins);
     flat_mean_ = 0.9f * flat_mean_ + 0.1f * flatness;
 
-    // ── RMS mean + trend ──────────────────────────────────────────────────────
+    // ── Среднее RMS + тренд ──────────────────────────────────────────────────
     rms_history_[rms_hist_idx_] = rms_smooth_;
     rms_hist_idx_ = (rms_hist_idx_ + 1) % kTrendWindow;
     if (rms_hist_count_ < kTrendWindow) rms_hist_count_++;
@@ -472,9 +472,10 @@ void AudioAnalyzer::analyze_window() {
     if (rms_mean_ < 1e-9f) rms_mean_ = rms_smooth_;
     else                   rms_mean_ = 0.99f * rms_mean_ + 0.01f * rms_smooth_;
 
-    // ── Beat detection: adaptive spectral-flux threshold ──────────────────────
-    // Robust to sustained bass (unlike the old RMS-ratio test): a beat is a
-    // *rise* in low-band spectral energy above its recent running statistics.
+    // ── Детекция бита: адаптивный порог по spectral flux ──────────────────────
+    // Устойчиво к затяжному басу (в отличие от старой проверки по RMS-ratio):
+    // бит - это *скачок* спектральной энергии низов относительно недавней
+    // статистики, а не абсолютный уровень.
     float flux_dev = flux - flux_mean_;
     flux_mean_ = 0.98f * flux_mean_ + 0.02f * flux;
     flux_std_  = 0.98f * flux_std_  + 0.02f * std::fabs(flux_dev);
@@ -489,7 +490,7 @@ void AudioAnalyzer::analyze_window() {
 
     bool is_noisy = (flatness > flat_mean_ * 1.5f) && above_gate;
 
-    // ── Normalized visualizer spectrum (log-spaced bands + AGC) ───────────────
+    // ── Нормализованный спектр для визуализатора (лог-полосы + AGC) ───────────
     AudioStats s;
     const float f_lo = 40.f, f_hi = 16000.f;
     for (int k = 0; k < kVizBins; ++k) {
@@ -502,14 +503,14 @@ void AudioAnalyzer::analyze_window() {
         float e = 0.f;
         for (int b = lo; b <= hi; ++b) e += mag_at(b);
         e /= (float)(hi - lo + 1);
-        // Per-band auto-gain: track a slowly-decaying peak, normalize into 0..1.
+        // Автогейн по полосе: следим за медленно затухающим пиком, нормализуем в 0..1.
         bin_max_[k] = std::max(e, bin_max_[k] * 0.999f);
         s.bins[k] = std::clamp(e / (bin_max_[k] + 1e-6f), 0.f, 1.f);
     }
     level_max_ = std::max(rms_smooth_, level_max_ * 0.999f);
     s.level = std::clamp(rms_smooth_ / (level_max_ + 1e-6f), 0.f, 1.f);
 
-    // ── Publish ───────────────────────────────────────────────────────────────
+    // ── Публикация результата ───────────────────────────────────────────────
     s.rms         = rms_smooth_;
     s.rms_mean    = rms_mean_;
     s.bass        = bass;

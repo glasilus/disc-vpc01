@@ -12,36 +12,39 @@ public:
     void render(EngineSettings& settings, float fps, GLuint display_tex = 0);
     void shutdown();
 
-    // Runtime wiring from main.
+    // Связь с main, настраивается один раз при старте.
     void set_midi(MidiControl* m) { midi_ = m; }
     void set_fx_bank(int b)       { fx_bank_ = b; }
-    // Advance to the next preset in the list (used by a MIDI action).
+    // Переход к следующему пресету в списке (дергается из MIDI-действия).
     void request_next_preset();
 
     bool want_start()      { bool v = want_start_; want_start_ = false; return v; }
     bool want_stop()       { bool v = want_stop_;  want_stop_  = false; return v; }
-    // Real PortAudio device index for the currently selected entry, or -1.
+    // Настоящий индекс устройства в PortAudio для текущего выбранного пункта,
+    // либо -1. Индекс в devices_ и индекс PortAudio - не одно и то же, потому
+    // что список в GUI может быть отфильтрован.
     int  selected_device() const {
         if (selected_device_ < 0 || selected_device_ >= (int)devices_.size()) return -1;
         return devices_[selected_device_].index;
     }
 
-    // Called by GLFW drop callback (cross-platform). Adds videos and, if a
-    // dropped folder contains images, loads them as overlays.
+    // Вызывается из GLFW drop-колбэка (кроссплатформенно). Добавляет видео,
+    // а если в перетащенной папке есть изображения - грузит их как оверлеи.
     void handle_drop(int count, const char** paths);
 
-    // Output-window request flags (consumed in main loop).
+    // Флаги запроса output-окна (разбираются в главном цикле).
     bool want_output_open()          { bool v = want_out_open_;  want_out_open_  = false; return v; }
     bool want_output_close()         { bool v = want_out_close_; want_out_close_ = false; return v; }
     int  requested_output_monitor() const { return requested_monitor_; }
 
-    // Keyboard-initiated preset load. The GUI owns the preset list; main
-    // forwards a number key here and we consume it on the next render pass.
+    // Загрузка пресета по нажатию цифровой клавиши. Список пресетов хранит
+    // GUI, main просто пробрасывает сюда номер клавиши, а мы применяем его
+    // на следующем кадре рендера.
     void request_preset_by_index(int idx) { pending_preset_idx_ = idx; }
     void apply_pending_preset(EngineSettings& s);
 
-    // Draw only the canvas texture fullscreen (no GUI chrome). Used when
-    // the user toggles Tab to hide the GUI.
+    // Отрисовать только текстуру канваса на весь экран, без GUI. Используется,
+    // когда пользователь прячет интерфейс по Tab.
     void render_bare(GLuint display_tex, int win_w, int win_h);
 
 private:
@@ -60,7 +63,7 @@ private:
     MidiControl* midi_    = nullptr;
     int          fx_bank_ = 0;
 
-    // GUI tap-tempo (independent of the keyboard/MIDI tap in main).
+    // Tap-tempo из GUI (отдельный от tap по клавиатуре/MIDI в main).
     double       tap_times_[8] = {};
     int          tap_n_        = 0;
     void         gui_tap();
@@ -70,29 +73,29 @@ private:
     std::string    presets_folder_;
     GLFWwindow*    window_  = nullptr;
 
-    // Preset UI state
+    // Состояние UI пресетов
     int         preset_idx_   = -1;
     char        save_name_[64] = {};
     bool        show_save_dlg_ = false;
 
-    // Canvas resolution preset index (into kCanvasPresets)
+    // Индекс выбранного разрешения канваса (в kCanvasPresets)
     int         canvas_preset_ = 0;
 
     bool want_start_ = false;
     bool want_stop_  = false;
     bool running_    = false;
 
-    // Audio device list
+    // Список аудиоустройств
     std::vector<AudioDevice> devices_;
     int  selected_device_ = -1;
     bool devices_dirty_   = true;
 
-    // Output-window controls
+    // Контролы output-окна
     void draw_output_panel();
     int  requested_monitor_ = 0;
     bool want_out_open_     = false;
     bool want_out_close_    = false;
 
-    // Pending preset load (keyboard shortcut 1..9,0)
+    // Отложенная загрузка пресета (клавиши 1..9,0)
     int  pending_preset_idx_ = -1;
 };

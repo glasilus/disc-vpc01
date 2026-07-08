@@ -5,7 +5,7 @@ uniform sampler2D uTex;
 uniform float uIntensity;
 uniform vec2  uResolution;
 
-// Bayer 4x4 matrix
+// Матрица Байера 4x4
 float bayer4[16] = float[](
      0.0/16.0,  8.0/16.0,  2.0/16.0, 10.0/16.0,
     12.0/16.0,  4.0/16.0, 14.0/16.0,  6.0/16.0,

@@ -5,12 +5,12 @@ namespace Win95 {
 
 void draw_raised(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 face) {
     dl->AddRectFilled(a, b, face);
-    // Outer black 1 px
+    // внешняя чёрная рамка 1px
     dl->AddRect(a, b, kOuter, 0.f, 0, 1.f);
-    // Highlight top + left (inner)
+    // highlight сверху и слева (внутренний)
     dl->AddLine({a.x + 1, a.y + 1}, {b.x - 2, a.y + 1}, kHighlight);
     dl->AddLine({a.x + 1, a.y + 1}, {a.x + 1, b.y - 2}, kHighlight);
-    // Shadow bottom + right (inner)
+    // тень снизу и справа (внутренняя)
     dl->AddLine({a.x + 1, b.y - 2}, {b.x - 2, b.y - 2}, kShadow);
     dl->AddLine({b.x - 2, a.y + 1}, {b.x - 2, b.y - 2}, kShadow);
 }
@@ -18,10 +18,10 @@ void draw_raised(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 face) {
 void draw_sunken(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 face) {
     dl->AddRectFilled(a, b, face);
     dl->AddRect(a, b, kOuter, 0.f, 0, 1.f);
-    // Shadow top + left (sunken)
+    // тень сверху и слева (эффект вдавленности)
     dl->AddLine({a.x + 1, a.y + 1}, {b.x - 2, a.y + 1}, kShadow);
     dl->AddLine({a.x + 1, a.y + 1}, {a.x + 1, b.y - 2}, kShadow);
-    // Highlight bottom + right
+    // highlight снизу и справа
     dl->AddLine({a.x + 1, b.y - 2}, {b.x - 2, b.y - 2}, kHighlight);
     dl->AddLine({b.x - 2, a.y + 1}, {b.x - 2, b.y - 2}, kHighlight);
 }
@@ -44,7 +44,7 @@ bool button(const char* label, float width, float height) {
     if (active) draw_sunken(dl, pos, end, kFacePress);
     else        draw_raised(dl, pos, end);
 
-    // Center label, offset by 1 px if pressed for that satisfying click feel.
+    // Текст по центру, при нажатии сдвигаем на 1px - визуально кнопка "проваливается".
     ImVec2 txt_pos = {pos.x + (width  - txt.x) * 0.5f,
                       pos.y + (height - txt.y) * 0.5f};
     if (active) { txt_pos.x += 1; txt_pos.y += 1; }

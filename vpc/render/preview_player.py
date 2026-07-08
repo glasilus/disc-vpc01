@@ -1,35 +1,36 @@
-"""Audio-mastered A/V preview player.
+"""Плеер превью с A/V-синхронизацией по аудио как мастер-часам.
 
-The problem this solves
------------------------
-The previous preview ran video and audio as two free-running threads with
-*independent clocks and no resync*. The video loop scheduled frames off wall
-time (and did a heavy per-frame LANCZOS resize, so it could not always hold
-realtime), while the audio loop played the whole buffer via one blocking
-``sd.play`` and repeated. Their loop periods differed, and because each loop
-restarted from its own anchor, the difference **accumulated every cycle** — the
-audio progressively drifted out of sync with the video and got worse the longer
-you watched.
+Какую проблему это решает
+--------------------------
+Раньше видео и аудио в превью крутились как два независимых потока со
+*своими часами и без ресинка*. Видео-цикл планировал кадры по wall time
+(плюс тяжёлый LANCZOS-ресайз на каждый кадр, из-за чего realtime не всегда
+выдерживался), а аудио-цикл проигрывал весь буфер одним блокирующим
+``sd.play`` и перезапускал его по кругу. Периоды циклов не совпадали, и
+поскольку каждый цикл стартовал от своего якоря, расхождение **копилось на
+каждом витке** - звук постепенно уезжал от видео, и чем дольше смотришь,
+тем хуже.
 
-The fix: a single master clock, with the video slaved to it
------------------------------------------------------------
-Standard A/V sync uses the audio hardware clock as the master. Here an
-``sd.OutputStream`` callback loops the decoded audio *gaplessly* (a sample
-cursor mod N) and exposes that cursor as the master clock. The video is then a
-**pure function of the clock**: the presented frame is always
-``int(clock_seconds * fps)``. That is what makes drift impossible — there is no
-independent video clock to accumulate error. If the video decode can't keep up
-it simply drops frames to catch up; if it runs ahead it waits; and at the loop
-boundary the audio cursor wraps and the video seeks back to 0, so both restart
-together, perfectly re-aligned, every cycle.
+Решение: единые мастер-часы, видео - их раб
+--------------------------------------------
+Стандартный подход к A/V-синку - взять аппаратные часы звуковой карты как
+мастер. Здесь callback ``sd.OutputStream`` крутит декодированное аудио
+*без пауз* (курсор сэмплов по модулю N) и этот курсор и есть мастер-часы.
+Видео тогда становится **чистой функцией от часов**: показываемый кадр -
+всегда ``int(clock_seconds * fps)``. Именно это делает рассинхрон
+невозможным - у видео просто нет своих часов, в которых могла бы копиться
+ошибка. Если декодирование не успевает - кадры пропускаются, чтобы
+догнать; если обгоняет - видео ждёт; а на границе цикла аудио-курсор
+оборачивается и видео сикает на 0, так что оба перезапускаются вместе,
+идеально выровненные, на каждом витке.
 
-When no audio backend/track is available, a monotonic wall clock stands in as
-the master with the identical slaving contract, so the video path is unchanged.
+Если аудио-бэкенда или дорожки нет, роль мастера играют монотонные wall
+clock с тем же контрактом slaving, так что видео-путь не меняется.
 
-The module is deliberately decoupled from Tk: ``PreviewPlayer`` calls an
-``on_frame(rgb_ndarray)`` callback from its worker thread; the GUI wraps that
-into its own thread-marshalling. The pure ``frame_for_time`` helper and the
-isolated audio ``_fill`` are unit-tested without any real audio device.
+Модуль намеренно не завязан на Tk: ``PreviewPlayer`` зовёт callback
+``on_frame(rgb_ndarray)`` из рабочего потока, а GUI сам заворачивает это в
+свой thread-marshalling. Чистый хелпер ``frame_for_time`` и изолированный
+аудио ``_fill`` тестируются юнит-тестами без реального аудио-устройства.
 """
 from __future__ import annotations
 
@@ -44,17 +45,17 @@ try:
     import sounddevice as _sd
     import soundfile as _sf
     _AUDIO_OK = True
-except Exception:                                    # pragma: no cover - env dependent
+except Exception:                                    # pragma: no cover - зависит от окружения
     _sd = None
     _sf = None
     _AUDIO_OK = False
 
 
 def frame_for_time(t: float, fps: float, nframes: int) -> int:
-    """Master-clock time (seconds) → video frame index.
+    """Время мастер-часов (сек) -> индекс кадра видео.
 
-    Pure and total. This single mapping is the heart of the sync design: the
-    video frame is a function of the audio clock, so it cannot drift.
+    Чистая тотальная функция. Это отображение - сердце всей схемы синка:
+    кадр видео есть функция от аудио-часов, поэтому рассинхрон невозможен.
     """
     if nframes <= 0 or fps <= 0:
         return 0
@@ -62,11 +63,12 @@ def frame_for_time(t: float, fps: float, nframes: int) -> int:
 
 
 class _AudioClock:
-    """A looping audio output whose sample cursor is the master clock.
+    """Зацикленный аудио-вывод, чей курсор сэмплов служит мастер-часами.
 
-    The buffer is played gaplessly (cursor advances mod N inside the PortAudio
-    callback), volume is read live each block, and pause freezes the cursor and
-    emits silence — so the master clock (and therefore the video) freezes too.
+    Буфер проигрывается без пауз (курсор двигается по модулю N внутри
+    PortAudio callback), громкость читается на каждом блоке заново, а пауза
+    замораживает курсор и отдаёт тишину - поэтому мастер-часы (а значит и
+    видео) тоже замирают.
     """
 
     def __init__(self, data: np.ndarray, sr: int):
@@ -91,10 +93,11 @@ class _AudioClock:
             return self._cursor / self.sr if self.sr else 0.0
 
     def _fill(self, out: np.ndarray, frames: int) -> None:
-        """Fill ``out`` (frames × channels) from the looped buffer.
+        """Заполняет ``out`` (frames x channels) из зацикленного буфера.
 
-        Isolated from PortAudio so it can be unit-tested directly. Advances the
-        cursor mod N unless paused (then emits silence and holds the cursor).
+        Изолирован от PortAudio, чтобы тестироваться напрямую юнит-тестами.
+        Двигает курсор по модулю N, если не на паузе (иначе тишина и курсор
+        стоит на месте).
         """
         with self._lock:
             if self._paused or self._n == 0:
@@ -126,16 +129,16 @@ class _AudioClock:
                 self._stream.stop()
                 self._stream.close()
             except Exception:                        # pragma: no cover
-                pass
+                pass  # закрытие потока лучше не даст упасть UI
             self._stream = None
 
 
 class _WallClock:
-    """Monotonic fallback master clock, wrapped to a fixed duration.
+    """Резервные мастер-часы на монотонном времени, обёрнутые в фикс. длительность.
 
-    Used when there is no audio backend or the track failed to decode. Same
-    ``position_seconds`` / ``set_paused`` contract as :class:`_AudioClock`, so
-    the video slave loop is identical.
+    Используются, когда нет аудио-бэкенда или дорожка не декодировалась.
+    Тот же контракт ``position_seconds`` / ``set_paused``, что и у
+    :class:`_AudioClock`, поэтому видео-цикл не меняется.
     """
 
     def __init__(self, duration: float):
@@ -177,26 +180,26 @@ class _WallClock:
 
 
 class PreviewPlayer:
-    """Play a rendered preview clip with audio-mastered A/V sync, looping.
+    """Проигрывает отрендеренный превью-клип с A/V-синком по аудио, по кругу.
 
     Parameters
     ----------
     video_path : str
-        Path to the rendered preview video (has both streams).
+        Путь к отрендеренному превью-видео (содержит оба потока).
     on_frame : callable(np.ndarray)
-        Called from the worker thread with each RGB frame to present
-        (already resized to ``size``). The caller marshals it onto its UI
-        thread.
+        Зовётся из рабочего потока с каждым RGB-кадром для показа (уже
+        отресайженным под ``size``). Вызывающий сам маршалит его в свой UI-поток.
     size : (int, int)
-        Target (width, height) for presented frames.
+        Целевые (ширина, высота) показываемых кадров.
     wav_path : str | None
-        PCM wav of the clip's audio for the master clock. When absent (or the
-        audio backend is missing) a wall clock is used and playback is silent.
+        PCM wav звука клипа для мастер-часов. Если отсутствует (или нет
+        аудио-бэкенда) используются wall clock и проигрывание идёт без звука.
     log : callable(str)
-        Status logger.
+        Логгер статусов.
     clock : object | None
-        Test seam: inject a master clock exposing ``position_seconds()``. When
-        ``None`` the player builds an audio or wall clock itself.
+        Точка для подмены в тестах: можно передать мастер-часы с методом
+        ``position_seconds()``. При ``None`` плеер сам строит аудио- или
+        wall-часы.
     """
 
     def __init__(self, video_path: str,
@@ -217,7 +220,7 @@ class PreviewPlayer:
         self._nframes = 1
         self._volume = 0.8
 
-    # ── lifecycle ────────────────────────────────────────────────────────
+    # ── жизненный цикл ──────────────────────────────────────────────────
     def start(self) -> bool:
         cap = cv2.VideoCapture(self.video_path)
         if not cap.isOpened():
@@ -231,9 +234,10 @@ class PreviewPlayer:
         if self._clock is None:
             self._clock = self._build_clock(vframes)
 
-        # Wrap period: prefer the real frame count; else derive from the master
-        # clock duration. Both describe the same clip, so target = int(t*fps)
-        # stays in range and the modulo only absorbs the final-frame rounding.
+        # Период цикла: сначала пробуем реальный frame count, иначе выводим
+        # из длительности мастер-часов. Оба описывают один и тот же клип,
+        # так что target = int(t*fps) остаётся в диапазоне, а модуло только
+        # гасит округление на последнем кадре.
         self._nframes = vframes or int(round(self._clock.duration * self._fps)) or 1
 
         self._stop.clear()
@@ -270,9 +274,9 @@ class PreviewPlayer:
             try:
                 self._clock.stop()
             except Exception:                        # pragma: no cover
-                pass
+                pass  # закрытие потока лучше не даст упасть UI
 
-    # ── transport ────────────────────────────────────────────────────────
+    # ── управление воспроизведением ─────────────────────────────────────
     def pause(self) -> None:
         self._paused = True
         if self._clock is not None:
@@ -298,13 +302,13 @@ class PreviewPlayer:
         if self._clock is not None:
             self._clock.set_volume(self._volume)
 
-    # ── video slave ──────────────────────────────────────────────────────
+    # ── видео как раб мастер-часов ──────────────────────────────────────
     def _advance(self, cap, cur: int):
-        """Decode forward to the frame the master clock currently demands.
+        """Декодирует вперёд до кадра, который сейчас требуют мастер-часы.
 
-        Returns ``(frame_or_None, new_cur, target)``. Drops intermediate frames
-        when behind (keeps only the latest); seeks to 0 when the clock wraps.
-        Isolated for unit testing.
+        Возвращает ``(frame_or_None, new_cur, target)``. Если отстаём -
+        пропускает промежуточные кадры (оставляет только последний); при
+        оборачивании часов сикает на 0. Вынесен отдельно ради юнит-тестов.
         """
         t = self._clock.position_seconds()
         target = frame_for_time(t, self._fps, self._nframes)
@@ -340,9 +344,9 @@ class PreviewPlayer:
                         rgb = cv2.resize(rgb, (self.W, self.H),
                                          interpolation=cv2.INTER_LINEAR)
                     self.on_frame(rgb)
-                # Sleep until the next frame is due by the master clock. If we
-                # are behind (sleep<=0) loop straight back so _advance drops
-                # frames to catch up rather than falling further behind.
+                # Спим до момента, когда мастер-часы потребуют следующий кадр.
+                # Если уже отстаём (sleep<=0), сразу идём на новый виток - тогда
+                # _advance пропустит кадры и догонит, а не отстанет ещё сильнее.
                 nxt = (cur + 1) * frame_dur
                 sleep = nxt - self._clock.position_seconds()
                 self._stop.wait(min(sleep, 0.1) if sleep > 0 else 0.001)

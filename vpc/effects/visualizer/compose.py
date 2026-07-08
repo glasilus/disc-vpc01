@@ -1,12 +1,12 @@
-"""Four compositing modes shared by every visualizer renderer.
+"""Четыре режима композитинга, общие для всех визуализаторов.
 
-Each renderer produces a visual (HxWx3) plus a single-channel field (HxW) that
-is its luminance. The compositor decides how that visual meets the source:
+Каждый рендерер отдаёт visual (HxWx3) и одноканальный field (HxW) - его
+яркость. Компоузер решает, как visual сочетается с исходным кадром:
 
-    replace  — visual fully replaces the frame (full-screen visualizer)
-    over     — blend the visual over the source (screen / add / alpha)
-    warp     — field's brightness gradient displaces the source (cv2.remap)
-    mask     — field's brightness reveals the source against black
+    replace  - visual полностью заменяет кадр (полноэкранный визуализатор)
+    over     - visual смешивается с кадром (screen / add / alpha)
+    warp     - градиент яркости field смещает пиксели кадра (cv2.remap)
+    mask     - яркость field проявляет кадр на чёрном фоне
 """
 from __future__ import annotations
 
@@ -21,13 +21,13 @@ def _blend(src: np.ndarray, vis: np.ndarray, mode: str) -> np.ndarray:
         return np.clip(s + v, 0, 255)
     if mode == 'alpha':
         return v
-    # screen (default)
+    # screen (по умолчанию)
     return 255.0 - (255.0 - s) * (255.0 - v) / 255.0
 
 
 def composite(src: np.ndarray, visual: np.ndarray, field: np.ndarray,
               mode: str, opacity: float = 0.85, blend: str = 'screen') -> np.ndarray:
-    """Compose ``visual`` onto ``src`` per ``mode``. Returns HxWx3 uint8."""
+    """Накладывает ``visual`` на ``src`` согласно ``mode``. Возвращает HxWx3 uint8."""
     h, w = src.shape[:2]
     if visual.shape[:2] != (h, w):
         visual = cv2.resize(visual, (w, h))
@@ -54,5 +54,5 @@ def composite(src: np.ndarray, visual: np.ndarray, field: np.ndarray,
         out = src.astype(np.float32) * a
         return np.clip(out, 0, 255).astype(np.uint8)
 
-    # 'replace' and any unknown mode
+    # 'replace' и любой неизвестный режим
     return visual.astype(np.uint8)

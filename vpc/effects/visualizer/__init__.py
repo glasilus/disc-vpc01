@@ -1,4 +1,4 @@
-"""Audio-reactive visualizer effects (WINDOWS MEDIA PLAYER group)."""
+"""Аудиореактивные визуализаторы (группа WINDOWS MEDIA PLAYER)."""
 from .spectrum import SpectrumBarsEffect, RadialSpectrumEffect
 from .scope import OscilloscopeEffect, LissajousEffect
 from .abstraction import PlasmaFieldEffect, BeatParticlesEffect, FlowFieldEffect
