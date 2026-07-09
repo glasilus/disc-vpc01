@@ -20,7 +20,13 @@ from vpc.effects.broken import (
     BitFlipEffect,
     WrongMotionVectorEffect,
 )
-from vpc.effects.virus import CursorStormEffect, BSODShredEffect
+from vpc.effects.virus import (
+    CursorStormEffect,
+    BSODShredEffect,
+    DVDBounceEffect,
+    WinPipesEffect,
+    _load_logo,
+)
 
 
 def _seg(intensity: float = 0.7) -> Segment:
@@ -42,6 +48,8 @@ def _frame(seed: int = 7, h: int = 180, w: int = 320) -> np.ndarray:
     (PFrameLagEffect, {}),
     (BitFlipEffect, {}),
     (WrongMotionVectorEffect, {}),
+    (DVDBounceEffect, {}),
+    (WinPipesEffect, {}),
 ])
 def test_preserves_shape_and_dtype(cls, kwargs):
     fx = cls(enabled=True, chance=1.0,
@@ -60,6 +68,8 @@ def test_preserves_shape_and_dtype(cls, kwargs):
     (VSyncRollEffect, {}),
     (BitFlipEffect, {}),
     (WrongMotionVectorEffect, {}),
+    (DVDBounceEffect, {}),
+    (WinPipesEffect, {}),
 ])
 def test_actually_mutates_at_non_zero_intensity(cls, kwargs):
     fx = cls(enabled=True, chance=1.0,
@@ -153,6 +163,100 @@ def test_cursor_storm_state_persists_across_frames():
     fx.apply(src, _seg(), draft=False)
     moved = [(p.x, p.y) for p in fx._pointers]
     assert snapshot != moved, 'pointers did not advance between frames'
+
+
+def test_dvd_position_persists_and_moves():
+    """Логотип DVD должен двигаться между кадрами - позиция хранится в
+    состоянии, а не сбрасывается на каждом вызове."""
+    fx = DVDBounceEffect(enabled=True, chance=1.0,
+                         intensity_min=0.5, intensity_max=0.5, speed=6.0)
+    src = _frame()
+    fx.apply(src, _seg(), draft=False)
+    p0 = (fx.x, fx.y)
+    fx.apply(src, _seg(), draft=False)
+    assert (fx.x, fx.y) != p0, 'DVD logo did not advance between frames'
+
+
+def test_dvd_bounces_off_edges():
+    """За достаточное число кадров на тесном кадре логотип обязан
+    отскочить - скорость по обеим осям должна сменить знак хотя бы раз,
+    а позиция остаться в пределах кадра."""
+    h = w = 120
+    fx = DVDBounceEffect(enabled=True, chance=1.0,
+                         intensity_min=0.4, intensity_max=0.4, speed=9.0)
+    src = np.zeros((h, w, 3), dtype=np.uint8)
+    signs_x, signs_y = set(), set()
+    for _ in range(300):
+        fx.apply(src, _seg(), draft=False)
+        signs_x.add(fx.vx > 0)
+        signs_y.add(fx.vy > 0)
+        assert -1.0 <= fx.x <= w, 'x escaped frame bounds'
+        assert -1.0 <= fx.y <= h, 'y escaped frame bounds'
+    assert len(signs_x) == 2 and len(signs_y) == 2, 'logo never bounced on both axes'
+
+
+@pytest.mark.parametrize('mode', ['cycle', 'mono', 'custom', 'lag'])
+def test_dvd_color_modes_render(mode):
+    """Каждый режим цвета даёт валидный uint8-кадр той же формы, отличный
+    от исходного (логотип нарисован)."""
+    fx = DVDBounceEffect(enabled=True, chance=1.0,
+                         intensity_min=0.5, intensity_max=0.5,
+                         color_mode=mode, color_r=255, color_g=80, color_b=0)
+    src = _frame()
+    out = fx.apply(src, _seg(), draft=False)
+    assert out.shape == src.shape and out.dtype == np.uint8
+    assert not np.array_equal(out, src)
+
+
+def test_dvd_lag_snapshots_and_refreshes_on_bounce():
+    """Режим lag берёт снимок кадра при запуске и обновляет его на ударе
+    о стену - силуэт показывает замороженный кадр, а не живой."""
+    fx = DVDBounceEffect(enabled=True, chance=1.0,
+                         intensity_min=0.4, intensity_max=0.4,
+                         color_mode='lag', speed=9.0)
+    a = _frame(seed=1, h=120, w=120)
+    fx.apply(a, _seg(), draft=False)
+    assert fx._lag_frame is not None
+    assert np.array_equal(fx._lag_frame, a), 'launch snapshot should equal first frame'
+    # Гоняем разные кадры, пока не случится удар и снимок не обновится.
+    refreshed = False
+    for i in range(200):
+        b = _frame(seed=100 + i, h=120, w=120)
+        fx.apply(b, _seg(), draft=False)
+        if np.array_equal(fx._lag_frame, b):
+            refreshed = True
+            break
+    assert refreshed, 'lag snapshot never refreshed on a wall hit'
+
+
+def test_dvd_missing_logo_falls_back_to_builtin():
+    """Пустой путь логотипа не должен ломать эффект - откат на встроенный глиф."""
+    rgb, alpha = _load_logo('')
+    assert rgb is None and alpha is None
+    fx = DVDBounceEffect(enabled=True, chance=1.0,
+                         intensity_min=0.5, intensity_max=0.5,
+                         logo_rgb=rgb, logo_alpha=alpha)
+    out = fx.apply(_frame(), _seg(), draft=False)
+    assert out.dtype == np.uint8
+
+
+def test_pipes_network_grows_and_resets():
+    """Сеть труб копится между кадрами (растут занятые ячейки решётки), но
+    при заполнении сбрасывается, поэтому число занятых ячеек ограничено."""
+    fx = WinPipesEffect(enabled=True, chance=1.0,
+                        intensity_min=0.8, intensity_max=0.8,
+                        thickness=8, takeover=0.9, speed=5.0)
+    src = _frame(h=180, w=320)
+    fx.apply(src, _seg(), draft=False)
+    assert len(fx._segments) > 0, 'no pipes built on first frame'
+    total = (fx._NX + 1) * (fx._NY + 1) * (fx._NZ + 1)
+    max_occ = 0
+    for _ in range(600):
+        fx.apply(src, _seg(), draft=False)
+        max_occ = max(max_occ, len(fx._occupied))
+    # Сброс не даёт решётке забиться под завязку.
+    assert max_occ < total, f'pipes never reset (occupied {max_occ}/{total})'
+    assert len(fx._segments) > 0
 
 
 def test_vhstape_dust_changes_output():

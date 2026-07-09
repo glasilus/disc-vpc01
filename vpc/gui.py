@@ -2007,6 +2007,8 @@ class MainGUI(tk.Tk):
                 row.pack(fill='x', padx=20, pady=2)
                 ent = ttk.Entry(row, textvariable=self.vars[p.key])
                 ent.pack(fill='x')
+            elif p.kind == 'file':
+                self._build_file_picker(inner, p)
             else:
                 self._row_with_help(inner, p.label, p.tooltip)
                 self._slider(inner, p.key, p.lo, p.hi, indent=True)
@@ -2619,6 +2621,44 @@ class MainGUI(tk.Tk):
                                         bg=C_WHITE, fg=C_DARK_GRAY,
                                         font=('Courier New', 9))
         self.lbl_overlay_dir.pack(anchor='w', pady=(2, 0))
+
+    def _build_file_picker(self, parent, p):
+        """Кнопка выбора файла + подпись с именем для ParamSpec kind='file'.
+
+        Путь хранится в self.vars[p.key] как обычная строка cfg, поэтому
+        подхватывается сохранением/загрузкой пресетов без доп. кода.
+        """
+        var = self.vars[p.key]
+        bf = tk.Frame(parent, bg=C_WHITE)
+        bf.pack(fill='x', padx=20, pady=2)
+
+        lbl = tk.Label(bf, bg=C_WHITE, fg=C_DARK_GRAY, font=('Courier New', 9),
+                       anchor='w')
+
+        def _refresh(*_a):
+            cur = var.get()
+            lbl.configure(text=os.path.basename(cur) if cur else 'No file selected')
+
+        def _pick():
+            path = filedialog.askopenfilename(
+                filetypes=[('Image files', '*.png *.jpg *.jpeg *.bmp *.webp')])
+            if path:
+                var.set(path)
+
+        def _clear():
+            var.set('')
+
+        btns = tk.Frame(bf, bg=C_WHITE)
+        btns.pack(fill='x')
+        ttk.Button(btns, text=p.label, command=_pick,
+                   style='W95.TButton').pack(side='left', fill='x', expand=True)
+        ttk.Button(btns, text='×', width=3, command=_clear,
+                   style='W95.TButton').pack(side='left', padx=(4, 0))
+        lbl.pack(fill='x', pady=(2, 0))
+        var.trace_add('write', _refresh)
+        _refresh()
+        if p.tooltip:
+            Tooltip(lbl, p.tooltip)
 
     def _get_source_aspect_ratio(self):
         if self.video_paths:

@@ -1,6 +1,6 @@
 # Disc VPC 01 — User Manual
 
-**Version:** 0.3.1
+**Version:** 0.4
 **Offline editor:** Python 3.10.x · Windows 10/11 (macOS, Ubuntu 22.* best-effort)
 **Realtime (R-T):** native C++ binary · Windows 10/11 · Linux · macOS
 
@@ -57,7 +57,7 @@
     - [4.10 Effects](#410-effects)
     - [4.11 Presets](#411-presets)
     - [4.12 Keyboard Shortcuts](#412-keyboard-shortcuts)
-    - [4.13 Tap Tempo & MIDI Control](#413-tap-tempo--midi-control)
+    - [4.13 Tap Tempo \& MIDI Control](#413-tap-tempo--midi-control)
     - [4.14 Diagnostic Log](#414-diagnostic-log)
   - [5. Segment Types Reference](#5-segment-types-reference)
   - [6. Recommended Workflows](#6-recommended-workflows)
@@ -654,7 +654,7 @@ Pseudo-MPEG with lost motion vectors. Roughly 10-30% of the frame's 16×16 macro
 
 ### 3.8b Effects — Malware
 
-The **MALWARE** group is the Win95-malware-aesthetic shelf - effects that look like a 90s machine under attack rather than a video glitch. Two effects live here so far.
+The **MALWARE** group is the Win95-malware-aesthetic shelf - effects that look like a 90s machine under attack rather than a video glitch. Four effects live here so far.
 
 ---
 
@@ -675,6 +675,32 @@ A swarm of authentic 16×22 Win95 arrow cursors crawls over every frame, each po
 Random horizontal bands of the frame get replaced with fragments of bluescreen text: the canonical NT-bluescreen palette (RGB 0, 0, 168) plus a vocabulary of real STOP codes, hex addresses, and dump-prose lines. Stateless per frame - every frame picks fresh bands, so the effect strobes and shreds. Pure "the system crashed at this exact moment" punctuation.
 
 - *Shred Density* *(0.0 – 1.0)* — how many bluescreen bands per fire and how tall each band is. Low = a single thin band per hit. High = 5+ thick bands of bluescreen text crowding the picture.
+
+---
+
+**DVD Screensaver**
+
+*Trigger: SILENCE, SUSTAIN*
+
+The classic bouncing DVD logo drifts across the frame and reflects off every edge; a rare exact corner hit triggers a short glow of euphoria. Position and velocity persist across frames so motion stays continuous. The built-in logo is the real DVD Video mark (embedded as an asset), but you can swap it for your own PNG (transparency recommended) via **Select DVD Logo…**.
+
+- *Size* *(0.0 – 1.0)* — logo size relative to frame height. Low = a small travelling logo. High = a large logo filling much of the frame.
+- *Speed* *(1 – 12)* — travel speed in pixels per frame. Low = slow drift. High = fast bouncing.
+- *Color Mode* — `cycle` changes colour on every wall hit (the classic look); `mono` leaves the logo untinted (white built-in mark, or your PNG as-is); `custom` tints it a single fixed colour you choose (the *Custom R/G/B* sliders); `lag` fills the silhouette with a frozen frame snapshotted at each wall hit and refreshed on the next hit — a moving window into the past, à la the Paint canvas lag mode.
+- *Custom R/G/B* *(0 – 255)* — the fixed tint used when *Color Mode* is `custom`.
+
+---
+
+**Win95 Pipes**
+
+*Trigger: SILENCE, SUSTAIN*
+
+A pseudo-3D pipeline in the spirit of the Windows 95 "3D Pipes" screensaver, rendered on the CPU with no 3D library. Pipes grow along a large integer lattice and are drawn as perspective-projected cylinder impostors with per-pixel diffuse and specular shading, smooth rounded elbows, and shiny ball joints at every turn. A slight camera tilt keeps it from reading as a flat grid; the whole network is composited through a z-buffer so nearer pipes correctly occlude farther ones, and distance fog dissolves the far pipes to transparency so the generation boundary is never visible. Growth speed reacts to audio; the network accumulates and resets when it fills, like the real screensaver.
+
+- *Growth* *(0.0 – 1.0)* — how fast the pipes grow and how many run at once. Low = a single slow pipe. High = several pipes racing across the frame.
+- *Thickness* *(4 – 24)* — pipe radius in pixels; also sets the grid spacing.
+- *Takeover* *(0.0 – 1.0)* — how far the source video is dimmed to black behind the pipes. 1.0 = a full black-screen screensaver. 0.0 = pipes over the untouched video, with far pipes fading transparently into it.
+- *Speed* *(1 – 8)* — base growth steps per frame before audio scaling.
 
 ### 3.8c Effects — Paint Canvas
 
