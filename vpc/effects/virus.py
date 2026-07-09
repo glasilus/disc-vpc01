@@ -109,6 +109,42 @@ def _blit_sprite(frame: np.ndarray, rgb: np.ndarray, alpha: np.ndarray,
     frame[y0:y1, x0:x1] = np.clip(dst * (1.0 - a) + src * a, 0, 255).astype(np.uint8)
 
 
+class _SegmentGatedEffect(BaseEffect):
+    """Базовый класс для постоянно присутствующих объектов (DVD, трубы).
+
+    Бросок `chance` делается ОДИН раз на сегмент, а не покадрово. Покадровый
+    бросок (как в BaseEffect) для такого объекта означал бы, что он пропадает
+    на части кадров сегмента и мерцает; здесь он либо виден весь сегмент,
+    либо весь сегмент скрыт.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._seg_t: Optional[float] = None
+        self._seg_active = False
+
+    def apply(self, frame: np.ndarray, seg, draft: bool) -> np.ndarray:
+        if not self.enabled:
+            return frame
+        if seg.type not in self.trigger_types:
+            return frame
+        t = getattr(seg, 't_start', None)
+        if t != self._seg_t:
+            self._seg_t = t
+            self._seg_active = random.random() <= self.chance
+        if not self._seg_active:
+            return frame
+        try:
+            out = self._apply(frame, seg, draft)
+        except (MemoryError, ValueError, cv2.error):
+            return frame
+        if out is None:
+            return frame
+        if out.dtype != np.uint8:
+            out = _ensure_uint8(out)
+        return out
+
+
 # ──────────────────────────────────────────────────────────────────────────
 #   CursorStorm
 # ──────────────────────────────────────────────────────────────────────────
@@ -342,25 +378,28 @@ def _load_logo(path: str) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
     return rgb, alpha
 
 
-class DVDBounceEffect(BaseEffect):
+class DVDBounceEffect(_SegmentGatedEffect):
     """Летающий DVD-логотип, отскакивающий от краёв кадра.
 
-    Хранит позицию и скорость между кадрами - движение непрерывное. Три
-    режима цвета: `mono` (без тонировки), `cycle` (новый цвет на каждом
-    ударе о стену) и `custom` (постоянный заданный цвет). При попадании
-    точно в угол включается короткая вспышка-эйфория.
+    Хранит позицию и скорость между кадрами - движение непрерывное. Размер
+    задаётся независимым параметром `size` (не завязан на аудио/always), так
+    что слайдер работает в обоих режимах. Режимы цвета: `mono` (без
+    тонировки), `cycle` (новый цвет на каждом ударе), `custom` (постоянный
+    цвет) и `lag` (силуэт показывает замороженный кадр). При попадании точно
+    в угол - короткая вспышка-эйфория.
     """
     trigger_types = [SegmentType.SILENCE, SegmentType.SUSTAIN]
 
     def __init__(self, enabled: bool = True, chance: float = 1.0,
                  intensity_min: float = 0.0, intensity_max: float = 1.0,
-                 speed: float = 4.0, color_mode: str = 'cycle',
+                 size: float = 0.5, speed: float = 4.0, color_mode: str = 'cycle',
                  color_r: int = 0, color_g: int = 200, color_b: int = 255,
                  logo_rgb: Optional[np.ndarray] = None,
                  logo_alpha: Optional[np.ndarray] = None):
         super().__init__(enabled=enabled, chance=chance,
                          intensity_min=intensity_min,
                          intensity_max=intensity_max)
+        self.size = max(0.0, min(1.0, float(size)))
         self.speed = max(0.5, float(speed))
         self.color_mode = color_mode if color_mode in ('mono', 'cycle', 'custom', 'lag') else 'cycle'
         self.custom_color = (int(color_r), int(color_g), int(color_b))
@@ -410,12 +449,11 @@ class DVDBounceEffect(BaseEffect):
         self._color_dirty = False
 
     def _apply(self, frame: np.ndarray, seg, draft: bool) -> np.ndarray:
-        intensity = self.scaled_intensity(seg)
         h, w = frame.shape[:2]
 
-        # Размер логотипа растёт с интенсивностью; квантуем, чтобы не
-        # пересобирать спрайт на каждый микроскачок аудио.
-        target_h = int(h * (0.09 + 0.22 * intensity))
+        # Размер логотипа задаётся слайдером size (не аудио), квантуем, чтобы
+        # не пересобирать спрайт без нужды.
+        target_h = int(h * (0.06 + 0.30 * self.size))
         target_h = max(16, (target_h // 4) * 4)
 
         if (w, h) != self._last_wh:
@@ -552,7 +590,7 @@ class _PipeHead:
         self.seg_idx = -1
 
 
-class WinPipesEffect(BaseEffect):
+class WinPipesEffect(_SegmentGatedEffect):
     """Перспективный 3D-трубопровод в духе скринсейвера Win95 «3D Pipes».
 
     Трубы строятся в 3D-решётке и проецируются перспективой с точкой схода
@@ -572,11 +610,14 @@ class WinPipesEffect(BaseEffect):
 
     def __init__(self, enabled: bool = True, chance: float = 1.0,
                  intensity_min: float = 0.0, intensity_max: float = 1.0,
-                 thickness: int = 10, takeover: float = 0.9,
+                 growth: float = 0.5, thickness: int = 10, takeover: float = 0.9,
                  speed: float = 3.0):
         super().__init__(enabled=enabled, chance=chance,
                          intensity_min=intensity_min,
                          intensity_max=intensity_max)
+        # Плотность/скорость задаёт независимый слайдер growth (работает и в
+        # always), громкость сегмента лишь модулирует его сверху.
+        self.growth = max(0.0, min(1.0, float(growth)))
         self.thickness = max(3, int(thickness))
         self.takeover = max(0.0, min(1.0, float(takeover)))
         self.speed = max(1.0, float(speed))
@@ -778,20 +819,26 @@ class WinPipesEffect(BaseEffect):
         csub[front] = col[front]
         covsub[front] = cov[front]
 
+    def _level(self, seg) -> float:
+        # База - слайдер growth (работает всегда, в т.ч. в always); громкость
+        # сегмента лишь модулирует её сверху, сохраняя аудио-реактивность.
+        loud = float(getattr(seg, 'intensity', 1.0))
+        return max(0.0, min(1.0, self.growth * (0.55 + 0.55 * loud)))
+
     def _apply(self, frame: np.ndarray, seg, draft: bool) -> np.ndarray:
         h, w = frame.shape[:2]
-        intensity = self.scaled_intensity(seg)
+        level = self._level(seg)
         if (w, h) != self._wh or not self._heads:
             self._reset(w, h)
 
-        # Одновременных труб больше с интенсивностью - как в оригинале, где
+        # Одновременных труб больше при высоком growth - как в оригинале, где
         # несколько разноцветных веток растут вместе.
-        target_heads = 5 + int(round(intensity * 5))
+        target_heads = 5 + int(round(level * 5))
         # Бюджет роста задаёт плотность в видимой области (решётка много
         # больше кадра, доля заполнения тут не годится).
         budget = 1300
 
-        steps = max(1, int(round(self.speed * (0.6 + intensity))))
+        steps = max(1, int(round(self.speed * (0.6 + level))))
         for _ in range(steps):
             for head in list(self._heads):
                 self._advance(head)

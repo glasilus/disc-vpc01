@@ -229,6 +229,44 @@ def test_dvd_lag_snapshots_and_refreshes_on_bounce():
     assert refreshed, 'lag snapshot never refreshed on a wall hit'
 
 
+def test_dvd_chance_is_per_segment_not_per_frame():
+    """В пределах одного сегмента (один t_start) решение chance принимается
+    раз - логотип виден на ВСЕХ кадрах сегмента или ни на одном, но не
+    мерцает покадрово."""
+    fx = DVDBounceEffect(enabled=True, chance=0.5, size=0.5, speed=9.0)
+    src = _frame()
+    seg = _seg()  # t_start фиксирован
+    drawn = sum(not np.array_equal(fx.apply(src, seg, draft=False), src)
+                for _ in range(40))
+    assert drawn in (0, 40), f'per-frame flicker: {drawn}/40 frames drawn'
+
+
+def test_pipes_chance_is_per_segment_not_per_frame():
+    """То же для труб - постоянно присутствующий объект не должен мерцать
+    покадрово внутри сегмента."""
+    fx = WinPipesEffect(enabled=True, chance=0.5, growth=0.7,
+                        thickness=8, takeover=0.9, speed=4.0)
+    src = _frame()
+    seg = _seg()
+    drawn = sum(not np.array_equal(fx.apply(src, seg, draft=False), src)
+                for _ in range(40))
+    assert drawn in (0, 40), f'per-frame flicker: {drawn}/40 frames drawn'
+
+
+def test_dvd_size_independent_of_intensity_and_always():
+    """Size управляет высотой спрайта напрямую и не зависит от intensity/always
+    (регрессия на баг, где Size был замаплен на intensity_max)."""
+    def sprite_h(size, imin, imax):
+        fx = DVDBounceEffect(enabled=True, chance=1.0, size=size,
+                             intensity_min=imin, intensity_max=imax)
+        fx.apply(_frame(), _seg(), draft=False)
+        return fx._draw_alpha.shape[0]
+    # Разный intensity (как выставляет always) не влияет на размер:
+    assert sprite_h(0.5, 0.0, 1.0) == sprite_h(0.5, 0.6, 0.6)
+    # Слайдер size влияет:
+    assert sprite_h(0.9, 0.6, 0.6) > sprite_h(0.1, 0.6, 0.6)
+
+
 def test_dvd_missing_logo_falls_back_to_builtin():
     """Пустой путь логотипа не должен ломать эффект - откат на встроенный глиф."""
     rgb, alpha = _load_logo('')

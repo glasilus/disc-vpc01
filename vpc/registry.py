@@ -362,6 +362,59 @@ def _paint_extras(cfg: dict) -> dict:
 
 EFFECTS: List[EffectSpec] = [
 
+    # ── VIRUS: Pipes применяются первыми - остальные эффекты вшиваются поверх ──
+    EffectSpec(
+        id='win_pipes', label='Win95 Pipes', group='VIRUS',
+        trigger_types=[SegmentType.SILENCE, SegmentType.SUSTAIN],
+        cls=virus_fx.WinPipesEffect,
+        enable_key='fx_win_pipes', enabled_default=False,
+        chance_key='fx_win_pipes_chance', default_chance=1.0,
+        params=[
+            ParamSpec('fx_win_pipes_int', 'Growth', 0.5, 0.0, 1.0,
+                      kwarg='growth',
+                      tooltip=bi(
+                          'How fast the pipes grow and how many run at once. Low: a single '
+                          'slow pipe. High: several pipes racing across the frame. Works in '
+                          'always-on too; segment loudness only modulates it.',
+                          'Как быстро растут трубы и сколько их одновременно. Низко - одна '
+                          'медленная труба. Высоко - несколько труб мчатся по кадру. Работает '
+                          'и в always; громкость сегмента лишь модулирует.',
+                      )),
+            ParamSpec('fx_win_pipes_thick', 'Thickness', 10, 4, 24, kind='int',
+                      kwarg='thickness',
+                      tooltip=bi(
+                          'Pipe radius in pixels. Also sets the grid spacing.',
+                          'Толщина трубы в пикселях. Заодно задаёт шаг решётки.',
+                      )),
+            ParamSpec('fx_win_pipes_takeover', 'Takeover', 0.85, 0.0, 1.0, kind='float',
+                      kwarg='takeover',
+                      tooltip=bi(
+                          'How far the video is dimmed to black behind the pipes. 1.0: full '
+                          'black-screen screensaver. 0.0: pipes over the untouched video.',
+                          'Насколько видео притемняется к чёрному за трубами. 1.0 - полноценный '
+                          'чёрный экран скринсейвера. 0.0 - трубы поверх нетронутого видео.',
+                      )),
+            ParamSpec('fx_win_pipes_speed', 'Speed', 3.0, 1.0, 8.0, kind='float',
+                      kwarg='speed',
+                      tooltip=bi(
+                          'Base growth steps per frame before audio scaling.',
+                          'Базовое число шагов роста за кадр до аудио-масштабирования.',
+                      )),
+        ],
+        note='SILENCE / SUSTAIN - pipes slowly reclaim the screen like a real screensaver.',
+        tooltip=bi(
+            'A pseudo-3D isometric pipeline in the spirit of the Win95 "3D Pipes" saver: '
+            'shaded metallic cylinders with a specular highlight and shiny ball joints at '
+            'every turn, drawn onto a persistent canvas that accumulates across frames and '
+            'resets when it fills. Growth speed reacts to audio; the background dims to black.',
+            'Псевдо-3D изометрический трубопровод в духе скринсейвера Win95 «3D Pipes»: '
+            'шейдированные металлик-цилиндры с бликом и блестящие шары-суставы на поворотах '
+            'рисуются на персистентном холсте, который копится между кадрами и сбрасывается '
+            'при заполнении. Скорость роста реагирует на аудио, фон притемняется к чёрному.',
+        ),
+    ),
+
+
     # ── CORE FX ────────────────────────────────────────────────────────
     EffectSpec(
         id='stutter', label='Stutter / Drill', group='CORE FX',
@@ -1544,127 +1597,6 @@ EFFECTS: List[EffectSpec] = [
             'поэтому эффект стробит и «шинкует».',
         ),
     ),
-    EffectSpec(
-        id='dvd_bounce', label='DVD Screensaver', group='VIRUS',
-        trigger_types=[SegmentType.SILENCE, SegmentType.SUSTAIN],
-        cls=virus_fx.DVDBounceEffect,
-        enable_key='fx_dvd_bounce', enabled_default=False,
-        chance_key='fx_dvd_bounce_chance', default_chance=0.6,
-        params=[
-            ParamSpec('fx_dvd_bounce_int', 'Size', 0.5, 0.0, 1.0,
-                      kwarg='intensity_max',
-                      tooltip=bi(
-                          'Size of the bouncing logo relative to frame height. Low: a small '
-                          'travelling logo. High: a large logo filling much of the frame.',
-                          'Размер летающего логотипа относительно высоты кадра. Низко - '
-                          'маленький логотип. Высоко - крупный, занимающий заметную часть кадра.',
-                      )),
-            ParamSpec('fx_dvd_speed', 'Speed', 4.0, 1.0, 12.0, kind='float',
-                      kwarg='speed',
-                      tooltip=bi(
-                          'Travel speed of the logo in pixels per frame. Low: slow drift. '
-                          'High: fast bouncing.',
-                          'Скорость движения логотипа, пикселей за кадр. Низко - медленный дрейф. '
-                          'Высоко - быстрые отскоки.',
-                      )),
-            ParamSpec('fx_dvd_color_mode', 'Color Mode', 'cycle', kind='choice',
-                      choices=['cycle', 'mono', 'custom', 'lag'], kwarg='color_mode',
-                      tooltip=bi(
-                          'cycle: logo changes colour on every wall hit (classic). '
-                          'mono: no tint (white built-in logo or the image as-is). '
-                          'custom: a single fixed colour of your choice. '
-                          'lag: the silhouette is filled with a frozen frame snapshotted at '
-                          'each wall hit - a moving window into the past.',
-                          'cycle: цвет меняется при каждом ударе о стену (классика). '
-                          'mono: без тонировки (белый встроенный логотип или картинка как есть). '
-                          'custom: один постоянный цвет на ваш выбор. '
-                          'lag: силуэт заполняется замороженным кадром, снятым при каждом ударе '
-                          'о стену, - движущееся окно в прошлое.',
-                      )),
-            ParamSpec('fx_dvd_col_r', 'Custom Red', 0, 0, 255, kind='int',
-                      kwarg='color_r', indent=True,
-                      tooltip=bi('Red of the custom tint (Color Mode = custom).',
-                                 'Красная компонента постоянного цвета (Color Mode = custom).')),
-            ParamSpec('fx_dvd_col_g', 'Custom Green', 200, 0, 255, kind='int',
-                      kwarg='color_g', indent=True,
-                      tooltip=bi('Green of the custom tint (Color Mode = custom).',
-                                 'Зелёная компонента постоянного цвета (Color Mode = custom).')),
-            ParamSpec('fx_dvd_col_b', 'Custom Blue', 255, 0, 255, kind='int',
-                      kwarg='color_b', indent=True,
-                      tooltip=bi('Blue of the custom tint (Color Mode = custom).',
-                                 'Синяя компонента постоянного цвета (Color Mode = custom).')),
-            ParamSpec('fx_dvd_logo_path', 'Select DVD Logo…', '', kind='file',
-                      indent=False,
-                      tooltip=bi(
-                          'Pick a PNG (transparency recommended) to replace the built-in DVD '
-                          'logo. Leave empty for the classic logo.',
-                          'Выберите PNG (лучше с прозрачностью), чтобы заменить встроенный '
-                          'DVD-логотип. Оставьте пустым для классического логотипа.',
-                      )),
-        ],
-        intensity_max_kwarg='intensity_max',
-        extra_factory=_dvd_extras,
-        note='SILENCE / SUSTAIN - idle-machine screensaver drifting over the frame.',
-        tooltip=bi(
-            'The classic bouncing DVD logo drifts across the frame and reflects off every '
-            'edge; a rare exact corner hit triggers a short glow of euphoria. Position and '
-            'velocity are stateful across frames so motion is continuous. Swap the logo for '
-            'your own PNG and pick how it recolours.',
-            'Классический DVD-логотип летает по кадру и отражается от краёв; редкое точное '
-            'попадание в угол вызывает короткую вспышку-эйфорию. Позиция и скорость хранятся '
-            'между кадрами - движение непрерывное. Логотип можно заменить своим PNG и выбрать '
-            'режим смены цвета.',
-        ),
-    ),
-    EffectSpec(
-        id='win_pipes', label='Win95 Pipes', group='VIRUS',
-        trigger_types=[SegmentType.SILENCE, SegmentType.SUSTAIN],
-        cls=virus_fx.WinPipesEffect,
-        enable_key='fx_win_pipes', enabled_default=False,
-        chance_key='fx_win_pipes_chance', default_chance=0.6,
-        params=[
-            ParamSpec('fx_win_pipes_int', 'Growth', 0.5, 0.0, 1.0,
-                      kwarg='intensity_max',
-                      tooltip=bi(
-                          'How fast the pipes grow and how many run at once. Low: a single '
-                          'slow pipe. High: several pipes racing across the frame.',
-                          'Как быстро растут трубы и сколько их одновременно. Низко - одна '
-                          'медленная труба. Высоко - несколько труб мчатся по кадру.',
-                      )),
-            ParamSpec('fx_win_pipes_thick', 'Thickness', 10, 4, 24, kind='int',
-                      kwarg='thickness',
-                      tooltip=bi(
-                          'Pipe radius in pixels. Also sets the grid spacing.',
-                          'Толщина трубы в пикселях. Заодно задаёт шаг решётки.',
-                      )),
-            ParamSpec('fx_win_pipes_takeover', 'Takeover', 0.85, 0.0, 1.0, kind='float',
-                      kwarg='takeover',
-                      tooltip=bi(
-                          'How far the video is dimmed to black behind the pipes. 1.0: full '
-                          'black-screen screensaver. 0.0: pipes over the untouched video.',
-                          'Насколько видео притемняется к чёрному за трубами. 1.0 - полноценный '
-                          'чёрный экран скринсейвера. 0.0 - трубы поверх нетронутого видео.',
-                      )),
-            ParamSpec('fx_win_pipes_speed', 'Speed', 3.0, 1.0, 8.0, kind='float',
-                      kwarg='speed',
-                      tooltip=bi(
-                          'Base growth steps per frame before audio scaling.',
-                          'Базовое число шагов роста за кадр до аудио-масштабирования.',
-                      )),
-        ],
-        intensity_max_kwarg='intensity_max',
-        note='SILENCE / SUSTAIN - pipes slowly reclaim the screen like a real screensaver.',
-        tooltip=bi(
-            'A pseudo-3D isometric pipeline in the spirit of the Win95 "3D Pipes" saver: '
-            'shaded metallic cylinders with a specular highlight and shiny ball joints at '
-            'every turn, drawn onto a persistent canvas that accumulates across frames and '
-            'resets when it fills. Growth speed reacts to audio; the background dims to black.',
-            'Псевдо-3D изометрический трубопровод в духе скринсейвера Win95 «3D Pipes»: '
-            'шейдированные металлик-цилиндры с бликом и блестящие шары-суставы на поворотах '
-            'рисуются на персистентном холсте, который копится между кадрами и сбрасывается '
-            'при заполнении. Скорость роста реагирует на аудио, фон притемняется к чёрному.',
-        ),
-    ),
 
     # ── OVERLAYS ───────────────────────────────────────────────────────
     EffectSpec(
@@ -1983,6 +1915,81 @@ EFFECTS: List[EffectSpec] = [
             'розетка, лепестки которой следуют за спектром. Накапливающийся поворот+зум даёт '
             'бесконечный светящийся спиральный тоннель с плавно меняющимся оттенком. Хорош на '
             'весь экран и как warp-карта.'),
+    ),
+
+    # ── VIRUS: DVD применяется последним - поверх всех эффектов ──
+    EffectSpec(
+        id='dvd_bounce', label='DVD Screensaver', group='VIRUS',
+        trigger_types=[SegmentType.SILENCE, SegmentType.SUSTAIN],
+        cls=virus_fx.DVDBounceEffect,
+        enable_key='fx_dvd_bounce', enabled_default=False,
+        chance_key='fx_dvd_bounce_chance', default_chance=1.0,
+        params=[
+            ParamSpec('fx_dvd_bounce_int', 'Size', 0.5, 0.0, 1.0,
+                      kwarg='size',
+                      tooltip=bi(
+                          'Size of the bouncing logo relative to frame height. Low: a small '
+                          'travelling logo. High: a large logo filling much of the frame. '
+                          'Independent of audio and of the always-on intensity.',
+                          'Размер летающего логотипа относительно высоты кадра. Низко - '
+                          'маленький логотип. Высоко - крупный, занимающий заметную часть кадра. '
+                          'Не зависит от аудио и от интенсивности always-on.',
+                      )),
+            ParamSpec('fx_dvd_speed', 'Speed', 4.0, 1.0, 12.0, kind='float',
+                      kwarg='speed',
+                      tooltip=bi(
+                          'Travel speed of the logo in pixels per frame. Low: slow drift. '
+                          'High: fast bouncing.',
+                          'Скорость движения логотипа, пикселей за кадр. Низко - медленный дрейф. '
+                          'Высоко - быстрые отскоки.',
+                      )),
+            ParamSpec('fx_dvd_color_mode', 'Color Mode', 'cycle', kind='choice',
+                      choices=['cycle', 'mono', 'custom', 'lag'], kwarg='color_mode',
+                      tooltip=bi(
+                          'cycle: logo changes colour on every wall hit (classic). '
+                          'mono: no tint (white built-in logo or the image as-is). '
+                          'custom: a single fixed colour of your choice. '
+                          'lag: the silhouette is filled with a frozen frame snapshotted at '
+                          'each wall hit - a moving window into the past.',
+                          'cycle: цвет меняется при каждом ударе о стену (классика). '
+                          'mono: без тонировки (белый встроенный логотип или картинка как есть). '
+                          'custom: один постоянный цвет на ваш выбор. '
+                          'lag: силуэт заполняется замороженным кадром, снятым при каждом ударе '
+                          'о стену, - движущееся окно в прошлое.',
+                      )),
+            ParamSpec('fx_dvd_col_r', 'Custom Red', 0, 0, 255, kind='int',
+                      kwarg='color_r', indent=True,
+                      tooltip=bi('Red of the custom tint (Color Mode = custom).',
+                                 'Красная компонента постоянного цвета (Color Mode = custom).')),
+            ParamSpec('fx_dvd_col_g', 'Custom Green', 200, 0, 255, kind='int',
+                      kwarg='color_g', indent=True,
+                      tooltip=bi('Green of the custom tint (Color Mode = custom).',
+                                 'Зелёная компонента постоянного цвета (Color Mode = custom).')),
+            ParamSpec('fx_dvd_col_b', 'Custom Blue', 255, 0, 255, kind='int',
+                      kwarg='color_b', indent=True,
+                      tooltip=bi('Blue of the custom tint (Color Mode = custom).',
+                                 'Синяя компонента постоянного цвета (Color Mode = custom).')),
+            ParamSpec('fx_dvd_logo_path', 'Select DVD Logo…', '', kind='file',
+                      indent=False,
+                      tooltip=bi(
+                          'Pick a PNG (transparency recommended) to replace the built-in DVD '
+                          'logo. Leave empty for the classic logo.',
+                          'Выберите PNG (лучше с прозрачностью), чтобы заменить встроенный '
+                          'DVD-логотип. Оставьте пустым для классического логотипа.',
+                      )),
+        ],
+        extra_factory=_dvd_extras,
+        note='SILENCE / SUSTAIN - idle-machine screensaver drifting over the frame.',
+        tooltip=bi(
+            'The classic bouncing DVD logo drifts across the frame and reflects off every '
+            'edge; a rare exact corner hit triggers a short glow of euphoria. Position and '
+            'velocity are stateful across frames so motion is continuous. Swap the logo for '
+            'your own PNG and pick how it recolours.',
+            'Классический DVD-логотип летает по кадру и отражается от краёв; редкое точное '
+            'попадание в угол вызывает короткую вспышку-эйфорию. Позиция и скорость хранятся '
+            'между кадрами - движение непрерывное. Логотип можно заменить своим PNG и выбрать '
+            'режим смены цвета.',
+        ),
     ),
 ]
 
