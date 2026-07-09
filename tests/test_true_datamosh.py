@@ -67,8 +67,10 @@ def test_true_datamosh_spec_registered():
     keys = [p.key for p in spec.params]
     assert keys == ['fx_truemosh_mode', 'fx_truemosh_bloom',
                     'fx_truemosh_crunch']
+    # Порядок применения: True Datamosh стоит между OVERLAYS и PAINT, чтобы
+    # мошить оверлеи, но не задевать paint/dvd (они рисуются поверх).
     ids = [s.id for s in EFFECTS]
-    assert ids.index('true_datamosh') == ids.index('datamosh') + 1
+    assert ids.index('overlay') < ids.index('true_datamosh') < ids.index('paint')
 
 
 def test_old_preset_config_enables_only_optical_flow():
@@ -87,7 +89,10 @@ def test_both_effects_build_in_order():
     cfg = default_cfg()
     cfg.update({'fx_datamosh': True, 'fx_truemosh': True})
     names = [type(fx).__name__ for fx in build_chain(cfg)]
-    assert names.index('TrueDatamoshEffect') == names.index('OpticalFlowEffect') + 1
+    # Optical Flow остаётся в CORE FX (рано), True Datamosh теперь применяется
+    # заметно позже (между оверлеями и paint), поэтому просто позже optical-flow.
+    assert 'OpticalFlowEffect' in names and 'TrueDatamoshEffect' in names
+    assert names.index('TrueDatamoshEffect') > names.index('OpticalFlowEffect')
 
 
 # контракт цепочки

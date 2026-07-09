@@ -169,6 +169,26 @@ class RenderConfig:
     def use_manual_bpm(self) -> bool:
         return bool(self.raw.get('use_manual_bpm', False))
 
+    # ----- окно отрывка (превью/экспорт) -----
+    @property
+    def preview_start(self) -> float:
+        """Начало окна превью/экспорта в секундах (0 = с начала)."""
+        try:
+            return max(0.0, float(self.raw.get('preview_start', 0.0) or 0.0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    @property
+    def preview_end(self):
+        """Конец окна в секундах, либо None (до конца). Пусто/мусор -> None."""
+        v = self.raw.get('preview_end', None)
+        if v in (None, ''):
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
     # ----- passthrough режим -----
     @property
     def passthrough_mode(self) -> bool:

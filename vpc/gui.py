@@ -416,6 +416,10 @@ class MainGUI(tk.Tk):
         # Читается во время рендера через `_get_preview_seconds()`, которая
         # ограничивает диапазоном [1, 90].
         self.var_preview_seconds = tk.IntVar(value=5)
+        # Окно отрывка для PREVIEW/EXPORT: начало и конец в секундах или mm:ss.
+        # Пустой End = до конца. Только UI, вне пресетов (как preview_seconds).
+        self.var_preview_start = tk.StringVar(value='0:00')
+        self.var_preview_end = tk.StringVar(value='0:10')
         # Поля качества кодировщика. Выпадающий список Quality - это удобство:
         # выбор пресета записывает crf/export_preset/tune ниже; ручное
         # изменение любого из них переключает список на 'Custom'. Ручное
@@ -488,25 +492,61 @@ class MainGUI(tk.Tk):
                                     command=lambda: self.run('draft'),
                                     style='Draft.TButton')
         self.btn_draft.pack(fill='x', pady=2, ipady=4)
-        # Строка длины превью - расположена прямо над кнопкой PREVIEW, чтобы
-        # регулятор длительности визуально был привязан к ней. fill='x'
-        # держит сетку боковой панели стабильной; spinbox выровнен по
-        # правому краю, метка по левому.
+        Tooltip(self.btn_draft, bi(
+            'Fast rough check: first 5 seconds from the Excerpt start at 480p, '
+            'ultrafast. Ignores the Excerpt end. Best for quickly eyeballing effects.',
+            'Быстрый черновик: первые 5 секунд от начала отрывка в 480p, ultrafast. '
+            'Конец отрывка игнорируется. Удобно быстро глянуть эффекты.'))
+        # Окно отрывка: поля Start / End прямо над кнопками PREVIEW/EXPORT,
+        # чтобы выбор куска таймлайна визуально был привязан к ним. Пустой
+        # End = до конца. Формат: секунды (12.5) или mm:ss (1:05).
         prf = tk.Frame(rf, bg=C_SILVER)
         prf.pack(fill='x', pady=(4, 0))
-        tk.Label(prf, text='Preview length (s):', bg=C_SILVER, fg=C_TEXT,
-                 font=('MS Sans Serif', 9)).pack(side='left')
-        ttk.Spinbox(prf, from_=1, to=90,
-                    textvariable=self.var_preview_seconds,
-                    width=5).pack(side='right')
+        tk.Label(prf, text='Excerpt', bg=C_SILVER, fg=C_TEXT,
+                 font=('MS Sans Serif', 9, 'bold')).pack(side='left')
+        e_end = ttk.Entry(prf, textvariable=self.var_preview_end, width=6,
+                          justify='center')
+        e_end.pack(side='right')
+        tk.Label(prf, text='→', bg=C_SILVER, fg=C_TEXT,
+                 font=('MS Sans Serif', 9)).pack(side='right', padx=2)
+        e_start = ttk.Entry(prf, textvariable=self.var_preview_start, width=6,
+                            justify='center')
+        e_start.pack(side='right')
+        Tooltip(e_start, bi('Excerpt start (seconds or mm:ss).',
+                            'Начало отрывка (секунды или mm:ss).'))
+        Tooltip(e_end, bi('Excerpt end — empty = to the end (seconds or mm:ss).',
+                          'Конец отрывка — пусто = до конца (секунды или mm:ss).'))
         self.btn_preview = ttk.Button(rf, text='PREVIEW',
                                       command=lambda: self.run('preview'),
                                       style='Preview.TButton')
         self.btn_preview.pack(fill='x', pady=(2, 2), ipady=4)
+        Tooltip(self.btn_preview, bi(
+            'Render the Excerpt [start → end] with the FULL export settings and play '
+            'it in the loop player (not saved to disk). Empty end = to the end. '
+            'Subtitles use absolute source timecodes, so only cues inside the excerpt appear.',
+            'Рендерит отрывок [начало → конец] с ПОЛНЫМИ настройками экспорта и крутит '
+            'в плеере (на диск не сохраняется). Пустой конец = до конца. Субтитры используют '
+            'абсолютные таймкоды источника, поэтому в отрывке видны только реплики внутри окна.'))
+        self.btn_export_excerpt = ttk.Button(rf, text='EXPORT EXCERPT',
+                                             command=lambda: self.run('export'),
+                                             style='Preview.TButton')
+        self.btn_export_excerpt.pack(fill='x', pady=(0, 2), ipady=4)
+        Tooltip(self.btn_export_excerpt, bi(
+            'Same as PREVIEW (full quality, Excerpt [start → end]) but saved permanently '
+            'to a file you choose. The clip starts at the excerpt start; subtitle cues keep '
+            'their absolute source timecodes, so only cues inside the window are burned in.',
+            'То же, что PREVIEW (полное качество, отрывок [начало → конец]), но сохраняет '
+            'в выбранный файл навсегда. Клип начинается с начала отрывка; субтитры сохраняют '
+            'абсолютные таймкоды источника — вшиваются только реплики внутри окна.'))
         self.btn_run_full = ttk.Button(rf, text='RENDER FULL VIDEO',
                                        command=lambda: self.run('final'),
                                        style='FullRender.TButton')
         self.btn_run_full.pack(fill='x', pady=(4, 2), ipady=6)
+        Tooltip(self.btn_run_full, bi(
+            'Render the WHOLE track at full quality and save to a file you choose. '
+            'The Excerpt fields are ignored — all subtitles appear at their timecodes.',
+            'Рендерит ВЕСЬ трек в полном качестве и сохраняет в выбранный файл. '
+            'Поля отрывка игнорируются — все субтитры на своих таймкодах.'))
 
         # Центр
         center = ttk.Frame(self, style='W95.TFrame')
@@ -1998,6 +2038,10 @@ class MainGUI(tk.Tk):
         for p in spec.params:
             if p.key in ('fx_paint_canvas_data', 'fx_paint_color_r', 'fx_paint_color_g', 'fx_paint_color_b'):
                 continue
+            # Шрифт/размер по умолчанию и данные реплик редактируются в окне
+            # редактора субтитров, в основном блоке их не показываем.
+            if p.key in ('fx_subtitles_font', 'fx_subtitles_size', 'fx_subtitles_data'):
+                continue
             if p.kind == 'choice':
                 self._row_with_help(inner, p.label, p.tooltip)
                 self._combo(inner, p.key, p.choices, indent=True)
@@ -2133,6 +2177,11 @@ class MainGUI(tk.Tk):
         if spec.id == 'paint':
             btn = ttk.Button(inner, text='Open Paint Editor / Открыть холст', style='W95.TButton',
                              command=self._open_paint_window)
+            btn.pack(fill='x', padx=20, pady=4)
+
+        if spec.id == 'subtitles':
+            btn = ttk.Button(inner, text='Open Subtitle Editor / Редактор субтитров',
+                             style='W95.TButton', command=self._open_subtitle_window)
             btn.pack(fill='x', padx=20, pady=4)
 
         _sync_inner()
@@ -2680,6 +2729,486 @@ class MainGUI(tk.Tk):
                 finally:
                     cap.release()
         return 16.0 / 9.0
+
+    # ─── редактор субтитров ───
+    def _open_subtitle_window(self):
+        from tkinter import colorchooser
+        from vpc.fonts import get_system_fonts, default_font_name
+        from vpc.effects.subtitles import decode_subtitles, REF_H
+
+        old = getattr(self, '_subtitle_win', None)
+        if old and old.winfo_exists():
+            old.lift(); old.focus_set(); return
+
+        win = tk.Toplevel(self)
+        win.title('Subtitle Editor / Редактор субтитров')
+        win.configure(bg=C_SILVER)
+        win.transient(self)
+        self._subtitle_win = win
+
+        # --- источник кадра для холста ---
+        ratio = self._get_source_aspect_ratio()
+        cw = 520
+        ch = max(120, int(cw / ratio))
+        if ch > 400:
+            ch = 400
+            cw = int(ch * ratio)
+        win.cap = None
+        win.static_rgb = None
+        win.fps = 24.0
+        win.nframes = 0
+        win.duration = 0.0
+        if self.video_paths:
+            path = self.video_paths[0]
+            from vpc.render.source import is_image
+            if is_image(path):
+                from vpc.render.image_source import imread_unicode
+                img = imread_unicode(path)
+                if img is not None:
+                    win.static_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                win.duration = 10.0
+            else:
+                cap = cv2.VideoCapture(path)
+                if cap.isOpened():
+                    win.cap = cap
+                    win.fps = float(cap.get(cv2.CAP_PROP_FPS) or 24.0) or 24.0
+                    win.nframes = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+                    win.duration = (win.nframes / win.fps) if win.fps else 0.0
+                else:
+                    cap.release()
+        if win.duration <= 0:
+            # Нет видео/длительности - берём длину аудио или запас, чтобы
+            # скраббер и таймкоды всё равно работали.
+            win.duration = 60.0
+
+        # --- рабочее состояние ---
+        win.cues = decode_subtitles(self.vars['fx_subtitles_data'].get())
+        win.selected = None
+        win.scrub_t = 0.0
+        win.beats = None            # ленивая сетка битов
+        win._drag = False
+        fonts = get_system_fonts()
+        font_names = sorted(fonts.keys())
+        def_font = self.vars['fx_subtitles_font'].get() or default_font_name()
+
+        def cur_defaults():
+            """Глобальные дефолты эффекта из основного блока (для новых реплик)."""
+            def _iv(k, d):
+                try: return int(self.vars[k].get())
+                except Exception: return d
+            return dict(
+                mode=self.vars['fx_subtitles_mode'].get() or 'overlay',
+                color=[_iv('fx_subtitles_color_r', 255), _iv('fx_subtitles_color_g', 255),
+                       _iv('fx_subtitles_color_b', 255)],
+                size=_iv('fx_subtitles_size', 48),
+                font=def_font,
+            )
+
+        # ── компоновка ──
+        main = tk.Frame(win, bg=C_SILVER, padx=6, pady=6)
+        main.pack(fill='both', expand=True)
+        left = tk.Frame(main, bg=C_SILVER)
+        left.pack(side='left', fill='both', expand=True)
+        right = tk.Frame(main, bg=C_SILVER, width=210)
+        right.pack(side='left', fill='y', padx=(6, 0))
+        right.pack_propagate(False)
+
+        # холст с фаской
+        cframe = tk.Frame(left, bg=C_DARK_GRAY, bd=2, relief='sunken')
+        cframe.pack()
+        canvas = tk.Canvas(cframe, width=cw, height=ch, bg=C_BLACK,
+                           highlightthickness=0)
+        canvas.pack()
+        win.canvas = canvas
+
+        # LCD-таймкод + LED-счётчик реплик (стиль CD Player / Minesweeper)
+        meter = tk.Frame(left, bg=C_SILVER)
+        meter.pack(fill='x', pady=(4, 0))
+        lcd = tk.Label(meter, text='00:00.0', bg=C_BLACK, fg=C_TUI_FG,
+                       font=('Courier New', 15, 'bold'), bd=2, relief='sunken',
+                       padx=8, width=9)
+        lcd.pack(side='left')
+        led = tk.Label(meter, text='000', bg=C_BLACK, fg=C_TUI_RED,
+                       font=('Courier New', 15, 'bold'), bd=2, relief='sunken',
+                       padx=6, width=4)
+        led.pack(side='right')
+        tk.Label(meter, text='CUES', bg=C_SILVER, fg=C_TEXT,
+                 font=('MS Sans Serif', 8)).pack(side='right', padx=(0, 4))
+
+        def _fmt_lcd(t):
+            m = int(t // 60); s = t - m * 60
+            return f'{m:02d}:{s:04.1f}'
+
+        # скраббер + транспорт
+        scrub = ttk.Scale(left, from_=0.0, to=max(0.01, win.duration),
+                          orient='horizontal')
+        scrub.pack(fill='x', pady=(4, 0))
+        trans = tk.Frame(left, bg=C_SILVER)
+        trans.pack(fill='x', pady=(2, 0))
+
+        def set_scrub(t, from_slider=False):
+            t = max(0.0, min(win.duration, float(t)))
+            win.scrub_t = t
+            lcd.configure(text=_fmt_lcd(t))
+            if not from_slider:
+                scrub.set(t)
+            redraw()
+
+        def _step(dt):
+            set_scrub(win.scrub_t + dt)
+
+        for txt, dt, tip in (('|◀', -1e9, 'To start / В начало'),
+                             ('◀◀', -1.0, '-1 s'),
+                             ('◀', -1.0 / win.fps, '-1 frame / кадр'),
+                             ('▶', 1.0 / win.fps, '+1 frame / кадр'),
+                             ('▶▶', 1.0, '+1 s'),
+                             ('▶|', 1e9, 'To end / В конец')):
+            b = tk.Button(trans, text=txt, bg=C_SILVER, bd=2, relief='raised',
+                          width=3, font=('MS Sans Serif', 8),
+                          command=lambda d=dt: _step(d))
+            b.pack(side='left', padx=1)
+            Tooltip(b, tip)
+
+        snap_var = tk.BooleanVar(value=False)
+        snap_chk = tk.Checkbutton(trans, text='snap beat', variable=snap_var,
+                                  bg=C_SILVER, font=('MS Sans Serif', 8),
+                                  activebackground=C_SILVER)
+        snap_chk.pack(side='right')
+        Tooltip(snap_chk, bi('Snap set/typed timecodes to the nearest beat.',
+                             'Притягивать таймкоды (set/ввод) к ближайшему биту.'))
+
+        def get_beats():
+            """Ленивая сетка битов: ручной BPM либо анализ аудио. Кэш на окно."""
+            if win.beats is not None:
+                return win.beats
+            beats = []
+            try:
+                if bool(self.vars.get('use_manual_bpm') and self.vars['use_manual_bpm'].get()) \
+                        and float(self.vars['manual_bpm'].get()) > 0:
+                    period = 60.0 / float(self.vars['manual_bpm'].get())
+                    n = int(win.duration / period) + 1
+                    beats = [i * period for i in range(n)]
+                elif self.audio_path:
+                    import librosa
+                    y, sr = librosa.load(self.audio_path, sr=None, mono=True)
+                    _tempo, bf = librosa.beat.beat_track(y=y, sr=sr)
+                    beats = list(librosa.frames_to_time(bf, sr=sr))
+            except Exception as e:
+                self.log(f'Subtitle beat grid unavailable: {e}')
+                beats = []
+            win.beats = beats
+            return beats
+
+        def snap_time(t):
+            if not snap_var.get():
+                return t
+            beats = get_beats()
+            if not beats:
+                return t
+            nearest = min(beats, key=lambda b: abs(b - t))
+            return nearest if abs(nearest - t) <= 0.15 else t
+
+        # ── правая панель: редактор выбранной реплики ──
+        ed = tk.LabelFrame(right, text='Selected cue', bg=C_SILVER,
+                           font=('MS Sans Serif', 8, 'bold'))
+        ed.pack(fill='x')
+
+        tk.Label(ed, text='Text', bg=C_SILVER, font=('MS Sans Serif', 8)).pack(anchor='w', padx=4)
+        v_text = tk.StringVar()
+        e_text = ttk.Entry(ed, textvariable=v_text)
+        e_text.pack(fill='x', padx=4, pady=(0, 2))
+
+        tk.Label(ed, text='Font', bg=C_SILVER, font=('MS Sans Serif', 8)).pack(anchor='w', padx=4)
+        v_font = tk.StringVar(value=def_font)
+        c_font = ttk.Combobox(ed, values=font_names, textvariable=v_font,
+                              style='W95.TCombobox', state='readonly')
+        c_font.pack(fill='x', padx=4, pady=(0, 2))
+
+        srow = tk.Frame(ed, bg=C_SILVER); srow.pack(fill='x', padx=4)
+        tk.Label(srow, text='Size', bg=C_SILVER, font=('MS Sans Serif', 8)).pack(side='left')
+        v_size = tk.IntVar(value=48)
+        l_size = tk.Label(srow, textvariable=v_size, bg=C_SILVER, width=4,
+                          font=('MS Sans Serif', 8))
+        l_size.pack(side='right')
+        s_size = ttk.Scale(ed, from_=8, to=200, orient='horizontal',
+                           command=lambda v: (v_size.set(int(float(v))), on_field_change()))
+        s_size.pack(fill='x', padx=4, pady=(0, 2))
+
+        mrow = tk.Frame(ed, bg=C_SILVER); mrow.pack(fill='x', padx=4, pady=2)
+        tk.Label(mrow, text='Mode', bg=C_SILVER, font=('MS Sans Serif', 8)).pack(side='left')
+        v_mode = tk.StringVar(value='overlay')
+        c_mode = ttk.Combobox(mrow, values=['overlay', 'lag', 'warp_video', 'lag_warp'],
+                              textvariable=v_mode, style='W95.TCombobox',
+                              state='readonly', width=10)
+        c_mode.pack(side='right')
+
+        crow = tk.Frame(ed, bg=C_SILVER); crow.pack(fill='x', padx=4, pady=2)
+        tk.Label(crow, text='Color', bg=C_SILVER, font=('MS Sans Serif', 8)).pack(side='left')
+        v_color = [255, 255, 255]
+        swatch = tk.Frame(crow, bg='#ffffff', width=22, height=16, bd=2, relief='sunken')
+        swatch.pack(side='right'); swatch.pack_propagate(False)
+
+        def pick_color():
+            if win.selected is None:
+                self.log('Subtitles: select or add a cue first to set its colour.')
+                return
+            init = '#%02x%02x%02x' % tuple(int(c) for c in v_color)
+            win.lift()
+            try:
+                res = colorchooser.askcolor(color=init, parent=win,
+                                            title='Cue colour / Цвет реплики')
+            except Exception as e:
+                self.log(f'Colour picker failed: {e}')
+                return
+            if res and res[0]:
+                v_color[:] = [int(c) for c in res[0]]
+                swatch.configure(bg='#%02x%02x%02x' % tuple(v_color))
+                on_field_change()
+        btn_color = tk.Button(crow, text='…', bg=C_SILVER, bd=2, relief='raised',
+                              width=2, command=pick_color)
+        btn_color.pack(side='right', padx=(0, 3))
+
+        trow = tk.Frame(ed, bg=C_SILVER); trow.pack(fill='x', padx=4, pady=2)
+        tk.Label(trow, text='Start', bg=C_SILVER, font=('MS Sans Serif', 8)).grid(row=0, column=0, sticky='w')
+        v_start = tk.StringVar()
+        ttk.Entry(trow, textvariable=v_start, width=7).grid(row=0, column=1, padx=2)
+        tk.Button(trow, text='◉', bg=C_SILVER, bd=2, relief='raised', width=2,
+                  command=lambda: (v_start.set(f'{snap_time(win.scrub_t):.2f}'), on_field_change())
+                  ).grid(row=0, column=2)
+        tk.Label(trow, text='End', bg=C_SILVER, font=('MS Sans Serif', 8)).grid(row=1, column=0, sticky='w')
+        v_end = tk.StringVar()
+        ttk.Entry(trow, textvariable=v_end, width=7).grid(row=1, column=1, padx=2)
+        tk.Button(trow, text='◉', bg=C_SILVER, bd=2, relief='raised', width=2,
+                  command=lambda: (v_end.set(f'{snap_time(win.scrub_t):.2f}'), on_field_change())
+                  ).grid(row=1, column=2)
+        Tooltip(trow, bi('◉ grabs the current scrubber time.',
+                         '◉ берёт текущее время скраббера.'))
+
+        arow = tk.Frame(ed, bg=C_SILVER); arow.pack(fill='x', padx=4, pady=(4, 4))
+        tk.Button(arow, text='+ Add', bg=C_SILVER, bd=2, relief='raised',
+                  command=lambda: add_cue()).pack(side='left', expand=True, fill='x', padx=1)
+        tk.Button(arow, text='Dup', bg=C_SILVER, bd=2, relief='raised',
+                  command=lambda: dup_cue()).pack(side='left', expand=True, fill='x', padx=1)
+        tk.Button(arow, text='Delete', bg=C_SILVER, bd=2, relief='raised',
+                  command=lambda: del_cue()).pack(side='left', expand=True, fill='x', padx=1)
+
+        # список реплик
+        tk.Label(right, text='Cues', bg=C_SILVER,
+                 font=('MS Sans Serif', 8, 'bold')).pack(anchor='w', pady=(6, 0))
+        lb_frame = tk.Frame(right, bg=C_DARK_GRAY, bd=2, relief='sunken')
+        lb_frame.pack(fill='both', expand=True)
+        listbox = tk.Listbox(lb_frame, bg=C_WHITE, font=('MS Sans Serif', 8),
+                             activestyle='none', highlightthickness=0, bd=0)
+        listbox.pack(fill='both', expand=True)
+
+        # ── логика ──
+        def _color_hex(c):
+            return '#%02x%02x%02x' % (int(c[0]), int(c[1]), int(c[2]))
+
+        def frame_at(t):
+            if win.static_rgb is not None:
+                return win.static_rgb
+            if win.cap is None:
+                return None
+            fi = int(t * win.fps)
+            fi = max(0, min(fi, max(0, win.nframes - 1)))
+            try:
+                win.cap.set(cv2.CAP_PROP_POS_FRAMES, fi)
+                ok, bgr = win.cap.read()
+                if not ok:
+                    return None
+                return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+            except cv2.error:
+                return None
+
+        def redraw():
+            canvas.delete('all')
+            rgb = frame_at(win.scrub_t)
+            if rgb is not None:
+                try:
+                    disp = cv2.resize(rgb, (cw, ch), interpolation=cv2.INTER_AREA)
+                    win._photo = ImageTk.PhotoImage(Image.fromarray(disp))
+                    canvas.create_image(0, 0, image=win._photo, anchor='nw')
+                except Exception:
+                    canvas.create_rectangle(0, 0, cw, ch, fill=C_DARK_GRAY, outline='')
+            else:
+                canvas.create_rectangle(0, 0, cw, ch, fill=C_DARK_GRAY, outline='')
+                canvas.create_text(cw // 2, ch // 2, text='no video source',
+                                   fill=C_WHITE, font=('MS Sans Serif', 10))
+            # активные реплики
+            t = win.scrub_t
+            for i, cue in enumerate(win.cues):
+                if not (cue['t_start'] <= t < cue['t_end']):
+                    continue
+                px = max(6, int(round((cue['size'] or 48) * ch / REF_H)))
+                fname = cue['font'] or def_font
+                x = int(cue['x'] * cw); y = int(cue['y'] * ch)
+                col = _color_hex(cue['color'] or [255, 255, 255])
+                item = canvas.create_text(
+                    x, y, text=cue['text'], fill=col, anchor='center',
+                    font=(fname, -px), justify=cue.get('align', 'center'),
+                    tags=('cue', f'cue{i}'))
+                if i == win.selected:
+                    bb = canvas.bbox(item)
+                    if bb:
+                        canvas.create_rectangle(bb[0] - 3, bb[1] - 3, bb[2] + 3, bb[3] + 3,
+                                                outline=C_TUI_AMBER, dash=(3, 2))
+            led.configure(text=f'{len(win.cues):03d}')
+
+        def refresh_list(keep=True):
+            listbox.delete(0, 'end')
+            for cue in win.cues:
+                txt = (cue['text'][:14] + '…') if len(cue['text']) > 15 else cue['text']
+                listbox.insert('end', f"{cue['t_start']:.1f}-{cue['t_end']:.1f} {txt}")
+            if keep and win.selected is not None and 0 <= win.selected < len(win.cues):
+                listbox.selection_clear(0, 'end')
+                listbox.selection_set(win.selected)
+
+        def save():
+            self._updating_subtitle_var = True
+            try:
+                self.vars['fx_subtitles_data'].set(json.dumps(win.cues, ensure_ascii=False))
+            finally:
+                self._updating_subtitle_var = False
+
+        def load_editor(cue):
+            win._loading = True
+            try:
+                v_text.set(cue['text'])
+                v_font.set(cue['font'] or def_font)
+                v_size.set(int(cue['size'] or 48))
+                s_size.set(int(cue['size'] or 48))
+                v_mode.set(cue['mode'] or (self.vars['fx_subtitles_mode'].get() or 'overlay'))
+                v_color[:] = list(cue['color'] or [255, 255, 255])
+                swatch.configure(bg=_color_hex(v_color))
+                v_start.set(f"{cue['t_start']:.2f}")
+                v_end.set(f"{cue['t_end']:.2f}")
+            finally:
+                win._loading = False
+
+        def select_cue(idx):
+            win.selected = idx
+            if idx is not None and 0 <= idx < len(win.cues):
+                load_editor(win.cues[idx])
+            refresh_list()
+            redraw()
+
+        def on_field_change(*_):
+            if getattr(win, '_loading', False) or win.selected is None:
+                return
+            if not (0 <= win.selected < len(win.cues)):
+                return
+            cue = win.cues[win.selected]
+            cue['text'] = v_text.get()
+            cue['font'] = v_font.get() or def_font
+            cue['size'] = int(v_size.get())
+            cue['mode'] = v_mode.get()
+            cue['color'] = list(v_color)
+            t0 = snap_time(self._parse_timecode(v_start.get()) or 0.0)
+            t1 = self._parse_timecode(v_end.get())
+            t1 = snap_time(t1) if t1 is not None else t0 + 2.0
+            if t1 <= t0:
+                t1 = t0 + 0.1
+            cue['t_start'], cue['t_end'] = t0, t1
+            refresh_list()
+            redraw()
+            save()
+
+        def add_cue():
+            d = cur_defaults()
+            t0 = snap_time(win.scrub_t)
+            cue = {'text': 'TEXT', 'x': 0.5, 'y': 0.85, 'align': 'center',
+                   'size': d['size'], 'font': d['font'], 'mode': d['mode'],
+                   'color': list(d['color']), 't_start': t0, 't_end': t0 + 2.0}
+            win.cues.append(cue)
+            select_cue(len(win.cues) - 1)
+            save()
+
+        def dup_cue():
+            if win.selected is None:
+                return
+            import copy
+            cue = copy.deepcopy(win.cues[win.selected])
+            win.cues.append(cue)
+            select_cue(len(win.cues) - 1)
+            save()
+
+        def del_cue():
+            if win.selected is None:
+                return
+            del win.cues[win.selected]
+            win.selected = None
+            refresh_list(keep=False)
+            redraw()
+            save()
+
+        # привязки полей
+        v_text.trace_add('write', on_field_change)
+        c_font.bind('<<ComboboxSelected>>', on_field_change)
+        c_mode.bind('<<ComboboxSelected>>', on_field_change)
+        v_start.trace_add('write', on_field_change)
+        v_end.trace_add('write', on_field_change)
+
+        def on_list_select(_e):
+            sel = listbox.curselection()
+            if sel:
+                select_cue(sel[0])
+        listbox.bind('<<ListboxSelect>>', on_list_select)
+
+        scrub.configure(command=lambda v: set_scrub(v, from_slider=True))
+
+        # drag реплики по холсту
+        def on_canvas_press(e):
+            items = canvas.find_withtag('cue')
+            # ищем ближайший активный текст среди нарисованных
+            hit = None
+            for it in reversed(items):
+                bb = canvas.bbox(it)
+                if bb and bb[0] - 4 <= e.x <= bb[2] + 4 and bb[1] - 4 <= e.y <= bb[3] + 4:
+                    hit = it; break
+            if hit is None:
+                return
+            tags = canvas.gettags(hit)
+            for tg in tags:
+                if tg.startswith('cue') and tg != 'cue':
+                    idx = int(tg[3:])
+                    win._drag = True
+                    select_cue(idx)
+                    return
+
+        def on_canvas_drag(e):
+            if not win._drag or win.selected is None:
+                return
+            cue = win.cues[win.selected]
+            cue['x'] = max(0.0, min(1.0, e.x / cw))
+            cue['y'] = max(0.0, min(1.0, e.y / ch))
+            redraw()
+
+        def on_canvas_release(_e):
+            if win._drag:
+                win._drag = False
+                save()
+
+        canvas.bind('<Button-1>', on_canvas_press)
+        canvas.bind('<B1-Motion>', on_canvas_drag)
+        canvas.bind('<ButtonRelease-1>', on_canvas_release)
+
+        def on_close():
+            save()
+            if win.cap is not None:
+                try: win.cap.release()
+                except Exception: pass
+            win.destroy()
+            self._subtitle_win = None
+        win.protocol('WM_DELETE_WINDOW', on_close)
+
+        win.geometry(f'{cw + 240}x{max(ch + 130, 470)}')
+        refresh_list(keep=False)
+        set_scrub(0.0)
+        # Автовыбор первой реплики, чтобы редактор (в т.ч. кнопка цвета) сразу
+        # был активен, а не молчал до ручного выделения.
+        if win.cues:
+            select_cue(0)
 
     def _setup_paint_canvas_trace(self):
         self.vars['fx_paint_canvas_data'].trace_add('write', self._on_paint_canvas_data_changed)
@@ -3852,6 +4381,72 @@ class MainGUI(tk.Tk):
             v = 5.0
         return max(1.0, min(90.0, v))
 
+    @staticmethod
+    def _parse_timecode(text):
+        """Разбирает 'сс', 'сс.с' или 'mm:ss(.s)' в секунды. Пусто/мусор -> None."""
+        if text is None:
+            return None
+        s = str(text).strip()
+        if not s:
+            return None
+        try:
+            if ':' in s:
+                parts = s.split(':')
+                if len(parts) != 2:
+                    return None
+                m, sec = parts
+                return max(0.0, float(m or 0) * 60.0 + float(sec or 0))
+            return max(0.0, float(s))
+        except (ValueError, TypeError):
+            return None
+
+    def _get_preview_window(self):
+        """Возвращает (start, end) окна отрывка в секундах. end может быть None."""
+        start = self._parse_timecode(self.var_preview_start.get()) or 0.0
+        end = self._parse_timecode(self.var_preview_end.get())
+        # Некорректный конец (<=start) трактуем как «до конца».
+        if end is not None and end <= start:
+            end = None
+        return start, end
+
+    def _warn_subtitle_window(self, mode, win_start, win_end):
+        """Объективная проверка связки субтитры↔окно отрывка.
+
+        Субтитры и окно живут на одном абсолютном таймлайне источника, поэтому
+        реплики НЕ съезжают - но реплики с таймкодами вне окна просто не
+        появятся в отрывке. Считаем, сколько реплик реально попадает в окно, и
+        честно сообщаем об этом (это выглядит как «съехало», хотя тайминг точен).
+        """
+        if not self.vars.get('fx_subtitles') or not self.vars['fx_subtitles'].get():
+            return
+        from vpc.effects.subtitles import decode_subtitles
+        try:
+            cues = decode_subtitles(self.vars['fx_subtitles_data'].get())
+        except Exception:
+            cues = []
+        if not cues:
+            return
+        t0 = win_start
+        # DRAFT берёт 5 секунд от старта; preview/export - окно до end (или конца).
+        if mode == 'draft':
+            t1 = win_start + 5.0
+        else:
+            t1 = win_end if win_end is not None else float('inf')
+        if t0 <= 0.001 and t1 == float('inf'):
+            return   # окно = весь трек, все реплики на месте
+        end_lbl = 'end' if t1 == float('inf') else f'{t1:g}s'
+        inside = sum(1 for c in cues if c['t_start'] < t1 and c['t_end'] > t0)
+        total = len(cues)
+        if inside == 0:
+            self.log(f'WARNING: none of your {total} subtitle cue(s) fall inside this '
+                     f'excerpt [{t0:g}s -> {end_lbl}] - no subtitles will show here. '
+                     f'Cues use absolute source timecodes; adjust the Excerpt or the cue '
+                     f'timings so they overlap.')
+        elif inside < total:
+            self.log(f'NOTE: {inside}/{total} subtitle cue(s) fall inside this excerpt '
+                     f'[{t0:g}s -> {end_lbl}]; the others are outside the window and will '
+                     f'not appear (this is expected, not a drift).')
+
     def run(self, mode='final'):
         passthrough = bool(self.vars.get('passthrough_mode')
                            and self.vars['passthrough_mode'].get())
@@ -3863,24 +4458,52 @@ class MainGUI(tk.Tk):
                      '(or enable Passthrough mode in Cut Logic).')
             return
         cfg = self.get_current_config()
+        cfg['_job'] = mode
         cfg['audio_path'] = self.audio_path
         cfg['video_paths'] = self.video_paths
         cfg['overlay_dir'] = self.overlay_dir
 
-        if mode in ('draft', 'preview'):
-            cfg['render_mode'] = mode
-            # Draft - фиксированная проверка 5с/480p; только PREVIEW
-            # учитывает заданную пользователем длину, чтобы роли не путались.
-            preview_secs = (5.0 if mode == 'draft'
-                            else self._get_preview_seconds())
-            cfg['max_duration'] = preview_secs
-            cfg['output_path'] = self.temp_preview_path
-            label = ('DRAFT (5 sec · 480p)' if mode == 'draft'
-                     else f'PREVIEW ({preview_secs:g} sec)')
-            self.log(f'Starting {label}...')
-            self.progress.configure(mode='indeterminate'); self.progress.start(10)
+        # Окно отрывка применяется к draft/preview/export (но не к full render).
+        win_start, win_end = self._get_preview_window()
+
+        if mode in ('draft', 'preview', 'export'):
+            self._warn_subtitle_window(mode, win_start, win_end)
+            # PREVIEW/EXPORT рендерят выбранное окно в полном качестве экспорта;
+            # DRAFT игнорирует конец окна и берёт быстрые 5с/480p от старта.
+            cfg['preview_start'] = win_start
+            cfg['preview_end'] = None if mode == 'draft' else win_end
+            win_label = (f'{win_start:g}s'
+                         + ('→end' if win_end is None else f'→{win_end:g}s'))
+
+            if mode == 'export':
+                cfg['render_mode'] = 'preview'   # полное качество, но на диск
+                from vpc.render.sink import EXPORT_FORMATS
+                fmt = EXPORT_FORMATS.get(cfg.get('video_codec', 'H.264 (MP4)'),
+                                         EXPORT_FORMATS['H.264 (MP4)'])
+                ext = fmt['ext']
+                out = filedialog.asksaveasfilename(
+                    defaultextension=f'.{ext}',
+                    filetypes=[(ext.upper(), f'*.{ext}'), ('All files', '*.*')],
+                    initialfile=f'excerpt_{random.randint(1000, 9999)}.{ext}')
+                if not out:
+                    return
+                cfg['output_path'] = out
+                cfg['max_duration'] = None
+                self.log(f'Starting EXPORT EXCERPT ({win_label})...')
+                self.progress.configure(mode='determinate', value=0)
+            else:
+                cfg['render_mode'] = mode
+                cfg['max_duration'] = 5.0 if mode == 'draft' else None
+                cfg['output_path'] = self.temp_preview_path
+                label = ('DRAFT (5 sec · 480p)' if mode == 'draft'
+                         else f'PREVIEW ({win_label})')
+                self.log(f'Starting {label}...')
+                self.progress.configure(mode='indeterminate'); self.progress.start(10)
         else:
             cfg['render_mode'] = 'final'
+            # Полный рендер игнорирует окно отрывка.
+            cfg['preview_start'] = 0.0
+            cfg['preview_end'] = None
             # Выводим расширение контейнера из выбранной метки кодека,
             # чтобы диалог сохранения и ffmpeg-сток сходились по типу файла.
             from vpc.render.sink import EXPORT_FORMATS
@@ -3906,7 +4529,7 @@ class MainGUI(tk.Tk):
         if not self.overlay_dir and cfg.get('fx_overlay'):
             self.log('WARNING: Overlay folder not set - overlay effect skipped.')
 
-        for btn in (self.btn_draft, self.btn_preview, self.btn_run_full):
+        for btn in (self.btn_draft, self.btn_preview, self.btn_export_excerpt, self.btn_run_full):
             btn.configure(state='disabled')
         # Кнопка Cancel работает наоборот: активна ровно во время рендера.
         self.btn_cancel_render.configure(state='normal', text='CANCEL RENDER')
@@ -3950,7 +4573,12 @@ class MainGUI(tk.Tk):
             self.btn_cancel_render.configure(state='disabled', text='CANCELLING...')
 
     def _render_thread(self, cfg):
-        is_preview = cfg['render_mode'] in ('draft', 'preview')
+        job = cfg.get('_job', cfg['render_mode'])
+        # is_preview: индикатор-«марширующий» прогресс + автопроигрывание temp.
+        # Export рендерит в полном качестве, но пишет в пользовательский файл,
+        # поэтому ведёт себя как full render (детерминантный прогресс, без
+        # автопроигрывания).
+        is_preview = job in ('draft', 'preview')
 
         def on_progress(message=None, value=None):
             if message:
@@ -3965,7 +4593,8 @@ class MainGUI(tk.Tk):
         try:
             ok = engine.run(render_mode=cfg['render_mode'],
                             max_output_duration=cfg.get('max_duration'))
-            label = 'PREVIEW' if is_preview else 'FULL RENDER'
+            label = {'draft': 'DRAFT', 'preview': 'PREVIEW',
+                     'export': 'EXPORT EXCERPT'}.get(job, 'FULL RENDER')
             if engine.abort or not ok:
                 # Не удаляем частичный результат автоматически - для
                 # полного рендера путь выбирал сам пользователь и мог перезаписать
@@ -3982,7 +4611,7 @@ class MainGUI(tk.Tk):
             self.after(0, self.log, f'ERROR: {e}')
         finally:
             self.engine = None
-            for btn in (self.btn_draft, self.btn_preview, self.btn_run_full):
+            for btn in (self.btn_draft, self.btn_preview, self.btn_export_excerpt, self.btn_run_full):
                 self.after(0, lambda b=btn: b.configure(state='normal'))
             self.after(0, lambda: self.btn_cancel_render.configure(
                 state='disabled', text='CANCEL RENDER'))

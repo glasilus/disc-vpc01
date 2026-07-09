@@ -114,6 +114,10 @@ class BreakcoreEngine:
         # Путь к временному wav, извлечённому из исходного видео в режиме
         # passthrough. Отслеживается, чтобы ветка очистки в run() могла его удалить.
         self._tmp_audio_to_clean: Optional[str] = None
+        # Временный WAV среза окна отрывка (превью/экспорт) + сдвиг таймлайна.
+        self._tmp_window_audio: Optional[str] = None
+        self._window_t0: float = 0.0
+        self._window_frame0: int = 0
 
     # ----- логирование -----
     def log(self, message: str, value: Optional[int] = None):
@@ -218,6 +222,14 @@ class BreakcoreEngine:
             except OSError: pass
         self._tmp_audio_to_clean = None
 
+    def _cleanup_tmp_window_audio(self) -> None:
+        """Удаляет временный WAV среза окна отрывка, если он есть. Идемпотентно."""
+        p = self._tmp_window_audio
+        if p and os.path.exists(p):
+            try: os.remove(p)
+            except OSError: pass
+        self._tmp_window_audio = None
+
     # ----- извлечение аудио для passthrough -----
     def _extract_audio_track(self, video_path: str) -> Optional[str]:
         """Тонкая обёртка над `engine_setup.extract_audio_track` с нашим логом."""
@@ -297,11 +309,16 @@ class BreakcoreEngine:
         # Поканальный аудиосэмпл для эффектов-визуализаторов. Рендер
         # однопоточный и последовательный -> мутировать общий seg здесь
         # безопасно; невизуализаторские эффекты игнорируют seg.live.
+        frame_t = ctx.frames_emitted / ctx.fps if ctx.fps else 0.0
         if ctx.reactor is not None:
-            t = ctx.frames_emitted / ctx.fps if ctx.fps else 0.0
-            seg.live = (ctx.reactor.sample(t) if getattr(ctx.reactor, 'f', None) is not None
+            seg.live = (ctx.reactor.sample(frame_t) if getattr(ctx.reactor, 'f', None) is not None
                         else ctx.reactor.synth(seg.intensity, ctx.frames_emitted))
+        # Абсолютное время кадра на исходном таймлайне: в окне превью (фича
+        # отрывков) кадры идут с 0, поэтому добавляем сдвиг начала окна, чтобы
+        # субтитры показывались по своим настоящим таймкодам.
+        abs_t = frame_t + getattr(self, '_window_t0', 0.0)
         for fx in ctx.effects:
+            fx.frame_time = abs_t
             try:
                 frame = fx.apply(frame, seg, ctx.is_draft)
             except Exception as e:
@@ -403,11 +420,36 @@ class BreakcoreEngine:
                                     audio_path, output_path)
         finally:
             self._cleanup_tmp_audio()
+            self._cleanup_tmp_window_audio()
 
     def _run_inner(self, render_mode, max_output_duration,
                    cfg, rc, video_paths, audio_path, output_path):
         is_draft = render_mode == RENDER_DRAFT
         is_final = render_mode == RENDER_FINAL
+
+        # --- окно отрывка: срез аудио выполняется ДО анализа, чтобы тайминги
+        # сегментов ложились относительно нуля, а движок не заметил сдвига.
+        # Длительность источника здесь ещё неизвестна (пул не открыт), поэтому
+        # клампим без верхней границы - ffmpeg сам отдаст ровно доступное.
+        from vpc.render.window import resolve_window, slice_audio_window
+        win_t0, win_t1, win_active = resolve_window(
+            rc.preview_start, rc.preview_end, 0.0)
+        self._window_t0 = 0.0
+        self._window_frame0 = 0
+        if win_active:
+            if audio_path:
+                sliced = slice_audio_window(audio_path, win_t0, win_t1, self.log)
+                if sliced:
+                    self._tmp_window_audio = sliced
+                    audio_path = sliced
+                    self._window_t0 = win_t0
+                    self.log(f'Preview window: {win_t0:.2f}s '
+                             + ('to end.' if win_t1 is None else f'to {win_t1:.2f}s.'))
+                else:
+                    win_active = False   # срез не удался - рендерим весь трек
+            else:
+                # Немой passthrough - окно задаётся только сдвигом видео ниже.
+                self._window_t0 = win_t0
 
         # Анализ аудио выполняется первым, чтобы использовать его
         # длительность для расчёта размеров. В режиме passthrough аудио
@@ -449,6 +491,13 @@ class BreakcoreEngine:
             target_duration = audio_duration
         if max_output_duration:
             target_duration = min(target_duration, max_output_duration)
+        # Окно в passthrough: видео сикается на win_t0, длительность = длина
+        # окна (в обычном режиме окно уже поглощено срезом аудио выше).
+        if win_active and rc.passthrough_mode:
+            self._window_t0 = win_t0
+            avail = max(0.01, pool.vid_duration - win_t0)
+            wlen = avail if win_t1 is None else min(avail, max(0.01, win_t1 - win_t0))
+            target_duration = min(target_duration, wlen)
         segments = [s for s in segments if s.t_start < target_duration]
 
         bpm_str = f' | {analyzer_bpm:.1f} BPM' if analyzer_bpm else ''
@@ -473,6 +522,10 @@ class BreakcoreEngine:
                     self.log(f'Passthrough: forcing output FPS to source '
                              f'native {src_fps_int} (was {fps}) to keep audio in sync.')
                     fps = src_fps_int
+        # Стартовый кадр видео для окна в passthrough - считаем по финальному
+        # fps (он мог быть принудительно подогнан под нативный выше).
+        if win_active and rc.passthrough_mode:
+            self._window_frame0 = int(round(self._window_t0 * fps))
         preset = rc.encoder_preset(render_mode)
         crf = rc.crf(render_mode)
         self.log(f'Mode: {render_mode} | {out_w}x{out_h} @ {fps}fps | '
@@ -936,7 +989,10 @@ class BreakcoreEngine:
             dm_cursor = 0.0
             dm_loaded_idx = -1
             dm_held_bgr = None
-        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        # Старт с кадра окна отрывка. Для stretch-replay датамоша это не
+        # применимо (предзапечённый cap - другой файл), поэтому там всегда 0.
+        start_frame = 0 if dm_stretch else getattr(self, '_window_frame0', 0)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
 
         # Синтетический SILENCE используется и как заполнитель "до любого
         # сегмента", и как fallback при полном отсутствии аудио. Если

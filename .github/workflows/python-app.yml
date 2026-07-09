@@ -70,6 +70,7 @@ jobs:
             --collect-all numpy ^
             --collect-all PIL ^
             --collect-all cv2 ^
+            --collect-all av ^
             --collect-all librosa ^
             --collect-all scipy ^
             --collect-all soundfile ^
@@ -195,6 +196,7 @@ jobs:
             --collect-all numpy \
             --collect-all PIL \
             --collect-all cv2 \
+            --collect-all av \
             --collect-all librosa \
             --collect-all scipy \
             --collect-all soundfile \
@@ -399,6 +401,7 @@ jobs:
             --collect-all numpy \
             --collect-all PIL \
             --collect-all cv2 \
+            --collect-all av \
             --collect-all librosa \
             --collect-all scipy \
             --collect-all soundfile \

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 
+import cv2
 import numpy as np
 
 from vpc.analyzer import Segment, SegmentType
@@ -21,7 +22,7 @@ class VisualizerEffect(BaseEffect):
     trigger_types = list(SegmentType)   # реагирует на любой тип сегмента
 
     def __init__(self, mode: str = 'replace', opacity: float = 0.85,
-                 blend: str = 'screen', **kw):
+                 blend: str = 'alpha', **kw):
         super().__init__(**kw)
         self.mode = mode
         self.opacity = float(opacity)
@@ -32,7 +33,16 @@ class VisualizerEffect(BaseEffect):
         sample = read_sample(seg)
         visual, field = self._render(h, w, sample)
         composed = composite(frame, visual, field, self.mode, self.opacity, self.blend)
-        return self._blend_by_intensity(seg, composed, frame)
+        # Единый кроссфейд к исходнику. Плотность визуала уже задаёт composite
+        # (opacity/mask), поэтому наследуемый _blend_by_intensity здесь не нужен -
+        # его повторное смешивание оставляло минимум 5% оригинала поверх
+        # результата (потолок 0.95) и подмешивало видео сквозь чёрное в mask.
+        # intensity выступает мастер-непрозрачностью и доходит до честных 100%.
+        amount = self.intensity_min + self._driven_value(seg) * (self.intensity_max - self.intensity_min)
+        amount = max(0.0, min(1.0, amount))
+        if amount >= 0.999:
+            return composed
+        return cv2.addWeighted(composed, amount, frame, 1.0 - amount, 0.0)
 
     @abstractmethod
     def _render(self, h: int, w: int, sample) -> tuple[np.ndarray, np.ndarray]:

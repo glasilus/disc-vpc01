@@ -35,12 +35,18 @@ class BaseEffect(ABC):
     beat_gate: str = 'off'
     react: bool = False
 
+    # Абсолютное время текущего кадра (сек) на таймлайне рендера. Движок
+    # проставляет его в _apply_chain перед вызовом эффекта. Нужно эффектам,
+    # завязанным на время (субтитры); остальные его просто игнорируют.
+    frame_time: float = 0.0
+
     def __init__(self, enabled: bool = True, chance: float = 1.0,
                  intensity_min: float = 0.0, intensity_max: float = 1.0):
         self.enabled = enabled
         self.chance = chance
         self.intensity_min = intensity_min
         self.intensity_max = intensity_max
+        self.frame_time = 0.0
 
     def _beat_pass(self, seg: Segment) -> bool:
         """True, если по-кадровый beat gate пропускает этот кадр.

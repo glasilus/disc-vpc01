@@ -28,6 +28,7 @@ from .effects import (
     mosh, vhs as vhs_fx, broken as broken_fx, virus as virus_fx,
 )
 from .effects.paint import PaintCanvasEffect
+from .effects.subtitles import SubtitleEffect
 from .effects.visualizer import (
     SpectrumBarsEffect, RadialSpectrumEffect, OscilloscopeEffect,
     LissajousEffect, PlasmaFieldEffect, BeatParticlesEffect, FlowFieldEffect,
@@ -355,6 +356,11 @@ def _paint_extras(cfg: dict) -> dict:
     )
 
 
+def _subtitles_extras(cfg: dict) -> dict:
+    from .effects.subtitles import decode_subtitles
+    return dict(cues=decode_subtitles(cfg.get('fx_subtitles_data', '')))
+
+
 # ──────────────────────────────────────────────────────────────────────────
 #   РЕЕСТР - здесь описан каждый настраиваемый эффект
 # ──────────────────────────────────────────────────────────────────────────
@@ -544,61 +550,6 @@ EFFECTS: List[EffectSpec] = [
         ),
     ),
 
-    EffectSpec(
-        id='true_datamosh', label='True Datamosh', group='CORE FX',
-        cls=mosh.TrueDatamoshEffect,
-        enable_key='fx_truemosh', enabled_default=False,
-        chance_key='fx_truemosh_chance', default_chance=0.5,
-        params=[
-            ParamSpec('fx_truemosh_mode', 'Mosh Mode', 'melt', kind='choice',
-                      choices=['melt', 'bloom', 'hybrid'], kwarg='mode', indent=True,
-                      tooltip=bi(
-                          'melt = I-frames are dropped at cuts, the old scene smears along the new '
-                          'scene\'s motion (the canonical datamosh). bloom = one P-frame is decoded '
-                          'repeatedly, moving regions grow out of themselves. hybrid = randomly picks '
-                          'melt, bloom or both per event.',
-                          'melt - I-кадры выбрасываются на склейках, старая сцена размазывается по '
-                          'движению новой (канонический датамош). bloom - один P-кадр декодируется '
-                          'многократно, движущиеся зоны прорастают сами из себя. hybrid - на каждое '
-                          'событие случайно выбирается melt, bloom или оба.',
-                      )),
-            ParamSpec('fx_truemosh_bloom', 'Bloom Frames', 8, 2, 24, kind='int',
-                      kwarg='bloom_frames', indent=True,
-                      tooltip=bi(
-                          'Maximum length of a bloom burst in frames (the actual length scales with '
-                          'segment loudness). Longer = motion compounds further before the stream '
-                          'moves on.',
-                          'Максимальная длина bloom-вспышки в кадрах (фактическая длина зависит от '
-                          'громкости сегмента). Длиннее - движение накапливается дольше, прежде чем '
-                          'поток пойдёт дальше.',
-                      )),
-            ParamSpec('fx_truemosh_crunch', 'Block Crunch', 0.35, 0.0, 1.0,
-                      kwarg='crunch', indent=True,
-                      tooltip=bi(
-                          'Bitrate starvation of the internal MPEG-4 stream. Low = smooth, almost '
-                          'painterly melt. High = coarse 16px macroblock soup with visible DCT '
-                          'blocks, like a heavily corrupted download.',
-                          'Битрейтное голодание внутреннего MPEG-4 потока. Мало - гладкое, почти '
-                          'живописное плавление. Много - грубая каша из 16px макроблоков с видимыми '
-                          'DCT-блоками, как сильно битая скачка.',
-                      )),
-        ],
-        note='NOISE / SUSTAIN / IMPACT / DROP - real MPEG-4 I-frame-drop mosh.',
-        tooltip=bi(
-            'The genuine article. A real MPEG-4 encoder and decoder run inside the effect: at '
-            'a cut the keyframe is physically removed from the bitstream, and the decoder drags '
-            'the old scene along the new scene\'s motion vectors until it patchily heals - the '
-            'exact mechanism of classic datamosh tools, not an imitation. Consecutive triggered '
-            'segments chain into one continuous datamix melt; the first segment that does not '
-            'trigger snaps the picture back clean.',
-            'Настоящий датамош. Внутри эффекта работают реальные энкодер и декодер MPEG-4: на '
-            'склейке ключевой кадр физически удаляется из битстрима, и декодер тащит старую '
-            'сцену по векторам движения новой, пока картинка не «заживёт» пятнами - тот же '
-            'механизм, что в классических инструментах датамоша, а не имитация. Подряд идущие '
-            'сработавшие сегменты сцепляются в непрерывное datamix-плавление; первый '
-            'несработавший сегмент возвращает чистую картинку.',
-        ),
-    ),
 
     EffectSpec(
         id='ascii', label='ASCII Filter', group='CORE FX',
@@ -1675,6 +1626,64 @@ EFFECTS: List[EffectSpec] = [
         ),
     ),
 
+    # ── True Datamosh: между OVERLAYS и PAINT - мошит оверлеи (они уже
+    #    в кадре), но не трогает paint/dvd, которые рисуются поверх ──
+    EffectSpec(
+        id='true_datamosh', label='True Datamosh', group='CORE FX',
+        cls=mosh.TrueDatamoshEffect,
+        enable_key='fx_truemosh', enabled_default=False,
+        chance_key='fx_truemosh_chance', default_chance=0.5,
+        params=[
+            ParamSpec('fx_truemosh_mode', 'Mosh Mode', 'melt', kind='choice',
+                      choices=['melt', 'bloom', 'hybrid'], kwarg='mode', indent=True,
+                      tooltip=bi(
+                          'melt = I-frames are dropped at cuts, the old scene smears along the new '
+                          'scene\'s motion (the canonical datamosh). bloom = one P-frame is decoded '
+                          'repeatedly, moving regions grow out of themselves. hybrid = randomly picks '
+                          'melt, bloom or both per event.',
+                          'melt - I-кадры выбрасываются на склейках, старая сцена размазывается по '
+                          'движению новой (канонический датамош). bloom - один P-кадр декодируется '
+                          'многократно, движущиеся зоны прорастают сами из себя. hybrid - на каждое '
+                          'событие случайно выбирается melt, bloom или оба.',
+                      )),
+            ParamSpec('fx_truemosh_bloom', 'Bloom Frames', 8, 2, 24, kind='int',
+                      kwarg='bloom_frames', indent=True,
+                      tooltip=bi(
+                          'Maximum length of a bloom burst in frames (the actual length scales with '
+                          'segment loudness). Longer = motion compounds further before the stream '
+                          'moves on.',
+                          'Максимальная длина bloom-вспышки в кадрах (фактическая длина зависит от '
+                          'громкости сегмента). Длиннее - движение накапливается дольше, прежде чем '
+                          'поток пойдёт дальше.',
+                      )),
+            ParamSpec('fx_truemosh_crunch', 'Block Crunch', 0.35, 0.0, 1.0,
+                      kwarg='crunch', indent=True,
+                      tooltip=bi(
+                          'Bitrate starvation of the internal MPEG-4 stream. Low = smooth, almost '
+                          'painterly melt. High = coarse 16px macroblock soup with visible DCT '
+                          'blocks, like a heavily corrupted download.',
+                          'Битрейтное голодание внутреннего MPEG-4 потока. Мало - гладкое, почти '
+                          'живописное плавление. Много - грубая каша из 16px макроблоков с видимыми '
+                          'DCT-блоками, как сильно битая скачка.',
+                      )),
+        ],
+        note='NOISE / SUSTAIN / IMPACT / DROP - real MPEG-4 I-frame-drop mosh.',
+        tooltip=bi(
+            'The genuine article. A real MPEG-4 encoder and decoder run inside the effect: at '
+            'a cut the keyframe is physically removed from the bitstream, and the decoder drags '
+            'the old scene along the new scene\'s motion vectors until it patchily heals - the '
+            'exact mechanism of classic datamosh tools, not an imitation. Consecutive triggered '
+            'segments chain into one continuous datamix melt; the first segment that does not '
+            'trigger snaps the picture back clean.',
+            'Настоящий датамош. Внутри эффекта работают реальные энкодер и декодер MPEG-4: на '
+            'склейке ключевой кадр физически удаляется из битстрима, и декодер тащит старую '
+            'сцену по векторам движения новой, пока картинка не «заживёт» пятнами - тот же '
+            'механизм, что в классических инструментах датамоша, а не имитация. Подряд идущие '
+            'сработавшие сегменты сцепляются в непрерывное datamix-плавление; первый '
+            'несработавший сегмент возвращает чистую картинку.',
+        ),
+    ),
+
     # ── PAINT ──────────────────────────────────────────────────────────
     EffectSpec(
         id='paint', label='Paint Canvas FX', group='PAINT',
@@ -1713,6 +1722,58 @@ EFFECTS: List[EffectSpec] = [
             'Applies drawing strokes as a mask for color overlays, frame delay (lag), or warp distortion.',
             'Применяет рисунок как маску для наложения цвета, задержки кадров (lag) или искажения.'
         ),
+    ),
+
+    EffectSpec(
+        id='subtitles', label='Subtitles', group='PAINT',
+        cls=SubtitleEffect,
+        enable_key='fx_subtitles', enabled_default=False,
+        chance_key=None,          # субтитры не гейтятся chance - строго по таймкодам
+        supports_always=False,    # непрозрачность не зависит от аудио
+        params=[
+            ParamSpec('fx_subtitles_mode', 'Default Mode', 'overlay', kind='choice',
+                      choices=['overlay', 'lag', 'warp_video', 'lag_warp'], indent=False,
+                      kwarg='mode',
+                      tooltip=bi(
+                          'Default mode for cues that do not override it. overlay = solid '
+                          'coloured text; lag = delayed video inside the glyphs; '
+                          'warp_video = distorted video inside the glyphs; lag_warp = both.',
+                          'Режим по умолчанию для реплик без своего. overlay - сплошной '
+                          'цветной текст; lag - задержанное видео внутри букв; '
+                          'warp_video - искажённое видео внутри букв; lag_warp - и то, и другое.'
+                      )),
+            ParamSpec('fx_subtitles_delay', 'Lag Frames', 10, 2, 30, kind='int',
+                      kwarg='delay_frames',
+                      tooltip=bi('Frames of video delay inside glyphs (lag / lag_warp).',
+                                 'Кадры задержки видео внутри букв (lag / lag_warp).')),
+            ParamSpec('fx_subtitles_warp_int', 'Warp Intensity', 0.3, 0.0, 1.0,
+                      kwarg='warp_intensity',
+                      tooltip=bi('Strength of distortion for warp_video / lag_warp.',
+                                 'Сила искажения для warp_video / lag_warp.')),
+            ParamSpec('fx_subtitles_color_r', 'Default R', 255, 0, 255, kind='int',
+                      kwarg='color_r', indent=True, tooltip=''),
+            ParamSpec('fx_subtitles_color_g', 'Default G', 255, 0, 255, kind='int',
+                      kwarg='color_g', indent=True, tooltip=''),
+            ParamSpec('fx_subtitles_color_b', 'Default B', 255, 0, 255, kind='int',
+                      kwarg='color_b', indent=True, tooltip=''),
+            # Шрифт/размер по умолчанию и данные реплик редактируются в окне
+            # редактора, в основном блоке не показываются (см. skip-список GUI).
+            ParamSpec('fx_subtitles_font', 'Default Font', 'Arial', kind='string',
+                      kwarg='font', indent=False),
+            ParamSpec('fx_subtitles_size', 'Default Size', 48, 8, 400, kind='int',
+                      kwarg='size', indent=False),
+            ParamSpec('fx_subtitles_data', 'Cues Data', '', kind='string',
+                      kwarg=None, indent=False),
+        ],
+        extra_factory=_subtitles_extras,
+        note='Open the editor to place timed subtitle lines on the canvas.',
+        tooltip=bi(
+            'Timed subtitle lines placed on the canvas. Each cue has its own timecodes, '
+            'position, font, colour and mode; cues may overlap. In a windowed preview the '
+            'timecodes follow the source timeline.',
+            'Субтитры с таймкодами, расставленные по холсту. У каждой реплики свои таймкоды, '
+            'позиция, шрифт, цвет и режим; реплики могут перекрываться. В превью-окне таймкоды '
+            'следуют исходному таймлайну.'),
     ),
 
     # ── VISUALIZER (WINDOWS MEDIA PLAYER - реагирует на аудио) ──────────

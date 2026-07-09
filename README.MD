@@ -1,6 +1,6 @@
 # Disc VPC 01 — User Manual
 
-**Version:** 0.4
+**Version:** 0.5
 **Offline editor:** Python 3.10.x · Windows 10/11 (macOS, Ubuntu 22.* best-effort)
 **Realtime (R-T):** native C++ binary · Windows 10/11 · Linux · macOS
 

@@ -10,6 +10,7 @@ from PIL import Image
 
 from vpc.analyzer import Segment, SegmentType
 from .base import BaseEffect
+from .mask_modes import apply_mask_mode
 
 
 def decode_paint_canvas(base64_str: str) -> np.ndarray | None:
@@ -76,55 +77,15 @@ class PaintCanvasEffect(BaseEffect):
         # NEAREST, а не линейная интерполяция - иначе края штриха размажутся.
         mask_resized = cv2.resize(self.canvas_mask, (w, h), interpolation=cv2.INTER_NEAREST)
 
-        # Штрих - это чёрные пиксели на канвасе.
-        is_stroke = mask_resized < 128
-
         self._t += 1
         intensity_factor = 0.2 + 0.8 * self.scaled_intensity(seg)
         amp = self.warp_intensity * 25.0 * intensity_factor
+        delayed_frame = self.history[0] if self.history else frame
 
-        if self.mode == 'overlay':
-            result = frame.copy()
-            result[is_stroke] = [self.color_r, self.color_g, self.color_b]
-
-        elif self.mode == 'lag':
-            delayed_frame = self.history[0] if self.history else frame
-            result = frame.copy()
-            result[is_stroke] = delayed_frame[is_stroke]
-
-        elif self.mode == 'warp_video':
-            # Волновое искажение текущего кадра, видно ТОЛЬКО внутри штрихов.
-            ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
-
-            dx = np.sin(ys / 12.0 + self._t * 0.15) * amp
-            dy = np.cos(xs / 12.0 + self._t * 0.15) * amp
-
-            map_x = np.clip(xs + dx, 0, w - 1).astype(np.float32)
-            map_y = np.clip(ys + dy, 0, h - 1).astype(np.float32)
-
-            warped_frame = cv2.remap(frame, map_x, map_y, cv2.INTER_LINEAR)
-
-            result = frame.copy()
-            result[is_stroke] = warped_frame[is_stroke]
-
-        elif self.mode == 'lag_warp':
-            # Дрожащие/искажённые штрихи с задержанным видео внутри.
-            ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
-
-            dx = np.sin(ys / 12.0 + self._t * 0.2) * amp
-            dy = np.cos(xs / 12.0 + self._t * 0.2) * amp
-
-            map_x = np.clip(xs + dx, 0, w - 1).astype(np.float32)
-            map_y = np.clip(ys + dy, 0, h - 1).astype(np.float32)
-
-            warped_mask = cv2.remap(mask_resized, map_x, map_y, cv2.INTER_NEAREST, borderValue=255)
-            is_warped_stroke = warped_mask < 128
-
-            delayed_frame = self.history[0] if self.history else frame
-            result = frame.copy()
-            result[is_warped_stroke] = delayed_frame[is_warped_stroke]
-
-        else:
-            result = frame
+        result = apply_mask_mode(
+            frame, mask_resized, self.mode,
+            delayed_frame=delayed_frame,
+            color=(self.color_r, self.color_g, self.color_b),
+            amp=amp, t=self._t)
 
         return self._blend_by_intensity(seg, result, frame)

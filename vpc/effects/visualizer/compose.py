@@ -35,8 +35,18 @@ def composite(src: np.ndarray, visual: np.ndarray, field: np.ndarray,
         field = cv2.resize(field, (w, h))
 
     if mode == 'over':
-        blended = _blend(src, visual, blend)
-        out = src.astype(np.float32) * (1 - opacity) + blended * opacity
+        s = src.astype(np.float32)
+        v = visual.astype(np.float32)
+        if blend == 'alpha':
+            # Альфа из яркости самого визуала: светлые пиксели ложатся поверх,
+            # чёрный фон становится прозрачным и пропускает источник. Плавная
+            # яркость мягких визуализаторов даёт плавные края без резкого канта.
+            a = np.clip(v.max(axis=2, keepdims=True) / 255.0 * opacity, 0.0, 1.0)
+            out = s * (1.0 - a) + v * a
+        else:
+            # Прежнее поведение для screen/add - равномерное свечение поверх.
+            blended = _blend(src, visual, blend)
+            out = s * (1 - opacity) + blended * opacity
         return np.clip(out, 0, 255).astype(np.uint8)
 
     if mode == 'warp':
