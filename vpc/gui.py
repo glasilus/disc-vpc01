@@ -2747,12 +2747,20 @@ class MainGUI(tk.Tk):
         self._subtitle_win = win
 
         # --- источник кадра для холста ---
+        # Холст вписывается в бокс с сохранением пропорций - одинаково корректно
+        # и для 16:9, и для вертикальных 9:16 (там холст высокий и узкий).
         ratio = self._get_source_aspect_ratio()
-        cw = 520
-        ch = max(120, int(cw / ratio))
-        if ch > 400:
-            ch = 400
-            cw = int(ch * ratio)
+        BOX_W, BOX_H = 540, 500
+        if ratio >= BOX_W / BOX_H:
+            cw = BOX_W
+            ch = int(round(cw / ratio))
+        else:
+            ch = BOX_H
+            cw = int(round(ch * ratio))
+        cw = max(200, cw)
+        ch = max(150, ch)
+        passthrough = bool(self.vars.get('passthrough_mode')
+                           and self.vars['passthrough_mode'].get())
         win.cap = None
         win.static_rgb = None
         win.fps = 24.0
@@ -2787,6 +2795,23 @@ class MainGUI(tk.Tk):
         win.scrub_t = 0.0
         win.beats = None            # ленивая сетка битов
         win._drag = False
+        win._syncing = False        # защита от обратной связи ползунка
+        win.playing = False
+        win._tick_id = None
+        win.audio_data = None       # сэмплы для прослушивания (ленивая загрузка)
+        win.sr = 0
+        win._audio_failed = False
+        win._tmp_audio = None       # temp-wav, извлечённый из видео (passthrough)
+        win._last_fi = -1           # кэш кадра по индексу (сглаживает проигрывание)
+        win._last_rgb = None
+        try:
+            import sounddevice as _sd
+            import soundfile as _sf
+            _AUDIO_OK = True
+        except Exception:
+            _sd = _sf = None
+            _AUDIO_OK = False
+        import time as _time
         fonts = get_system_fonts()
         font_names = sorted(fonts.keys())
         def_font = self.vars['fx_subtitles_font'].get() or default_font_name()
@@ -2839,23 +2864,45 @@ class MainGUI(tk.Tk):
             m = int(t // 60); s = t - m * 60
             return f'{m:02d}:{s:04.1f}'
 
+        # осциллограмма аудио: помогает подбирать субтитры под звук. Кликабельна
+        # (перемотка), рисует линию воспроизведения. Заполняется при загрузке аудио.
+        WAVE_H = 46
+        wave = tk.Canvas(left, width=cw, height=WAVE_H, bg=C_BLACK,
+                         highlightthickness=0, bd=2, relief='sunken')
+        wave.pack(fill='x', pady=(4, 0))
+        win.wave = wave
+
         # скраббер + транспорт
         scrub = ttk.Scale(left, from_=0.0, to=max(0.01, win.duration),
                           orient='horizontal')
-        scrub.pack(fill='x', pady=(4, 0))
+        scrub.pack(fill='x', pady=(2, 0))
         trans = tk.Frame(left, bg=C_SILVER)
         trans.pack(fill='x', pady=(2, 0))
 
-        def set_scrub(t, from_slider=False):
+        def set_scrub(t):
             t = max(0.0, min(win.duration, float(t)))
             win.scrub_t = t
             lcd.configure(text=_fmt_lcd(t))
-            if not from_slider:
+            win._syncing = True
+            try:
                 scrub.set(t)
+            finally:
+                win._syncing = False
             redraw()
 
         def _step(dt):
+            if win.playing:
+                stop_play()
             set_scrub(win.scrub_t + dt)
+
+        # Кнопка воспроизведения аудио (слушать и одновременно смотреть кадр).
+        play_btn = tk.Button(trans, text='▶ Play', bg=C_SILVER, bd=2,
+                             relief='raised', width=7, font=('MS Sans Serif', 8),
+                             command=lambda: toggle_play())
+        play_btn.pack(side='left', padx=(0, 4))
+        Tooltip(play_btn, bi('Play/stop the audio from the current position while the '
+                             'frame follows along.',
+                             'Играть/стоп аудио с текущей позиции; кадр следует за звуком.'))
 
         for txt, dt, tip in (('|◀', -1e9, 'To start / В начало'),
                              ('◀◀', -1.0, '-1 s'),
@@ -3005,6 +3052,124 @@ class MainGUI(tk.Tk):
         def _color_hex(c):
             return '#%02x%02x%02x' % (int(c[0]), int(c[1]), int(c[2]))
 
+        # ── аудио: загрузка, осциллограмма, воспроизведение ──
+        def ensure_audio():
+            """Ленивая загрузка аудио: внешний файл, либо (passthrough) извлечение
+            из видео. Возвращает True, если сэмплы готовы."""
+            if win.audio_data is not None:
+                return True
+            if win._audio_failed or not _AUDIO_OK:
+                return False
+            src = self.audio_path
+            if not src and self.video_paths:
+                from vpc.render.source import is_image
+                p0 = self.video_paths[0]
+                if not is_image(p0):
+                    try:
+                        from vpc.render.engine_setup import extract_audio_track
+                        self.log('Subtitle editor: extracting audio from video...')
+                        src = extract_audio_track(p0, self.log)
+                        win._tmp_audio = src
+                    except Exception as e:
+                        self.log(f'Audio extract failed: {e}')
+            if not src:
+                win._audio_failed = True
+                return False
+            try:
+                data, sr = _sf.read(src, dtype='float32', always_2d=False)
+                if getattr(data, 'ndim', 1) > 1:
+                    data = data.mean(axis=1)
+                win.audio_data = np.ascontiguousarray(data, dtype=np.float32)
+                win.sr = int(sr) or 44100
+                adur = len(win.audio_data) / win.sr if win.sr else 0.0
+                # В обычном режиме длину таймлайна задаёт песня; в passthrough - видео.
+                if not passthrough and adur > 0:
+                    win.duration = adur
+                    scrub.configure(to=max(0.01, win.duration))
+                build_wave()
+                return True
+            except Exception as e:
+                self.log(f'Audio load failed: {e}')
+                win._audio_failed = True
+                return False
+
+        def build_wave():
+            wave.delete('all')
+            data = win.audio_data
+            if data is None or len(data) == 0:
+                return
+            n = max(16, cw)
+            edges = np.linspace(0, len(data), n + 1).astype(np.int64)
+            env = np.zeros(n, np.float32)
+            absd = np.abs(data)
+            for i in range(n):
+                a, b = edges[i], max(edges[i] + 1, edges[i + 1])
+                env[i] = absd[a:b].max() if b > a else 0.0
+            peak = float(env.max()) or 1.0
+            mid = WAVE_H / 2.0
+            for x in range(n):
+                h = (env[x] / peak) * (WAVE_H / 2.0 - 1)
+                wave.create_line(x, mid - h, x, mid + h, fill=C_TUI_DIM)
+
+        def draw_playhead():
+            wave.delete('ph')
+            if win.duration <= 0:
+                return
+            x = int(win.scrub_t / win.duration * cw)
+            wave.create_line(x, 0, x, WAVE_H, fill=C_TUI_AMBER, tags='ph')
+
+        def _play_tick():
+            if not win.playing:
+                return
+            t = win._play_t0 + (_time.monotonic() - win._play_wall0)
+            if t >= win.duration:
+                set_scrub(win.duration)
+                stop_play()
+                return
+            set_scrub(t)
+            win._tick_id = win.after(40, _play_tick)
+
+        def start_play():
+            if win.playing:
+                return
+            if not _AUDIO_OK:
+                self.log('Audio backend unavailable (sounddevice / soundfile).')
+                return
+            if not ensure_audio() or win.audio_data is None:
+                self.log('No audio available for this source.')
+                return
+            i0 = int(win.scrub_t * win.sr)
+            if i0 >= len(win.audio_data):
+                i0 = 0
+                set_scrub(0.0)
+            try:
+                _sd.stop()
+                _sd.play(win.audio_data[i0:], win.sr)
+            except Exception as e:
+                self.log(f'Audio playback failed: {e}')
+                return
+            win.playing = True
+            win._play_wall0 = _time.monotonic()
+            win._play_t0 = win.scrub_t
+            play_btn.configure(text='⏸ Stop', relief='sunken')
+            _play_tick()
+
+        def stop_play():
+            win.playing = False
+            try:
+                if _sd is not None:
+                    _sd.stop()
+            except Exception:
+                pass
+            if win._tick_id:
+                try: win.after_cancel(win._tick_id)
+                except Exception: pass
+                win._tick_id = None
+            play_btn.configure(text='▶ Play', relief='raised')
+
+        def toggle_play():
+            stop_play() if win.playing else start_play()
+
         def frame_at(t):
             if win.static_rgb is not None:
                 return win.static_rgb
@@ -3012,14 +3177,40 @@ class MainGUI(tk.Tk):
                 return None
             fi = int(t * win.fps)
             fi = max(0, min(fi, max(0, win.nframes - 1)))
+            # Кэш по индексу: при мелком движении/проигрывании один кадр видео
+            # не перечитывается многократно (cv2.seek дорогой).
+            if fi == win._last_fi and win._last_rgb is not None:
+                return win._last_rgb
             try:
                 win.cap.set(cv2.CAP_PROP_POS_FRAMES, fi)
                 ok, bgr = win.cap.read()
                 if not ok:
-                    return None
-                return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+                    return win._last_rgb
+                rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+                win._last_fi = fi
+                win._last_rgb = rgb
+                return rgb
             except cv2.error:
-                return None
+                return win._last_rgb
+
+        def _draw_cue(i, cue, ghost=False):
+            px = max(6, int(round((cue['size'] or 48) * ch / REF_H)))
+            fname = cue['font'] or def_font
+            x = int(cue['x'] * cw); y = int(cue['y'] * ch)
+            col = _color_hex(cue['color'] or [255, 255, 255])
+            item = canvas.create_text(
+                x, y, text=cue['text'] or ' ', fill=col, anchor='center',
+                font=(fname, -px), justify=cue.get('align', 'center'),
+                tags=('cue', f'cue{i}'))
+            if i == win.selected:
+                bb = canvas.bbox(item)
+                if bb:
+                    canvas.create_rectangle(bb[0] - 3, bb[1] - 3, bb[2] + 3, bb[3] + 3,
+                                            outline=C_TUI_AMBER,
+                                            dash=(2, 2) if ghost else (4, 2))
+                    if ghost:
+                        canvas.create_text(x, bb[1] - 8, text='(outside its time)',
+                                           fill=C_TUI_AMBER, font=('MS Sans Serif', 7))
 
         def redraw():
             canvas.delete('all')
@@ -3037,23 +3228,19 @@ class MainGUI(tk.Tk):
                                    fill=C_WHITE, font=('MS Sans Serif', 10))
             # активные реплики
             t = win.scrub_t
+            selected_active = False
             for i, cue in enumerate(win.cues):
-                if not (cue['t_start'] <= t < cue['t_end']):
-                    continue
-                px = max(6, int(round((cue['size'] or 48) * ch / REF_H)))
-                fname = cue['font'] or def_font
-                x = int(cue['x'] * cw); y = int(cue['y'] * ch)
-                col = _color_hex(cue['color'] or [255, 255, 255])
-                item = canvas.create_text(
-                    x, y, text=cue['text'], fill=col, anchor='center',
-                    font=(fname, -px), justify=cue.get('align', 'center'),
-                    tags=('cue', f'cue{i}'))
-                if i == win.selected:
-                    bb = canvas.bbox(item)
-                    if bb:
-                        canvas.create_rectangle(bb[0] - 3, bb[1] - 3, bb[2] + 3, bb[3] + 3,
-                                                outline=C_TUI_AMBER, dash=(3, 2))
+                if cue['t_start'] <= t < cue['t_end']:
+                    _draw_cue(i, cue)
+                    if i == win.selected:
+                        selected_active = True
+            # Выбранную реплику показываем ВСЕГДА (даже вне её окна времени),
+            # чтобы её можно было двигать, не подгоняя сначала таймкоды.
+            if (win.selected is not None and not selected_active
+                    and 0 <= win.selected < len(win.cues)):
+                _draw_cue(win.selected, win.cues[win.selected], ghost=True)
             led.configure(text=f'{len(win.cues):03d}')
+            draw_playhead()
 
         def refresh_list(keep=True):
             listbox.delete(0, 'end')
@@ -3086,10 +3273,19 @@ class MainGUI(tk.Tk):
             finally:
                 win._loading = False
 
-        def select_cue(idx):
+        def select_cue(idx, jump=True):
             win.selected = idx
             if idx is not None and 0 <= idx < len(win.cues):
-                load_editor(win.cues[idx])
+                cue = win.cues[idx]
+                load_editor(cue)
+                # Если скраббер вне окна реплики - прыгаем в её середину, чтобы
+                # субтитр сразу появился на холсте и его можно было двигать.
+                if jump and not (cue['t_start'] <= win.scrub_t < cue['t_end']):
+                    if not win.playing:
+                        mid = min(win.duration, (cue['t_start'] + cue['t_end']) / 2.0)
+                        set_scrub(mid)
+                        refresh_list()
+                        return
             refresh_list()
             redraw()
 
@@ -3129,8 +3325,11 @@ class MainGUI(tk.Tk):
                 return
             import copy
             cue = copy.deepcopy(win.cues[win.selected])
+            # Смещаем копию чуть вниз, чтобы она не пряталась ровно под оригиналом
+            # (перекрытие по времени при этом сохраняется - это допустимо).
+            cue['y'] = min(1.0, (cue.get('y', 0.85)) + 0.06)
             win.cues.append(cue)
-            select_cue(len(win.cues) - 1)
+            select_cue(len(win.cues) - 1, jump=False)
             save()
 
         def del_cue():
@@ -3154,8 +3353,22 @@ class MainGUI(tk.Tk):
             if sel:
                 select_cue(sel[0])
         listbox.bind('<<ListboxSelect>>', on_list_select)
+        listbox.bind('<Double-Button-1>', on_list_select)
 
-        scrub.configure(command=lambda v: set_scrub(v, from_slider=True))
+        def on_scale(v):
+            if win._syncing:
+                return
+            if win.playing:
+                stop_play()
+            set_scrub(float(v))
+        scrub.configure(command=on_scale)
+
+        def on_wave_seek(e):
+            if win.playing:
+                stop_play()
+            set_scrub(max(0.0, min(1.0, e.x / cw)) * win.duration)
+        wave.bind('<Button-1>', on_wave_seek)
+        wave.bind('<B1-Motion>', on_wave_seek)
 
         # drag реплики по холсту
         def on_canvas_press(e):
@@ -3173,7 +3386,7 @@ class MainGUI(tk.Tk):
                 if tg.startswith('cue') and tg != 'cue':
                     idx = int(tg[3:])
                     win._drag = True
-                    select_cue(idx)
+                    select_cue(idx, jump=False)
                     return
 
         def on_canvas_drag(e):
@@ -3194,16 +3407,25 @@ class MainGUI(tk.Tk):
         canvas.bind('<ButtonRelease-1>', on_canvas_release)
 
         def on_close():
+            stop_play()
             save()
             if win.cap is not None:
                 try: win.cap.release()
                 except Exception: pass
+            if win._tmp_audio and os.path.exists(win._tmp_audio):
+                try: os.remove(win._tmp_audio)
+                except OSError: pass
             win.destroy()
             self._subtitle_win = None
         win.protocol('WM_DELETE_WINDOW', on_close)
 
-        win.geometry(f'{cw + 240}x{max(ch + 130, 470)}')
+        win.geometry(f'{cw + 250}x{max(ch + 200, 560)}')
+        win.minsize(cw + 250, 520)
         refresh_list(keep=False)
+        # Предзагружаем аудио заранее только если есть внешний файл (быстро);
+        # в passthrough извлечение из видео дороже - грузим по кнопке Play.
+        if _AUDIO_OK and self.audio_path:
+            ensure_audio()
         set_scrub(0.0)
         # Автовыбор первой реплики, чтобы редактор (в т.ч. кнопка цвета) сразу
         # был активен, а не молчал до ручного выделения.

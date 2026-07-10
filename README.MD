@@ -1,6 +1,6 @@
 # Disc VPC 01 — User Manual
 
-**Version:** 0.5
+**Version:** 0.5.1
 **Offline editor:** Python 3.10.x · Windows 10/11 (macOS, Ubuntu 22.* best-effort)
 **Realtime (R-T):** native C++ binary · Windows 10/11 · Linux · macOS
 
@@ -737,6 +737,34 @@ Applies drawing strokes as a mask for color overlays, frame delay (lag), or warp
 
 ---
 
+**Subtitles**
+
+*Trigger: time-driven (not audio-gated)*
+
+Timed subtitle lines placed on the canvas. Each **cue** is an independent line with its own timecodes, position, font, size, colour and mode; cues may overlap in time and be duplicated, so several lines can share the screen at once, in different places. A cue is rendered into a glyph mask and then run through the **same modes as Paint Canvas**, so subtitles inherit the whole PAINT look:
+
+- **Default Mode** — mode used by cues that don't override it: `overlay` (solid coloured text), `lag` (delayed video inside the glyphs), `warp_video` (distorted video inside the glyphs), `lag_warp` (both).
+- **Lag Frames** *(2 – 30)* — video delay inside the glyphs for `lag` / `lag_warp`.
+- **Warp Intensity** *(0.0 – 1.0)* — distortion strength for `warp_video` / `lag_warp`.
+- **Default R / G / B** — default colour for cues that don't override it (used by `overlay`).
+
+These are only *defaults* — every cue can override the mode, colour, font and size individually in the editor. Font size is stored relative to a 720p reference height and scaled to the render resolution, so text looks the same in a 480p draft and a 1080p export (and adapts to vertical 9:16 frames).
+
+Click **Open Subtitle Editor / Редактор субтитров** inside the PAINT accordion block. The editor is styled after the Windows 95 CD Player and Minesweeper:
+
+- **Canvas** — shows a real frame from your source video at the scrubber position, with the active cues drawn on top. Drag a cue directly on the canvas to reposition it. The **selected** cue is always drawn (even outside its own time window, shown ghosted), so you can move it without first fiddling with its timecodes.
+- **Green LCD** — the scrubber time (`mm:ss.s`), like a CD player display. **Red LED** — the live cue count, like the Minesweeper counter.
+- **Audio waveform** — an oscilloscope strip of the track. Click or drag it to seek. Subtitles are usually timed to *sound*, not picture, so the waveform is the primary alignment aid; the video frame underneath still helps for Passthrough.
+- **▶ Play** — plays the audio from the current position while the frame and playhead follow along, so you can place lines by ear. In normal mode the audio is your loaded song; in Passthrough it is extracted from the source video on first play.
+- **Transport** — jump to start/end, ±1 second, ±1 frame.
+- **Selected cue panel** — text, font, size, colour, mode, and Start / End timecodes. The **◉ set** buttons next to Start/End grab the current scrubber time. **+ Add** creates a cue at the playhead, **Dup** clones the selected cue (nudged slightly so it's visible), **Delete** removes it.
+- **Cues list** — every cue with its timecodes; click to select and jump to it.
+- **snap beat** — snaps typed and ◉-grabbed timecodes to the nearest musical beat (from the manual BPM if set, otherwise detected from the audio).
+
+Subtitle timecodes are **absolute** on the source timeline, exactly like the Excerpt window (§3.13). In a full render every cue appears at its time. In a windowed **PREVIEW** / **EXPORT EXCERPT** only the cues whose timecodes fall inside the excerpt are shown — the sidebar log tells you how many cues land in the current window, so a line that "disappeared" is simply outside the excerpt, not mistimed.
+
+---
+
 ### 3.8d Effects — Windows Media Player
 
 The **WINDOWS MEDIA PLAYER** group is a shelf of audio-reactive visualizers in the spirit of the classic media-player visualizations - spectrum bars, oscilloscopes, procedural abstractions that dance to the analyzed track. Each effect reads a per-frame feed of the audio spectrum (bass / mid / high bands plus a log-spaced bin array and a beat envelope), so visuals move with the music instead of pulsing as one undifferentiated blob.
@@ -771,12 +799,12 @@ The classic equalizer: per-band bars with peak-hold smoothing (fast attack, slow
 
 *Trigger: any segment type*
 
-The equalizer wrapped around a circle: each ray's length tracks a frequency band and the whole corona rotates slowly.
+The equalizer wrapped around a circle: each band is a rectangular bar radiating outward from a central ring (not a thin line), its length tracking a frequency band, and the whole corona rotates slowly.
 
 - **Chance** *(0.0 – 1.0)* — probability of firing on each eligible frame, scaled by Global Chaos like every other effect. Default `1.0`.
 
 - **Composite Mode** / **Opacity / Amount** — as above.
-- **Ray Count** *(8 – 128)* — number of radial rays.
+- **Ray Count** *(8 – 128)* — number of radial bars.
 
 ---
 
@@ -784,12 +812,13 @@ The equalizer wrapped around a circle: each ray's length tracks a frequency band
 
 *Trigger: any segment type*
 
-A horizontal scope line whose amplitude follows the spectrum and scrolls in phase with time. Cleanest as an `over`-blend on top of the video.
+A horizontal scope line drawing the **real waveform** of the audio playing at that exact moment — the raw samples of the current frame, not a shape reconstructed from the spectrum. The window is aligned to a rising zero-crossing (a **trigger**, like a real scope), so the line reacts instantly, as live as the spectrum bars, without jittering horizontally between frames. The vertical scale is fixed to the track peak: quiet passages draw a small line, loud ones fill the screen. Cleanest as an `over`-blend on top of the video. (When no raw audio is available — e.g. previewing a still frame in the GUI — it falls back to reconstructing the shape from the spectrum bins.)
 
 - **Chance** *(0.0 – 1.0)* — probability of firing on each eligible frame, scaled by Global Chaos like every other effect. Default `1.0`.
 
 - **Composite Mode** / **Opacity / Amount** — as above.
 - **Line Thickness** *(1 – 8)* — scope line width in pixels.
+- **Time Scale (zoom)** *(1.0 – 8.0)* — horizontal zoom. Higher shows fewer wave cycles per frame, so the line is smoother and less spiky; lower packs more of the waveform across the width. Default `2.0`.
 
 ---
 
@@ -1242,27 +1271,33 @@ If you upgrade from an older release that wrote those built-ins into your `prese
 
 ### 3.13 Render Modes
 
-Three render buttons are pinned to the bottom of the sidebar:
+Four render buttons are pinned to the bottom of the sidebar. Three of them (DRAFT, PREVIEW, EXPORT EXCERPT) act on an **Excerpt window** — two small **Start → End** fields sitting just above the buttons. Enter times as seconds (`12.5`) or `mm:ss` (`1:05`); an empty End means "to the end". The excerpt lets you preview or export any slice of the timeline instead of always starting from zero.
+
+In normal mode the excerpt is a window on the **music** (the video is sampled per cut, so only the audio timeline is anchored); in Passthrough it is a window on the **video**. Either way it is the same absolute source timeline the Subtitle editor uses.
 
 ---
 
 **DRAFT (5 sec / 480p)**
 
-Renders the first 5 seconds of the audio track at 480p resolution. Computationally expensive effects (Optical Flow, True Datamosh, ASCII) fall back to simplified fast paths. Use this to quickly check cut timing and basic effect behavior.
+Renders 5 seconds from the Excerpt start at 480p resolution. Computationally expensive effects (Optical Flow, True Datamosh, ASCII) fall back to simplified fast paths. Use this to quickly check cut timing and basic effect behavior. DRAFT ignores the Excerpt End.
 
 ---
 
-**PREVIEW (configurable length)**
+**PREVIEW**
 
-Renders the first N seconds at full configured resolution and quality. All effects run at full fidelity. Use this to validate the visual result before committing to a full render.
+Renders the Excerpt `[Start → End]` at the **full configured resolution and quality** (this is not a low-res proxy — what you see is what EXPORT/RENDER produces) and plays it back in the loop player. It is not saved to disk. All effects run at full fidelity. Use this to validate the visual result before committing.
 
-A **Preview length (s)** spinbox sits directly above the PREVIEW button (range `1 – 90`, default `5`). The button label updates to reflect the current length on each click (`PREVIEW (12 sec)`). Type garbage into the spinbox and it falls back to the default safely - you can never break the render with a bad value. Draft is fixed at 5 seconds and is *not* affected by this control; only PREVIEW honours it.
+---
+
+**EXPORT EXCERPT**
+
+Same render as PREVIEW — full quality, the same `[Start → End]` window — but saved **permanently** to a file you choose (a native Save dialog opens; suggested name `excerpt_XXXX.<ext>`). Use it to cut a finished clip out of the middle of a track without rendering the whole thing. The exported clip starts at the excerpt start; subtitle cues keep their absolute source timecodes, so only cues inside the window are burned in.
 
 ---
 
 **RENDER FULL VIDEO**
 
-Renders the complete output video for the entire duration of the audio track. A progress bar and status log show real-time progress.
+Renders the complete output video for the entire duration of the audio track, ignoring the Excerpt fields. A progress bar and status log show real-time progress.
 
 A native Save dialog opens first; the suggested filename is `disc_XXXX.<ext>` where `XXXX` is a random 4-digit number and `<ext>` matches the codec/container chosen in EXPORT (`.mp4`, `.mkv`, `.mov`, `.webm`). Pick a folder and confirm, and the render starts immediately. The final output path shows up in the status log on completion.
 

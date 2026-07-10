@@ -43,9 +43,14 @@ class SpectrumBarsEffect(VisualizerEffect):
 
 
 class RadialSpectrumEffect(VisualizerEffect):
-    """Полосы эквалайзера, обёрнутые вокруг круга - пульсирующая корона."""
+    """Полосы эквалайзера, обёрнутые вокруг круга - пульсирующая корона.
 
-    def __init__(self, rays=48, color=(0, 255, 128), rotate=0.0, **kw):
+    Каждая полоса - прямоугольный бар, выходящий из окружности наружу (а не
+    тонкая линия): ширина бара занимает почти весь сектор своего луча, длина
+    следует за громкостью полосы.
+    """
+
+    def __init__(self, rays=48, color=(0, 255, 0), rotate=0.0, **kw):
         super().__init__(**kw)
         self.rays = int(rays)
         self.color = tuple(int(c) for c in color)
@@ -57,13 +62,20 @@ class RadialSpectrumEffect(VisualizerEffect):
         r0 = min(h, w) // 6
         vals = _resample_bins(sample.bins, self.rays)
         col = self.color
+        # Половина ширины бара по дуге: почти весь сектор луча, с зазором.
+        half_w = max(1.0, (np.pi * r0 / self.rays) * 0.8)
         for i, v in enumerate(vals):
             ang = (i / self.rays) * 2 * np.pi + self.rotate + sample.t * 0.5
-            r1 = r0 + int(float(v) * min(h, w) * 0.4)
-            x1 = int(cx + np.cos(ang) * r1)
-            y1 = int(cy + np.sin(ang) * r1)
-            x0 = int(cx + np.cos(ang) * r0)
-            y0 = int(cy + np.sin(ang) * r0)
-            cv2.line(vis, (x0, y0), (x1, y1), col, 2)
+            r1 = r0 + float(v) * min(h, w) * 0.4
+            dx, dy = np.cos(ang), np.sin(ang)
+            px, py = -dy, dx   # перпендикуляр к лучу
+            # Четыре угла бара: основание на окружности r0, вершина на r1.
+            quad = np.array([
+                [cx + dx * r0 + px * half_w, cy + dy * r0 + py * half_w],
+                [cx + dx * r0 - px * half_w, cy + dy * r0 - py * half_w],
+                [cx + dx * r1 - px * half_w, cy + dy * r1 - py * half_w],
+                [cx + dx * r1 + px * half_w, cy + dy * r1 + py * half_w],
+            ], np.int32)
+            cv2.fillConvexPoly(vis, quad, col, cv2.LINE_AA)
         field = cv2.cvtColor(vis, cv2.COLOR_RGB2GRAY)
         return vis, field

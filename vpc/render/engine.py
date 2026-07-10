@@ -19,6 +19,7 @@ import numpy as np
 
 from vpc.analyzer import AudioAnalyzer, Segment, SegmentType
 from vpc.render.reactor import AudioReactor
+from vpc.render import analysis_cache
 from .config import RenderConfig, RENDER_DRAFT, RENDER_FINAL
 from .source import VideoPool
 from .sink import FFmpegSink, EXPORT_FORMATS, ffmpeg_bin
@@ -427,6 +428,13 @@ class BreakcoreEngine:
         is_draft = render_mode == RENDER_DRAFT
         is_final = render_mode == RENDER_FINAL
 
+        # Стабильная идентичность аудио для кэша анализа: фиксируем ДО среза
+        # окна отрывка (который подменит audio_path на временный WAV). В
+        # passthrough audio_path - это извлечённая из видео временная дорожка
+        # с одноразовым именем, поэтому кэш там отключаем.
+        cache_orig_audio = audio_path
+        cache_allowed = bool(audio_path) and not rc.passthrough_mode
+
         # --- окно отрывка: срез аудио выполняется ДО анализа, чтобы тайминги
         # сегментов ложились относительно нуля, а движок не заметил сдвига.
         # Длительность источника здесь ещё неизвестна (пул не открыт), поэтому
@@ -461,9 +469,7 @@ class BreakcoreEngine:
         analyzer_bpm = 0.0
         audio_features = None
         if audio_path:
-            self.log('Analyzing audio...')
-            analyzer = AudioAnalyzer(
-                audio_path,
+            analysis_params = dict(
                 min_segment_dur=rc.min_segment_dur,
                 loud_thresh=rc.loud_thresh,
                 transient_thresh=rc.transient_thresh,
@@ -472,8 +478,41 @@ class BreakcoreEngine:
                 manual_bpm=rc.manual_bpm,
                 use_manual_bpm=rc.use_manual_bpm,
             )
-            segments, audio_duration, audio_features = analyzer.analyze()
-            analyzer_bpm = analyzer.detected_bpm
+            # Ключ строим по стабильному исходному файлу и границам окна, а не
+            # по временному срезу: тогда повторный рендер того же отрывка
+            # попадает в кэш. Анализ на промахе всё равно идёт по фактическому
+            # audio_path (срезу), что этому ключу и соответствует однозначно.
+            cache_key = None
+            if cache_allowed:
+                try:
+                    cache_key = analysis_cache.make_key(
+                        cache_orig_audio, analysis_params,
+                        window=(win_t0, win_t1) if win_active else None)
+                except Exception:
+                    cache_key = None
+
+            cached = analysis_cache.load(cache_key) if cache_key else None
+            if cached is not None:
+                segments, audio_duration, audio_features, analyzer_bpm = cached
+                self.log('Using cached audio analysis.')
+            else:
+                self.log('Analyzing audio...')
+                analyzer = AudioAnalyzer(
+                    audio_path,
+                    min_segment_dur=rc.min_segment_dur,
+                    loud_thresh=rc.loud_thresh,
+                    transient_thresh=rc.transient_thresh,
+                    snap_to_beat=rc.snap_to_beat,
+                    snap_tolerance=rc.snap_tolerance,
+                    manual_bpm=rc.manual_bpm,
+                    use_manual_bpm=rc.use_manual_bpm,
+                )
+                segments, audio_duration, audio_features = analyzer.analyze()
+                analyzer_bpm = analyzer.detected_bpm
+                if cache_key:
+                    analysis_cache.store(
+                        cache_key,
+                        (segments, audio_duration, audio_features, analyzer_bpm))
             if audio_duration == 0.0 or not segments:
                 self.log('Warning: audio unreadable / no segments — output will have no effects.')
 
@@ -666,6 +705,12 @@ class BreakcoreEngine:
             if err is not None:
                 self.log(f'HW encoder {spec.vcodec} failed at init '
                          f'(falling back to libx264). Cause:\n{err.strip()[:400]}')
+                # Корректно закрываем неудавшийся sink (останавливаем его
+                # тред-писателя), прежде чем открыть программный.
+                try:
+                    sink.close()
+                except Exception:
+                    pass
                 fb = encoder_fallback_spec()
                 spec = fb
                 sink = _open_sink(fb)

@@ -1834,17 +1834,26 @@ EFFECTS: List[EffectSpec] = [
                       kwarg=None,
                       tooltip=bi('Scope line thickness in pixels.',
                                  'Толщина линии осциллографа в пикселях.')),
+            ParamSpec('fx_viz_scope_scale', 'Time Scale (zoom)', 2.0, 1.0, 8.0, kind='float',
+                      indent=True, kwarg=None,
+                      tooltip=bi('Horizontal zoom: higher shows fewer wave cycles per frame, '
+                                 'so the line is smoother and less spiky.',
+                                 'Горизонтальный зум: больше - меньше периодов волны в кадре, '
+                                 'линия глаже и меньше "шипов".')),
         ],
         extra_factory=lambda cfg: dict(
             **_viz_extras_base(cfg, 'fx_viz_scope'),
             thickness=int(cfg.get('fx_viz_scope_thick', 2)),
+            scale=float(cfg.get('fx_viz_scope_scale', 2.0)),
         ),
-        note='Audio-reactive - waveform scope line.',
+        note='Audio-reactive - real waveform scope line.',
         tooltip=bi(
-            'A horizontal scope line whose amplitude follows the spectrum, scrolling in phase '
-            'with time. Cleanest as an over-blend on top of the video.',
-            'Горизонтальная линия осциллографа, амплитуда которой следует за спектром и '
-            'смещается по фазе со временем. Лучше всего как over-наложение поверх видео.'),
+            'A horizontal scope line drawing the real waveform of the audio playing right now, '
+            'trigger-aligned so it reacts instantly without phase jitter. Cleanest as an '
+            'over-blend on top of the video.',
+            'Горизонтальная линия осциллографа рисует настоящую форму волны звука, играющего '
+            'прямо сейчас, с выравниванием по триггеру - реагирует мгновенно и не дрожит по '
+            'фазе. Лучше всего как over-наложение поверх видео.'),
     ),
     EffectSpec(
         id='viz_lissajous', label='Lissajous (XY)', group='VISUALIZER',

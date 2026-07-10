@@ -30,6 +30,7 @@ class AudioFeatures:
     bins: np.ndarray           # (n_frames, N_BINS) 0..1, лог-полосы амплитуды
     sr: int
     hop: int
+    y: Optional[np.ndarray] = None   # моно-волна целиком (для осциллографа)
 
 
 @dataclass
@@ -47,6 +48,7 @@ class AudioSample:
     beat: bool
     bins: np.ndarray   # (N_BINS,) 0..1, сглажено по peak-hold
     t: float
+    wave: Optional[np.ndarray] = None   # сырые сэмплы окна кадра, ~[-1,1], для осциллографа
 
 
 @contextmanager
@@ -416,7 +418,7 @@ class AudioAnalyzer:
 
         features = AudioFeatures(
             times=times_track, bass=bass_track, mid=mid_track, high=high_track,
-            onset=onset_track, bins=bins, sr=sr, hop=hop,
+            onset=onset_track, bins=bins, sr=sr, hop=hop, y=y,
         )
 
         onsets = list(onsets)
